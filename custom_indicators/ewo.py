@@ -1,7 +1,7 @@
-import numpy as np
-import talib
 from typing import Union
 
+import numpy as np
+import talib
 from jesse.helpers import get_candle_source, slice_candles
 
 
