@@ -4,8 +4,8 @@ from jesse import helpers, indicators
 
 def _trailing_stop_label(candles, n_bar=15, min_r=0):
     LABELING_INDEX = 0
-    LABEL = 0
     SKIP_INDEX = 0
+    LABEL = 0
     labels = np.zeros(candles.shape[0], dtype=np.int8)
     realized_r = np.zeros(candles.shape[0], dtype=np.float64)
     bar_duration = np.zeros(candles.shape[0], dtype=np.int64)
@@ -14,7 +14,7 @@ def _trailing_stop_label(candles, n_bar=15, min_r=0):
     natr = indicators.natr(candles, sequential=True) / 100
     vol, vol_ma = indicators.volume(candles, sequential=True)
     for idx, (p, r) in enumerate(zip(close, natr)):
-        if idx < SKIP_INDEX or np.isnan(r) or candles.shape[0] - idx < n_bar:
+        if np.isnan(r) or candles.shape[0] - idx < n_bar or idx < LABELING_INDEX:
             continue
         else:
             LABELING_INDEX = idx
@@ -32,7 +32,7 @@ def _trailing_stop_label(candles, n_bar=15, min_r=0):
                 if vol[j] > vol_ma[j]:
                     LABELING_INDEX = j
                     break
-            # 找到起点后还需要修正真正的回报率
+            # 找到起点后还需要修正真正的回报率，如果回报率小于target_r，则不标记
             real_r = close[SKIP_INDEX] / close[LABELING_INDEX] - 1
             if np.abs(real_r) < target_r:
                 LABEL = 0
