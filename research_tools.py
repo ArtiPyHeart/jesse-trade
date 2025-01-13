@@ -2,7 +2,7 @@ import numpy as np
 from jesse import helpers, indicators
 
 
-def _trailing_stop_label(candles, n_bar=15, min_r=0):
+def _trailing_stop_label(candles, n_bar=15, min_r=0, k=1):
     LABELING_INDEX = 0
     SKIP_INDEX = 0
     LABEL = 0
@@ -11,7 +11,7 @@ def _trailing_stop_label(candles, n_bar=15, min_r=0):
     bar_duration = np.zeros(candles.shape[0], dtype=np.int64)
 
     close = helpers.get_candle_source(candles, "close")
-    natr = indicators.natr(candles, sequential=True) / 100
+    natr = indicators.natr(candles, sequential=True) * k / 100
     vol, vol_ma = indicators.volume(candles, sequential=True)
     for idx, (p, r) in enumerate(zip(close, natr)):
         if np.isnan(r) or candles.shape[0] - idx < n_bar or idx < LABELING_INDEX:
@@ -47,13 +47,13 @@ def _trailing_stop_label(candles, n_bar=15, min_r=0):
 
 
 class TrailingStopLabel:
-    def __init__(self, candles, n_bar=15, min_r=0.00025):
+    def __init__(self, candles, n_bar=15, min_r=0.00025, k=1):
         self._candles = candles
         self._n_bar = n_bar
         self._min_r = min_r
 
         self._labels, self._realized_r, self._bar_duration = _trailing_stop_label(
-            candles, n_bar, min_r
+            candles, n_bar, min_r, k
         )
 
     @property
