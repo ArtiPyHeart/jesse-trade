@@ -2,7 +2,7 @@ import numpy as np
 from jesse import helpers, indicators
 
 
-def _trailing_stop_label(candles, n_bar=15, min_r=0.00025, k=1.5):
+def _trailing_stop_label(candles, n_bar=15, min_r=0.00025, k=1.5, vol_break_only=False):
     """
     candles: np.ndarray, jesse生成的k线
     n_bar: int, 计算trailing stop的bar数
@@ -33,11 +33,12 @@ def _trailing_stop_label(candles, n_bar=15, min_r=0.00025, k=1.5):
                     LABEL = 1 if current_r > 0 else -1
                     SKIP_INDEX = i
                     break
-            # 从idx到i中, 找到第一个volume大于vol_ma的index作为起点，如果找不到，则维持原状
-            for j in range(idx, SKIP_INDEX):
-                if vol[j] > vol_ma[j]:
-                    LABELING_INDEX = j
-                    break
+            if vol_break_only:
+                # 从idx到i中, 找到第一个volume大于vol_ma的index作为起点，如果找不到，则维持原状
+                for j in range(idx, SKIP_INDEX):
+                    if vol[j] > vol_ma[j]:
+                        LABELING_INDEX = j
+                        break
             # 找到起点后还需要修正真正的回报率，如果回报率小于target_r，则不标记
             real_r = close[SKIP_INDEX] / close[LABELING_INDEX] - 1
             if np.abs(real_r) < target_r:
