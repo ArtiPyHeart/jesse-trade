@@ -1,0 +1,95 @@
+[LegacyColorValue = true]; 
+
+// TSM Raschke 1st Cross Original
+// Copyright 2019, P.J.Kaufman. All rights reserved.
+// This version appeared in the 4th edition
+  
+	inputs:	fastperiod(10), slowperiod(40), oscperiod(5), simultaneous(true), usefutures(false), 
+				printPL(false);
+	vars:		firstcross(false), fastMA(0), slowMA(0), osc(0), osctrend(0), size(0),  
+				stockinvestment(10000), futuresinvestment(25000), trend(0), 
+				investment(0), totalPL(0), todayPL(0), longPL(0), shortPL(0), psignal(0),
+				adate(" ");
+
+	if currentbar = 1 then begin
+		if usefutures then
+				investment = futuresinvestment
+			else
+				investment = stockinvestment;
+		end;
+
+	if usefutures then begin
+			size = futuresinvestment/(avgtruerange(20)*bigpointvalue);
+			end
+		else begin
+			size = stockinvestment/close;
+		end;
+
+	fastMA = average(close,fastperiod);
+	slowMA = average(close,slowperiod);
+	osc = fastMA - slowMA;
+	osctrend = average(osc,oscperiod);
+
+	if simultaneous = false then begin
+// trend changes, exit positions
+			if osc crosses above osctrend then begin
+					trend = 1;
+					firstcross = true;
+					if marketposition <> 0 then buy to cover all shares next bar on open;
+					end
+				else if osc crosses below osctrend then begin
+					trend = -1;
+					firstcross = true;
+					if marketposition <> 0 then sell all shares next bar on open;
+				end;
+// new positions
+			if firstcross then begin
+				if trend > 0 and low > low[1] then begin
+					buy size shares next bar on open;
+					firstcross = false;
+					end
+				else if trend < 0 and high < high[1] then begin
+					sell short size shares next bar on open;
+					firstcross = false;
+				end;
+			end;
+			end
+// simultaneous trend change and high/low confirmation
+		else begin 
+			if osc crosses above osctrend then begin
+					buy to cover all shares next bar on open;
+					if low > low[1] then buy size shares next bar on open;
+					end
+				else if osc crosses below osctrend then begin
+					sell all shares next bar on open;
+					if high < high[1] then sell short size shares next bar on open;
+				end;
+		end;
+// profit taking?
+
+// equity	
+  	totalpl = netprofit + openpositionprofit;
+	todayPL = totalPL - totalPL[1];
+	if psignal > 0 then 
+			longPL = longPL + todayPL
+		else if psignal < 0 then
+			shortPL = shortPL + todayPL;
+	psignal = marketposition;
+// print PL
+	if printPL then begin
+ 		adate = ELdatetostring(date);
+		if currentbar = 1 then begin
+			print (file("c:\tradestation\1st_Cross_Original_PL.csv"), 
+							"Date,size,marketposition,openPL,longPL,shortPL,netPL");
+			print (file("c:\tradestation\1nd_Cross_Original_Detail.csv"), "Date,Open,High,Low,Close,FastMA,SlowMA,",
+						"Osc,OscMA,1stCross,size,marketposition,openPL,longPL,shortPL,netPL");
+			end;
+		print (file("c:\tradestation\1st_Cross_Original_PL.csv"),adate, ",", currentcontracts:5:0, ",", 
+				marketposition:4:0, ",", openpositionprofit:8:0, ",", longPL:8:0, ",", shortPL:8:0, ",", 
+				totalPL:8:0);
+		print (file("c:\tradestation\1nd_Cross_Original_Detail.csv"),adate, ",", open:8:4, ",", high:8:4, ",",
+				low:8:4, ",", close:8:4, ",", fastMA:8:4, ",", slowMA:8:4, ",", osc:8:4, ",", osctrend:8:4, ",", 
+				firstcross, ",", currentcontracts:5:0, ",", 
+				marketposition:4:0, ",", openpositionprofit:8:0, ",", longPL:8:0, ",", shortPL:8:0, ",", 
+				totalPL:8:0);
+		end;

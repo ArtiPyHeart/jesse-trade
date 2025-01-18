@@ -1,0 +1,25 @@
+// TSM Strength Oscillator
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+// Trend following strategy using the Strength Oscillator
+
+
+
+	inputs: length(80), signalperiod(3);
+  	vars:   num(0), denom(0), diff(0), HLrange(0), SO(0), signal(0), 
+				size(0), investment(10000);
+
+  	diff = close - close[1];
+ 	num = average(diff,length);
+ 	HLrange = high - low;
+  	denom = average(HLrange,length);
+
+  	SO = 0;
+ 	if denom <> 0 then SO = num / denom;
+	signal = average(SO,signalperiod);
+
+	size = investment/close;
+	if marketposition <= 0 and signal > 0 then
+			buy ("SObuy") size contracts next bar on open
+		else if marketposition >= 0 and signal < 0 then
+			sell short ("SOsell") size contracts next bar on open;
+

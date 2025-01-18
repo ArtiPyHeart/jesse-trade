@@ -1,0 +1,21 @@
+// TSM 2MA Difference
+// Momentum from the difference of 2 moving averages
+// Copyright 2019, P.J.Kaufman. All rights reserved.
+
+	inputs:	fastperiod(5), slowperiod(20), momperiod(5), stochperiod(10);
+	vars:		fastMA(0), slowMA(0), mom(0), momMA(0), stoch(0);
+
+	fastMA = average(close,fastperiod);
+	slowMA = average(close,slowperiod);
+	mom = fastMA - slowMA;
+	momMA = average(mom,momperiod);
+
+	plot1(mom,"Mom");
+	plot2(momMA,"MomMA");
+
+	if stochperiod > 0 then begin
+		stoch = TSM_Stochastic_SlowK(mom,mom,mom,stochperiod);
+// orient -100 to +100
+		stoch = 2*(stoch-50);
+		plot3(stoch,"Stoch");
+		end;

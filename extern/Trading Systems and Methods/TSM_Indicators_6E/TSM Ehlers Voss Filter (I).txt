@@ -1,0 +1,29 @@
+// Ehlers Voss (Predictive) Filter
+// From TAS&C August 2019
+// "A Peek Into The Future"
+
+	input: 	period(20), predict(3);
+	vars:		order(0), F1(0), G1(0), S1(0), bandwidth(0.25), count(0),
+				sumC(0), filt(0), voss(0);
+
+// Phase?
+	if currentbar = 1 then begin
+		order = 3*predict;
+		F1 = cosine(360/period);
+		G1 = cosine(bandwidth*360/period);
+		S1 = 1/G1 - squareroot(1/(G1*G1) - 1);
+		end;
+
+// Band limit the input data with a wide band BandPass Filter
+	filt = 0.5*(1 - S1)*(close - close[2]) + F1*(1 + S1)*filt[1] - S1*filt[2];
+	if currentbar <= 5 then filt = 0;
+
+// Compute Voss predictor
+	sumC = 0;
+	for count = 0 to order - 1 begin
+		sumC = sumC + ((count + 1)/order)*voss[order - count];
+		end;
+	voss = ((3 + order)/2)*filt - sumC;
+
+	plot1(filt,"filter");
+	plot2(voss,"Voss");

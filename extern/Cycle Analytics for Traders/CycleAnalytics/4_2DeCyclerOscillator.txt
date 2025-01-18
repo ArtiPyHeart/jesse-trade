@@ -1,0 +1,23 @@
+{
+Decycler Oscillator
+© 2013 John F. Ehlers
+}
+Inputs:
+	HPPeriod1(30),
+	HPPeriod2(60);
+
+Vars:
+	alpha1(0),
+	alpha2(0),
+	HP1(0),
+	HP2(0),
+
+Decycle(0);
+alpha1 = (Cosine(.707*360 / HPPeriod1) + Sine (.707*360 / HPPeriod1) - 1) / Cosine(.707*360 / HPPeriod1);
+alpha2 = (Cosine(.707*360 / HPPeriod2) + Sine (.707*360 / HPPeriod2) - 1) / Cosine(.707*360 / HPPeriod2);
+HP1 = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP1[1] - (1 - alpha1)*(1 - alpha1)*HP1[2];
+HP2 = (1 - alpha2 / 2)*(1 - alpha2 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha2)*HP2[1] - (1 - alpha2)*(1 - alpha2)*HP2[2];
+Decycle = HP2 - HP1;
+
+Plot1(Decycle);
+Plot2(0);

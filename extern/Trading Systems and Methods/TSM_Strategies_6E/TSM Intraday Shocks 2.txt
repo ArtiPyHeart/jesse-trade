@@ -1,0 +1,116 @@
+{ TSM Intraday Shocks 2
+	Copyright 2011,2018 P.J.Kaufman. All rights reserved. }
+	
+   inputs:  avgvltyperiod(20), shockfactor(2.0), sessionstart(920), sessionend(1430), 
+				excludebar1(true), printfile(false);
+   
+   vars:    first(true), nbar(0), ndays(0), avgvlty(0), vlty(0),
+   			entrybar(0), entryhigh(0), entrylow(0), zone(.20), delaybeforestop(2),
+				avgvltybar(0), sum(0), ix(0), adate(" "), maxbar(0), buytarget(0), selltarget(0);
+
+   array:   timebar[2500](0), vltybar[2500](0), avgdailyvlty[2500](0);
+
+	If Currentbar = 1 and printfile then 
+			print (file("c:\TradeStation\TSM Intraday shocks 2.csv"), 
+				"Date,days,bar,timebar,vlty,dailyavg,buyat,sellat,mktpos,comment");
+				
+	adate = ELdatetostring(date);
+
+{ if position still open then exit }
+{	if marketposition <> 0 and date <> date[1] then begin
+		print (file("c:\TradeStation\TSM Intraday shocks 2.csv"), adate, ",", ndays:5:0, ",", nbar:5:0,  ",", 
+					marketposition:4:0, ",new day trade still open"); 
+		if marketposition > 0 then sell ("XLOpen") all contracts this bar on close
+				else if marketposition < 0 then buy to cover ("XSOpen") all contracts this bar on close;	 	
+		end; }
+
+
+// Test for first day, set up array
+	If first = true and time = sessionstart then begin
+			nbar = 1;
+			ndays = 1;
+			timebar[1] = time;
+			vlty = truerange;
+			vltybar[1] = truerange;
+			if excludebar1 then
+					avgvltybar = 0
+				else
+					avgvltybar = vlty;
+			first = false;
+			if printfile then
+				print (file("c:\TradeStation\TSM Intraday shocks 2.csv"), adate, ",1,", ndays:5:0, ",", 
+							nbar:5:0, ",", timebar[nbar]:5:0, ",", vlty:5:4, ",", sum:5:4, ",First Entry");
+			End
+		Else if first = false and date = date[1] and nbar < 50 then begin
+			nbar = nbar + 1;
+			maxbar = maxlist(nbar,maxbar);
+			vlty = truerange;
+			avgvltybar = avgvltybar + vlty;
+			vltybar[nbar] = vlty;
+			timebar[nbar] = time;
+			maxbar = maxlist(nbar,maxbar);
+			if printfile then
+  				print (file("c:\TradeStation\TSM Intraday shocks 2.csv"), adate, ",", ndays:5:0, ",", nbar:5:0, ",",
+					timebar[nbar]:5:0, ",", vlty:5:4, ",", sum:5:4, ",", buytarget:5:4, ",", selltarget:5:4, ",", 
+					marketposition:4:0, ",Next bar"); 
+			End;
+			
+// new day, normal process			
+	 if first = false and date <> date[1] then begin
+			if excludebar1 then 
+					if nbar <= 1 then
+							 avgdailyvlty[ndays] = 0
+						else
+							avgdailyvlty[ndays] = avgvltybar/(nbar - 1)
+				else
+					avgdailyvlty[ndays] = avgvltybar/nbar;
+// calculate daily average bar
+			if ndays >= avgvltyperiod then begin
+				sum = 0;
+				for ix = ndays - avgvltyperiod +1 to ndays begin
+					sum = sum + avgdailyvlty[ix];
+					end;
+				sum = sum/avgvltyperiod;
+				end;
+// start new day
+			ndays = ndays + 1;
+			nbar = 1;
+			vlty = truerange;
+			avgvltybar = vlty;
+			if printfile then
+				print (file("c:\TradeStation\TSM Intraday shocks 2.csv"), adate, ",", ndays:5:0, ",", nbar:5:0, ",", 
+					timebar[nbar]:5:0, ",", vlty:5:4, ",", sum:5:4, ",", buytarget:5:4, ",", selltarget:5:4, ",", 
+						marketposition:4:0, ",New day");
+{			end
+// normal entry during day
+		else if first = false and Date = date[1] then begin
+			nbar = nbar + 1;
+			vlty = truerange;
+			avgvltybar = avgvltybar + vlty;
+			print (file("c:\TradeStation\TSM Intraday shocks 2.csv"), adate, ",", ndays:5:0, ",", nbar:5:0, ",", 
+				time:4:0, ",", timebar[nbar]:5:0, ",", vlty:5:4, ",", sum:5:4, ",Normal not open"); }
+		end; 
+
+// ======================================================================================
+// exit end of day
+	if time >= sessionend and printfile then 
+			print(file("c:\TradeStation\TSM Intraday shocks 2.csv"), "Session End");
+	if marketposition <> 0 and time = sessionend then begin
+		if marketposition > 0 then sell ("XLEOD") all contracts this bar on close
+			else if marketposition < 0 then buy to cover ("XSEOD") all contracts this bar on close;
+		end;
+
+// exit if volatility returns to normal
+	if marketposition <> 0 and vlty <= sum then begin
+		if marketposition > 0 then sell ("XLavg") all contracts this bar on close
+			else if marketposition < 0 then buy to cover ("XSavg") all contracts this bar on close;
+		end;
+
+// new signals
+	if marketposition = 0 and sum <> 0 and (excludebar1 = false or time < sessionend) then begin
+		selltarget = close + sum*shockfactor;
+		buytarget = close - sum*shockfactor;
+		buy ("BuyExt") 1 contract next bar at close - sum*shockfactor limit;
+		sell short ("SellExt") 1 contract next bar at close + sum*shockfactor limit; 
+		end;
+		

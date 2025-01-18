@@ -1,0 +1,56 @@
+// TSM Hindenburg Omen
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+// Data1 = market to evaluate
+// Data2 = MKST:date,total traded, advanced, declined, unch, 52W highs (vol), 52W lows (opint)
+
+// the threshold is the percentage of the total issues that advance or decline
+	inputs:	threshold(0.4), smooth(10), McC(100); 
+// McClellan Oscillator  
+  	inputs:	period1(19), period2(39);
+ 	vars:	NA(0), s1(0), s2(0), E1(0), E2(0), McClellan(0), highs52(0), lows52(0),
+			totaltraded(0), OKtoday(false), omen(0), adate(" "), 
+			padate(" "), newtest(0), smoothedtest(0);
+
+ 	highs52 = high of data2;
+	lows52 = low of data2;
+	totaltraded = open of data2;
+
+// McClellan Oscillator NA = Advances - Declines
+  	NA = highs52 - lows52;
+  
+  If Currentbar = 1 then begin
+  	s1 = 2/(period1 + 1);
+  	s2 = 2/(period2 + 1);
+  	E1 = NA;
+  	E2 = NA;
+  	end;
+  
+  E1 = E1[1] + s1*(NA - E1[1]);
+  E2 = E2[1] + s2*(NA - E2[2]);
+  McClellan = E1 - E2;
+
+// Hindenburg Omen
+	omen = 0;
+	newtest = 0;
+	OKtoday = false;
+	if totaltraded[1] <> 0 then begin
+		newtest = minlist(highs52,lows52)/totaltraded[1];
+		smoothedtest = xaverage(newtest,smooth);
+		if smoothedtest > threshold and close > close[50] and McClellan < McC and highs52 <= 2*lows52 then
+			OKtoday = true;
+		if OKtoday {and OKtoday[1] and OKtoday[2]} then Omen = 1;
+		end;
+
+	If Currentbar = 1 then print(file("c:\tradestation\Hindenburg Omen Dates.csv"), 
+								"Date,Price,TotalTraded,highs52,lows52,McClellan,C-C[50],",
+									"newtest,Omen");
+//	if Omen then begin
+		padate = adate;
+	  	adate = ELdatetostring(date);
+// prints twice because of data1 and data2
+		if adate <> padate then
+  			print(file("c:\tradestation\Hindenburg Omen Dates.csv"),adate, ",", close:6:4, ",", 
+				totaltraded:10:0, ",",highs52:10:0, ",", lows52:10:0, ",", McClellan:5:4, ",", 
+				close-close[5]:5:4, ",", newtest:5:4, ",", omen:3:0);
+//		end;

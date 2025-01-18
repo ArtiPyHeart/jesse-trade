@@ -1,0 +1,13 @@
+// TSM Force Index
+// Copyright 2018 P J Kaufman. All rights reserved. 
+// Created by Alex Elder
+
+   vars:	EMAfast(2), EMAslow(13), fastEMA(0), slowEMA(0), force(0);
+
+	Force = (close - close[1])*volume;
+	fastEMA = xaverage(force,EMAfast);
+	slowEMA = xaverage(force,EMAslow);
+
+	plot1(force,"Force");
+	plot2(fastEMA,"FastEMA");
+	plot3(slowEMA,"SlowEMA");

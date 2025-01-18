@@ -1,0 +1,57 @@
+[LegacyColorValue = true]; 
+
+{ TSM VIDYA : Variable Index Dynamic Average by Tuschar Chande
+  Copyright 1997-1999, 2018 PJ Kaufman. All rights reserved.
+
+  Period suggested at 9, histper suggested at > 9 }
+
+	inputs:	fastperiod(9), slowperiod(30), longonly(true), shortonly(false), variablesize(true), 
+				futures(true), printfile(false);;
+  	var:		VIDYA(0), k(0), sc(0), vlty(0), equity(0), PL(0), adate(" "), size(1), newsize(0),
+				stockinvestment(10000), futuresinvestment(25000), TotalLong(0), TotalShort(0);
+
+{ relative volatility }
+	if currentbar <= slowperiod then VIDYA = close
+		else begin
+			vlty = stddev(close, fastperiod) / stddev(close,slowperiod);
+{ smoothing constant }
+			sc = 2 / (fastperiod + 1);
+{ VIDYA is faster if relative volatility is higher }
+			VIDYA = vlty*sc*close + (1 - vlty*sc)*VIDYA[1];
+		end;
+
+	if futures then
+			newsize = futuresinvestment/(Avgtruerange(20)*bigpointvalue)
+		else
+			newsize = stockinvestment/close[1];
+
+// new positions short
+	if marketposition >= 0 and VIDYA < VIDYA[1] then begin
+			if longonly then sell ("XLong") all contracts next bar on open;
+			if longonly = false then begin
+				sell short ("EShort") newsize contracts next bar on open;
+				end;
+			end
+// new positions long
+		else if marketposition <= 0 and VIDYA > VIDYA[1] then begin
+			if shortonly then buy to cover ("XShort") all contracts next bar on open;
+			if shortonly = false then begin
+				buy ("Elong") newsize contracts next bar on open;
+				end;
+		end;
+
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if marketposition > 0 then
+			TotalLong = TotalLong + PL
+		else if marketposition < 0 then
+			TotalShort = TotalShort + PL;
+
+	if printfile then begin
+		adate = ELdatetostring(date);
+		If Currentbar = 1 then 
+			print(file("c:\tradestation\VIDYA_PL.csv"), 
+					"Date,TotalLong,TotalShort,TotalPL");
+  		print(file("c:\tradestation\VIDYA_PL.csv"),adate, ",", totallong:8:2, ",", totalshort:8:2, ",",  
+					equity:8:2);
+		end;

@@ -1,0 +1,10 @@
+[LegacyColorValue = true]; 
+
+{ 	PJK Print data (to TradeStation directory) }
+  	
+	vars:		adate(" ");
+
+	adate = ELdatetostring(date);
+  	If Currentbar = 1 then print(file("c:\TradeStation\IntradayData.csv"), "Date,Time,Open,High,Low,Close,Volume");
+  	print(file("c:\TradeStation\IntradayData.csv"),adate, ",", time:4:0, ",", open:7:5, ",", high:7:5, ",", low:7:5, ",", 
+					close:7:5, ",", volume*10:9:0);

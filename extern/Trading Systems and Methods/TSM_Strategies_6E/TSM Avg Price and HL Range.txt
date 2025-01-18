@@ -1,0 +1,42 @@
+// TSM Avg Price and HL Range (by year)
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+// Average values for Table in TSM6 Intraday Chapter 16
+
+	inputs:	FromYear(2013), ToYear(2017);
+	vars:	totalprice(0), highlowrange(0), ndays(0), tyear(0), pyear(0), opencloserange(0);
+	
+	if currentbar = 1 then begin
+    	print(file("c:\tradestation\TSM_AvgPrice_HLrange.csv"),"Year,AvgPrice,AvgHLrange,%Range,$Range,",
+				"AvgOCrange,$OCrange,%OCrange");
+		end;
+
+	tyear = year(date) + 1900;
+	pyear = year(date[1]) + 1900;
+
+// initialize
+	if tyear = fromyear and pyear < fromyear then begin
+		totalprice = 0;
+		highlowrange = 0;
+		opencloserange = 0;
+		ndays = 0;
+		end;
+
+// output values for this yaer
+	if tyear > fromyear and pyear <> tyear then begin
+		print(file("c:\tradestation\TSM_AvgPrice_HLrange.csv"),pyear:4:0, ",", totalprice/ndays:6:3,
+			",", highlowrange/ndays:6:4, ",", highlowrange/totalprice:6:4, ",", 
+			bigpointvalue*highlowrange/ndays:6:4, ",", opencloserange/ndays:6:4, ",", 
+			bigpointvalue*opencloserange/ndays:6:4, ",", opencloserange/highlowrange:6:2);
+// initialize new year
+		totalprice = 0;
+		highlowrange = 0;
+		opencloserange = 0;
+		ndays = 0;
+		end;
+
+	if tyear >= fromyear and tyear <= toyear then begin
+		totalprice = totalprice + close;
+		highlowrange = highlowrange + high - low;
+		opencloserange = opencloserange + absvalue(open - close);
+		ndays = ndays + 1;
+		end;

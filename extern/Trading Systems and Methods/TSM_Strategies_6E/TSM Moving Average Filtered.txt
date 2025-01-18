@@ -1,0 +1,77 @@
+[LegacyColorValue = true]; 
+
+{ TSM Moving Average Filtered : Moving average filtered system
+  Copyright 1994-1999,2011, 2018 P J Kaufman. All rights reserved. }
+// This program is for equities because it uses annualized volatility
+
+{  period = length of calculaton
+	volperiod = length of volatility calculation
+   highvolfilter	 <> 0 then don't enter if volatiltiy > hvf*stdev of returns
+   lowvolfilter     <> 0 don't enter if volatility < lvf*stdev of returns
+}
+   input: period(40), volperiod(20), highfilter(0), lowfilter(0), resetbelow(0), longonly(true);
+   vars:	signal(0), printPL(true), size(1), investment(10000), trend(0),
+  			returns(0), vol(0), adate(" "), waitforreset(false), totalPL(0),
+			PL(0), PLlong(0), PLshort(0), firsttrade(true);
+  			
+	size = investment/close;
+	returns = close/close[1] - 1;
+	vol = stddev(returns,volperiod)*squareroot(252.);
+	trend = average(close,period);
+
+// exit long position on high or low volatility
+	if marketposition > 0 and (vol > highfilter or vol < lowfilter) then begin
+			sell ("XLvol") all shares next bar on open;
+			waitforreset = true;
+			end
+// exit short position on high volatility
+		else if marketposition < 0 and (vol > highfilter or vol < lowfilter) then begin
+			buy to cover ("XSvol") all shares next bar on open;
+			waitforreset = true;
+		end;
+
+// new entry long
+  	if (marketposition <= 0 or firsttrade) and trend > trend[1] then begin
+  			if marketposition < 0 then buy to cover ("XStrend") all shares next bar on open;
+			if vol <= highfilter and vol >= lowfilter then begin
+  				buy ("Ltrend") size shares next bar on open;
+				firsttrade = false;
+				end;
+  			end
+// new entry short
+	  	else if (marketposition >= 0 or firsttrade) and trend < trend[1] then begin
+			if marketposition > 0 then sell ("XLtrend") all shares next bar on open;
+			if longonly = false and vol <= highfilter and vol >= lowfilter then begin
+				sell short ("Strend") size shares next bar on open;
+				firsttrade = false;
+				end;
+{			end
+// reset long or short position
+  		else if marketposition = 0 and waitforreset = true and (resetbelow = 0 or
+				(resetbelow <> 0 and vol <= resetbelow and vol >= lowfilter)) then begin
+			if trend > trend[1] then begin  
+					buy ("Lreset") size shares next bar on open;
+					waitforreset = false;
+					end
+				else if trend < trend[1] and longonly = false then begin
+					sell short ("Sreset") size shares next bar on open;
+					waitforreset = false;
+  				end; }
+		end;
+  			
+ 	totalPL = netprofit + openpositionprofit;
+	PL = totalPL - totalPL[1];
+	if marketposition > 0 then
+			PLlong = PLlong + PL
+		else if marketposition < 0 then
+			PLshort = PLshort + PL;
+
+{	If Currentbar = 1 then 
+			print(file("c:\tradestation\TSM_volatility_filtered_equities_PL.csv"), 
+				"Date,Size,Vol,PLtoday,PLlong,PLshort,TotalPL");
+	adate = ELdatetostring(date);
+	if date <> date[1] then begin
+		print(file("c:\tradestation\TSM_volatility_filtered_equities_PL.csv"), adate, ",", 
+				size:8:3, ",", vol:3:3, ",", PL:8:2, ",", PLlong:8:2, ",", PLshort:8:2, ",", TotalPL:8:2);
+		end;
+}

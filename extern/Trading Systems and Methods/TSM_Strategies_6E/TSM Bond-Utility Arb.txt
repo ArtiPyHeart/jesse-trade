@@ -1,0 +1,18 @@
+// TSM Bond-Utility Arb
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+// Based on Ruggiero, "The future of trading system design," Futures Oct 2014
+// Data1 = bond futures, Data2 = XLU Utilities ETF
+
+	inputs:	bondperiod(6), utilitiesperiod(20);
+	vars:		investment(25000), ATRperiod(20), size(0);
+
+	if marketposition <> 1 and close < average(close,bondperiod) and 
+			close of data2 > average(close of data2,utilitiesperiod) then begin
+			size = investment/(avgtruerange(ATRperiod)*bigpointvalue);
+			buy size contracts next bar on open;
+			end
+		else if marketposition <> -1 and close > average(close,bondperiod) and
+			close of data2 < average(close of data2,utilitiesperiod) then begin
+			size = investment/(avgtruerange(ATRperiod)*bigpointvalue);
+			sell short size contracts next bar on open;
+		end;

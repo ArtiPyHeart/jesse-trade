@@ -1,0 +1,56 @@
+{ This strategy is the result of a genetic algorithm solution,
+	not a program that implements a genetic algorithm
+ EasyLanguage Strategy Code for TradeStation
+ Population member: 46
+ Created by: Adaptrade Builder version 1.1.0.0
+ Created:    10/19/2010 2:19:52 PM }
+
+Inputs: NL1(74), NL2(20), NL3(85),NBarEnL1(59), NATREnL(84), EntFrL(3.8189),
+        NATRTargL(57), TargFrL(1.6168), NBarExL(100), NBarEnS1(40),
+        NBarEnS2(49), NBarEnS3(7), EntFrS(0.6971), NBarExS(6), NATRTrailS(33),
+        ATRFrTrailS(1.4126), TrailPctS(50.0000);
+
+// Variables for average true range for entry and exit orders
+Var:    ATREnL (0), ATRTargL (0), ATRTrailS (0);
+// Variables for money management and/or trailing stop exit orders
+Var:    SStop (0), NewSStop (0), STrailOn (false);
+// Variables for entry conditions
+Var:    EntCondL (false), EntCondS (false);
+ 
+
+// Average true range }
+	ATREnL = AvgTrueRange(NATREnL);
+	ATRTargL = AvgTrueRange(NATRTargL);
+	ATRTrailS = AvgTrueRange(NATRTrailS);
+
+// Entry conditions: volume is relatively low
+	EntCondL = (Highest(Volume,NL1) >= Lowest(Volume,NL2)) or (Volume < Average(Volume,NL3));
+	EntCondS = true;
+
+// long entry is a breakout of exponential MA and an ATR band
+	If MarketPosition = 0 and EntCondL then begin
+   		Buy next bar at XAverage(Low, NBarEnL1) + EntFrL * ATREnL stop;
+			end
+// short entry at 40-day high minus 0.70*max range of 2 different periods
+		else if MarketPosition = 0 and EntCondS then begin
+   		Sell short next bar at Highest(High,NBarEnS1) - 
+					EntFrS*AbsValue(Lowest(Low,NBarEnS2) - Lowest(High,NBarEnS3)) stop;
+  			STrailOn = false;
+   		SStop = Power(10,10);
+		end;
+
+// Exit orders, long trades using target = entry + factor*ATR
+	If MarketPosition > 0 then begin
+			If BarsSinceEntry >= NBarExL then Sell next bar at market;
+			Sell next bar at EntryPrice + TargFrL * ATRTargL limit;
+			end
+// Exit orders, short trades
+		else if MarketPosition < 0 then begin
+		   If EntryPrice - Close > ATRFrTrailS * ATRTrailS then STrailOn = true;
+		   If STrailOn then begin
+      		NewSStop = EntryPrice - TrailPctS * (EntryPrice - Close)/100.;
+      		SStop = MinList(SStop, NewSStop);
+			   end;
+			If BarsSinceEntry >= NBarExS then Buy to cover next bar at market;
+		   If STrailOn then Buy to cover next bar at SStop stop;
+		end;

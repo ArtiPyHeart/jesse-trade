@@ -1,0 +1,23 @@
+// TSM Sell RSI Index
+// Copyright 2019, P.J.Kaufman. All rights reserved.
+
+// This is from an article "Sell Relative Strength Index" by Howard Wang
+// published by Technical Analysis of Stocks & Commodities, February 2019
+
+	inputs:	period(80);
+	vars:		srsi(0), closetoopen(0), hightolow(0), ratio(0);
+
+//	for k = 0 to period - 1 begin
+	closetoopen = close - open;
+	hightolow = absvalue(high - low);
+	if hightolow = 0 then
+			ratio = 0
+		else
+			ratio = closetoopen/hightolow;
+	srsi = average(ratio,period);
+
+//	if marketposition <= 0 and srsi > 0 then buy next bar on open
+//		else if marketposition >= 0 and srsi < 0 then sell short next bar on open;
+
+	if marketposition >= 0 and srsi > 0 then sell short next bar on open
+		else if marketposition <= 0 and srsi < 0 then buy next bar on open;

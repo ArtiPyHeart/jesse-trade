@@ -1,0 +1,13 @@
+{ TSM Spread Difference
+	data1 - data2
+	Copyright 2019, P.J.Kaufman. All rights reserved. }
+
+	input: trendperiod(60);
+	vars:	diff(0), trend(0);
+
+	diff = close of data1 - close of data2;
+	trend = average(diff,trendperiod);
+
+	plot1(diff,"Difference");
+	plot2(trend,"Trend");
+

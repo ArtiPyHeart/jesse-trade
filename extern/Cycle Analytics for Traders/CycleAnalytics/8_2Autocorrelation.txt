@@ -1,0 +1,132 @@
+{
+Autocorrelation Indicator
+© 2013 John F. Ehlers
+}
+Inputs:
+	AvgLength(0);
+
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	M(0),
+	N(0),
+	X(0),
+	Y(0),
+	Lag(0),
+	count(0),
+	Sx(0),
+	Sy(0),
+	Sxx(0),
+	Syy(0),
+	Sxy(0),
+	Color1(0),
+	Color2(0),
+	Color3(0);
+
+Arrays:
+	Corr[48](0),
+	AuroraRaw[48](0),
+	Aurora[48](0);
+
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+//Pearson correlation for each value of lag
+For Lag = 0 to 48 Begin
+	//Set the averaging length as M
+	M = AvgLength;
+	If AvgLength = 0 Then M = Lag;
+	//Initialize correlation sums
+	Sx = 0;
+	Sy = 0;
+	Sxx = 0;
+	Syy = 0;
+	Sxy = 0;
+	//Advance samples of both data streams and sum Pearson components
+	For count = 0 to M - 1 Begin
+		X = Filt[count];
+		Y = Filt[Lag + count];
+		Sx = Sx + X;
+		Sy = Sy + Y;
+		Sxx = Sxx + X*X;
+		Sxy = Sxy + X*Y;
+		Syy = Syy + Y*Y;
+	End;
+	//Compute correlation for each value of lag
+	If (M*Sxx - Sx*Sx)*(M*Syy - Sy*Sy) > 0 Then Corr[Lag] = (M*Sxy - Sx*Sy)/SquareRoot((M*Sxx - Sx*Sx)*(M*Syy - Sy*Sy));
+	//Scale each correlation to range between 0 and 1
+	Corr[Lag] = .5*(Corr[Lag] + 1);
+End;
+
+//Plot as a Heatmap
+For Lag = 3 to 48 Begin
+	If Corr[Lag] > .5 Then Begin //Varies color from green at Corr[Lag] = 1 to yellow
+		Color1 = 255*(2 - 2*Corr[Lag]);
+		Color2 = 255;
+		End
+		Else Begin //Varies color from yellow to red at Corr[Lag] = 0
+		Color1 = 255;
+		Color2 = 2*255*Corr[Lag];
+	End;
+	Color3 = 0;
+	If Lag = 3 Then Plot3(3, "S3", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 4 Then Plot4(4, "S4", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 5 Then Plot5(5, "S5", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 6 Then Plot6(6, "S6", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 7 Then Plot7(7, "S7", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 8 Then Plot8(8, "S8", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 9 Then Plot9(9, "S9", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 10 Then Plot10(10, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 11 Then Plot11(11, "S11", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 12 Then Plot12(12, "S12", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 13 Then Plot13(13, "S13", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 14 Then Plot14(14, "S14", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 15 Then Plot15(15, "S15", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 16 Then Plot16(16, "S16", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 17 Then Plot17(17, "S17", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 18 Then Plot18(18, "S18", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 19 Then Plot19(19, "S19", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 20 Then Plot20(20, "S20", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 21 Then Plot21(21, "S21", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 22 Then Plot22(22, "S22", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 23 Then Plot23(23, "S23", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 24 Then Plot24(24, "S24", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 25 Then Plot25(25, "S25", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 26 Then Plot26(26, "S26", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 27 Then Plot27(27, "S27", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 28 Then Plot28(28, "S28", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 29 Then Plot29(29, "S29", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 30 Then Plot30(30, "S30", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 31 Then Plot31(31, "S31", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 32 Then Plot32(32, "S32", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 33 Then Plot33(33, "S33", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 34 Then Plot34(34, "S34", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 35 Then Plot35(35, "S35", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 36 Then Plot36(36, "S36", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 37 Then Plot37(37, "S37", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 38 Then Plot38(38, "S38", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 39 Then Plot39(39, "S39", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 40 Then Plot40(40, "S40", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 41 Then Plot41(41, "S41", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 42 Then Plot42(42, "S42", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 43 Then Plot43(43, "S43", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 44 Then Plot44(44, "S44", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 45 Then Plot45(45, "S45", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 46 Then Plot46(46, "S46", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 47 Then Plot47(47, "S47", RGB(Color1, Color2, Color3),0,4);
+	If Lag = 48 Then Plot48(48, "S48", RGB(Color1, Color2, Color3),0,4);
+End;
+

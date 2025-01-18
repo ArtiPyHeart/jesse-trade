@@ -1,0 +1,34 @@
+[LegacyColorValue = true]; 
+
+{ TSM ROC Method
+  Copyright 2017 P J Kaufman. All rights reserved. }
+
+{ period = length of calculaton
+  crossoption =0 using trendline, =1 use price crossing trendline
+}
+  input: slowperiod(250), fastperiod(5), longonly(false), usefutures(true);
+  vars:	ROCslow(0), ROCfast(0), size(0), adate(" "), stockinvestment(10000), futuresinvestment(25000);
+
+	ROCslow = (close - close[slowperiod]){/slowperiod};
+	ROCfast = (close - close[fastperiod]){/fastperiod};
+
+	if usefutures then begin
+			size = futuresinvestment/(avgtruerange(20)*bigpointvalue);
+			end
+		else begin
+			size = stockinvestment/close;
+		end;
+	
+{ entries }	
+	If Marketposition < 1 and ROCfast < ROCslow and ROCfast[1] < ROCslow[1] then begin
+			Buy size contracts next bar on open;
+			end
+		else if Marketposition > -1 and ROCfast > ROCslow and ROCfast[1] > ROCslow[1]then begin
+			Sell all contracts next bar on open;
+			if longonly = false then
+				Sell short size contracts next bar on open;
+		end;
+
+	adate = ELdatetostring(date);
+	print(file("c:\TradeStation\ROC_PL.csv"), adate, ",", openpositionprofit+netprofit:10:0); 
+	

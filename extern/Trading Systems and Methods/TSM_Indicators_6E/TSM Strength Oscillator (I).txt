@@ -1,0 +1,14 @@
+[LegacyColorValue = true]; 
+
+{ TSM Strength Oscillator: Strength Oscillator
+  Copyright 1999-2018, P.J.Kaufman. All rights reserved.
+}
+  	inputs:  length(20), signalper(3);
+	vars:		signal(0), SO(0);
+ 
+  	SO = TSMStrengthOsc(high,low,close,length);
+	signal = average(SO,signalper);
+	
+	plot1(SO,"TSMStength");
+	plot2(signal,"Signal");
+	

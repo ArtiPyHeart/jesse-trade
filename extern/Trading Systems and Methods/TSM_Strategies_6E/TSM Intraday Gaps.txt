@@ -1,0 +1,159 @@
+{ PJK Intraday Gaps
+	Copyright 2011-16, P.J.Kaufman. All rights reserved }
+// uses intraday or daily data
+	
+{	gapabove		<>0 only gaps above threshold ATR value
+	gapbelow		<>0 only gaps below threshold ATR value
+	entrytype	0= trade as a runaway gap
+					1= trade retracement to high-low as a reversal
+					2= trade retracement to close as a reversal 
+					3= trade as mean reversion
+	exittype		0= exit on close of same day
+					1= exit on open of next day
+ 					2= exit on reversal high or low }
+	
+	inputs:	gapabove(1.0), gapbelow(0.0), entrytype(0), exittype(0), ATRperiod(20), useintraday(false),
+				entryrevfactor(.75), profitfactor(1.0), usevariablesize(true), printoption(true);	
+	vars: 	todayopen(0), todayhigh(0), todaylow(0), gaptoday(0), todayupgap(0), psignal(o),
+				todaydowngap(0), phigh(0), plow(0), pclose(0), ATR(0), newtrade(0), entrysize(1),
+				equity(0), size(0), investment(10000), tradetoday(false);
+	vars:		adate(" "), todayPL(0), totalPL(0), longPL(0), shortPL(0);
+	
+
+	if marketposition <> 0 then tradetoday = true;
+
+{ Identify new day and gap }
+	if useintraday then begin
+		if date <> date[1] then begin
+				phigh = todayhigh;
+				plow = todaylow;
+				pclose = close[1];
+				todayopen = open;
+				todayhigh = high;
+				todaylow = low;
+				gaptoday = open - pclose;
+				todayupgap = open - phigh;
+				todaydowngap = plow - open;
+				ATR = avgtruerange(50);
+				tradetoday = false;
+				if marketposition > 0 then 
+						sell all shares this bar on close
+					else if marketposition < 0 then 
+						buy to cover all shares this bar on close;
+				end
+{ not a new day }			
+			else begin
+				todayhigh = maxlist(todayhigh,high);
+				todaylow = minlist(todaylow,low);
+			end;
+		end;
+
+	newtrade = 0;
+	if useintraday = false then begin
+		ATR = avgtruerange(ATRperiod);
+		end;
+
+	if usevariablesize then size = investment/close[1]
+		else size = 100;
+		
+// intraday exits		
+	if useintraday then begin
+		if marketposition > 0 then begin
+			if time = sess1endtime or date <> date[1] then 
+					sell ("XL0") this bar on close
+				else if exittype = 1 and date <> date[1] then 
+					sell ("XL1") this bar on close
+//				else if exittype = 2 and low < todaylow[1] then
+//					sell ("XL2") this bar on close
+				else if profitfactor <> 0 then 
+					sell ("XLPT") all shares next bar at entryprice + profitfactor*ATR limit;
+			end;
+		
+		if marketposition < 0 then begin		
+			if time = sess1endtime then 
+					buy to cover ("XS0") this bar on close
+				else if exittype = 1 and date <> date[1] then 
+					buy to cover ("XS1") this bar on close
+				else if exittype = 2 and high > todayhigh[1] then
+					buy to cover ("XS2") this bar on close
+				else if profitfactor <> 0 then
+					buy to cover ("XSPT") all shares next bar at entryprice - profitfactor*ATR limit;
+			end;
+// intraday entries
+// if gap open up
+		if tradetoday = false and gapabove <> 0 and gaptoday > ATR*gapabove then begin
+{ runaway gap up }
+			if entrytype = 0 then begin
+					buy ("B0") this bar on close;
+					newtrade = 1;
+					end
+{ pullback to prior high }				
+				else if entrytype = 1 then begin
+					sell short ("S1") next bar at todayopen + entryrevfactor*(phigh - todayopen) limit;
+					newtrade = -1;
+					end
+{ pullback to prior close }				
+				else if entrytype = 2 then begin
+					sell short ("S2") next bar at pclose stop;
+					newtrade = -1;
+					end
+				else if entrytype = 3 then begin
+					sell short ("S3") this bar on close;
+					newtrade = -1;
+				end;
+			end;
+// opening gap lower
+		if tradetoday = false and gapbelow <> 0 and gaptoday < -ATR*gapbelow then begin
+{ runaway gap down }
+			if entrytype = 0 then begin
+					sell short ("S0") this bar on close;
+					newtrade = -1;
+					end
+{ pullback to prior low }				
+				else if entrytype = 1 then begin
+					buy ("B1") next bar at todayopen - entryrevfactor*(todayopen - plow) limit;
+					newtrade = 1;
+					end
+{ pullback to prior close }				
+				else if entrytype = 2 then begin
+					buy ("B2") next bar at pclose stop;
+					newtrade = 1;
+					end
+				else if entrytype = 3 then begin
+					buy ("B3") this bar on close;
+					newtrade = 1;
+				end;
+			end;
+		end; { use intraday }
+
+// daily data
+// exit options }
+	if useintraday = false and marketposition <> 0 then begin
+		if marketposition > 0 then begin
+				sell ("DXL") this bar on close;
+				sell short ("DES") size shares next bar at close + gapabove*ATR limit;
+				end
+			else if marketposition < 0 then begin
+ 				buy to cover ("DXS") this bar on close;
+				buy ("DEL") size shares next bar at close - gapabove*ATR limit;
+			end;
+		end;
+			
+
+	if useintraday = false and printoption then begin
+		adate = ELdatetostring(date);
+		if currentbar = 1 then print(file("c:\TradeStation\Daily_Gaps_PL.csv"),
+				"Date,todayPL,longPL,shortPL,totalPL");
+
+	 	equity = netprofit + openpositionprofit;
+		todayPL = equity - equity[1];
+		if marketposition > 0 then
+				longPL = longPL + todayPL
+			else if marketposition < 0 then
+				shortPL = shortPL + todayPL;
+		totalPL = totalPL + todayPL;
+		print(file("c:\TradeStation\Daily_Gaps_PL.csv"),adate, ",", todayPL:8:3, ",", longPL:8:2, ",", 
+				shortPL:8:2, ",", totalPL:8:2);
+		end;
+
+	psignal = marketposition;

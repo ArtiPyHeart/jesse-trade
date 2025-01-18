@@ -1,0 +1,94 @@
+[LegacyColorValue = true]; 
+
+{ TSM Intraday Time Patterns 
+   Copyright 2018 P.J. Kaufman.  All rights reserved.
+
+   Produce a table of time patterns throughout the day.  
+	Input data: date, time, open, high, low, close }
+
+// to test specific years and ranges, set the data dates in the format statement of tradestation
+
+   vars:    n(0), interval(0), todaydirection(0), firstday(true), nt(0), nd(0), nbars(0),
+				adate(" "), bdate(" "), firstdate(0), k(0), pass(0), totalup(0), totaldown(0);
+   array:   endtime[100](0), sameasfirst[100](0), priceup[100](0), netpoints[100](0);
+
+	bdate = ELdatetostring(date);
+//	print (file("c:\TradeStation\Time_Pattern.csv"),"Next data,", bdate, ",", time:4:0);
+// Test for a new day and first day
+// "Pass" is used to start on day 2
+	if firstday {and nt = 0} and date <> date[1] and pass = 0 then begin
+			pass = 1;
+			nt = 0;
+//			print (file("c:\TradeStation\Time_Pattern.csv"),"Set pass = 1");
+			end
+   	else if firstday and nt = 0 {and date <> date[1]} and pass = 1 then begin
+			nt = 1;
+			endtime[nt] = time;
+			firstdate = date;
+//			print (file("c:\TradeStation\Time_Pattern.csv"), " second day, first bar," , date:8:0, ",", 
+//						time:6:0, ", day=,", nd:6:0); 
+			end
+// process next bar
+		else if firstday and time > time[1] and pass = 1 then begin
+			nt = nt + 1; 
+//			print (file("c:\TradeStation\Time_Pattern.csv"), " second day, bar =," , nt:3:0, ", ", time:6:0);
+			endtime[nt] = time;
+			end
+		else if firstday and nt > 1 and time < time[1] and pass = 1 then begin
+			interval = barinterval;
+			nbars = nt;
+			pass = 2;
+//			print (file("c:\TradeStation\Time_Pattern.csv"), " seoond day, last bar," , nbars:8:0, ", int=,", 
+//						interval:6:0, ",time=,", time:6:0);
+			firstday = false;
+		end;
+
+// normal processing, new day
+//	print (file("c:\TradeStation\Time_Pattern.csv"), " fall thru, anyday,", ",", interval:4:2, ",", nbars:8:0);
+
+	if pass = 2 and time < time[1] then begin
+			nd = nd + 1;
+			todaydirection = 0;
+			if close > close[1] then todaydirection = 1
+				else if close < close[1] then todaydirection = -1;
+			nt = 1;
+			netpoints[nt] = netpoints[nt] + close - close[1];
+			if close > close[1] then priceup[1] = priceup[1] + 1;
+//			print (file("c:\TradeStation\Time_Pattern.csv"), " new day=," , nd:5:0, date:8:0, ",", time:6:0,
+//					", direction=,", todaydirection:3:0);
+			end
+		else if pass = 2 and time > time[1] then begin
+			nt = nt + 1;
+			if close > close[1] then priceup[nt] = priceup[nt] + 1;
+			if todaydirection > 0 and close > close[1] then
+					sameasfirst[nt] = sameasfirst[nt] + 1
+				else if todaydirection < 0 and close < close[1] then
+					sameasfirst[nt] = sameasfirst[nt] + 1;
+			netpoints[nt] = netpoints[nt] + close - close[1];
+//			print (file("c:\TradeStation\Time_Pattern.csv"), " add data," , nd:6:0, ",", nt:8:0, ",", time:6:0);
+		end;
+		
+   if lastbaronchart and nd > 0 and nt > 0 then begin
+		adate = ELdatetostring(firstdate);
+		bdate = ELdatetostring(date);
+		print (file("c:\TradeStation\Time_Pattern.csv"), "From,", adate, ",To,", bdate, ", Total Days,",
+					nd:6:0);
+		print (file("c:\TradeStation\Time_Pattern.csv"), "End Time,%Same As Open,%Price Higher,Net Points");
+		totalup = 0;
+		totaldown = 0;
+		if netpoints[1] > 0 then totalup = netpoints[1]/nd
+			else if netpoints[1] < 0 then totaldown = netpoints[1]/nd;
+		print (file("c:\TradeStation\Time_Pattern.csv"), endtime[1]:6:0, ",N/A,",100*priceup[1]/nd:4:2, ",", 
+					netpoints[1]/nd:6:4); 
+		for k = 2 to nbars begin
+			print (file("c:\TradeStation\Time_Pattern.csv"), endtime[k]:6:0, ",", 
+						100*sameasfirst[k]/nd:4:2, ",", 100*priceup[k]/nd:4:2, ",", netpoints[k]/nd:4:4);
+			if netpoints[k] > 0 then
+					totalup = totalup + netpoints[k]/nd
+				else
+					totaldown = totaldown + netpoints[k]/nd;
+			end;
+		print (file("c:\TradeStation\Time_Pattern.csv"), "Total Up,,,", Totalup:6:4); 
+		print (file("c:\TradeStation\Time_Pattern.csv"), "Total Down,,,", Totaldown:6:4); 
+
+		end; 

@@ -1,0 +1,25 @@
+// Annualized volatility
+// Copyright 2016, P.J.Kaufman. All rights reserved.
+
+	input:	period(20);
+	vars:		returns(0), vol(0), barcount(252), minutes(0), minutesinday(390), barsize(0);
+
+	returns = close/close[1] -1;
+	if bartype = 2 then
+			barcount = 252
+		else if bartype = 3 then
+			barcount = 52
+		else if bartype = 4 then
+			barcount = 12
+		else if bartype = 1 then begin
+			barsize = timetominutes(time) - timetominutes(time[1]);
+			if barsize < 0 or date <> date[1] then 
+					barsize = timetominutes(time[2]) - timetominutes(time[3]);
+			if barsize > 0 then begin
+				barcount = 252*minutesinday/barsize;
+				end;
+		end;
+	vol = standarddev(returns,period,2)*squareroot(barcount);
+	plot1(vol,"AStDev");
+
+	

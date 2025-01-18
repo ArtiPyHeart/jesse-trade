@@ -1,0 +1,49 @@
+// TSM Theory of Runs
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+// This program prints the up and down runs 
+
+	vars:		currentrun(0), direction(0), sdate(" "), edate(" "), ix(0);
+	arrays:	upruns[50](0), downruns[50](0);
+
+	if currentbar = 1 then sdate = ELdatetostring(date);
+
+// initialize
+	if currentrun = 0 and direction = 0 then begin
+			if close > close[1] then begin
+					currentrun = 1;
+					direction = 1;
+					end
+				else if close < close[1] then begin
+					currentrun = 1;
+					direction = -1;
+				end;
+			end;
+// not the first entry
+		if direction > 0 and close > close[1] then begin
+				currentrun = currentrun + 1;
+				end
+// run changes from up to down
+			else if direction > 0 and close < close[1] then begin
+				upruns[currentrun] = upruns[currentrun] + 1;
+				currentrun = 1;
+				direction = -1;
+				end
+// direction is down
+			else if direction < 0 and close < close[1] then begin
+				currentrun = currentrun + 1;
+				end
+// run changes from down to up
+			else if direction < 0 and close > close[1] then begin
+				downruns[currentrun] = downruns[currentrun] + 1;
+				direction = 1;
+			end;
+
+// print results
+		if lastbaronchart then begin
+			edate = ELdatetostring(date);
+			print(file("c:\tradestation\TheoryOfRuns.csv"),"From,To,Days,Run,#UpRuns,#DownRuns");
+			for ix = 1 to 25 begin
+				print(file("c:\tradestation\TheoryOfRuns.csv"),sdate, "," , edate, ",", 
+					currentbar:6:0, ",", ix:6:0, ",", upruns[ix]:6:0, ",", downruns[ix]:6:0, ",", );
+				end;
+			end;

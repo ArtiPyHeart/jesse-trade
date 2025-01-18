@@ -1,0 +1,18 @@
+[LegacyColorValue = true]; 
+
+{ TSM Adaptive R2 : Adaptive Correlation Coefficient
+	Copyright 2018, P.J.Kaufman. All rights reserved.
+  Plot smoothing function based correlation coefficient with integer series }
+
+	input:	period(9);
+
+	vars:	AR2(0), R2(0), diff(0);
+
+	if currentbar > 1 then begin
+		R2 = power(correlation(currentbar,close, period),2);
+		AR2 = AR2[1] + R2*(close - AR2[1]);
+		end
+	else
+		AR2 = close;
+
+	plot1(AR2,"TSM_Adaptive_R2");

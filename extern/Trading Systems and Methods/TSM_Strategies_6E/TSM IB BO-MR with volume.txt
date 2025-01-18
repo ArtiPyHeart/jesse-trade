@@ -1,0 +1,463 @@
+[LegacyColorValue = true]; 
+
+{ PJK IB BO-MR with volume
+  Copyright 2019 P.J.Kaufman. All rights reserved.  }
+// This version for futures only for Toly
+  
+// Entry rules:	1 bars from open of today
+//						2 BO of yesterday's high or low 
+//						3 vlty from today's open using n x ATR
+//						4 vlty from yesterday's close using n x ATR
+//					 mom then replaces 1-4 "highmomentum" <> 0
+
+	inputs: 	starttime(745), endtime(1515), volperiod(3), rule(1), tradebreakout(true), 
+				breakoutbars(4), BOupfactor(0.20), BOdownfactor(0.20), momperiod(10), highmomentum(60),  
+				tradeMR(false), MRupfactor(0.20), MRdownfactor(0.20), usevolume(true),
+				exitBOpriorclose(false), lasttradebeforeclose(60),  holdovernight(false), 
+				precedebyinsideday(false), compressiondays(0),insidecompressiondays(0),
+ 				dailyATRper(20), usetrend(60), PTperiod(0), PTfactor(2.0), costperside(8),
+				longonly(false), usefutures(true), printoption(false);
+
+	vars:		topen(0), vlty(0), breakoutlevel(0), thigh(0), tlow(0), phigh(0), plow(0),
+				pphigh(0), pplow(0), insideday(false), equity(0), PL(0), adate(" "), ix(0), 
+				ndays(0), trenddir(0), compression(false), PLtodate(0), tradecost(0), totalcost(0),
+				newsize(1), psignal(0), PLtoday(0), PLlong(0), PLshort(0), 
+				pcurrcontracts(0), factor(1), ATR(0), waitfornewsignal(false),
+				firstbar(false), avgfirstbar(o), breakoutup(0), breakoutdown(0),
+				MRbuy(0), MRsell(0), lasttradetime(0), investment(0), stockinvestment(10000),
+				futuresinvestment(25000), meanreversiontrade(false), breakouttrade(false),
+				insidecompression(false), voldiff(0), entryrule(0), mom(0);
+	arrays:	drange[5000](0), dhigh[5000](0), dlow[5000](0), dclose[5000](0), 
+				dailyATR[5000](0), trend[5000](0);
+
+// volume
+   vars:    nbar(0), maxbars(0), nd(0), minper(20), tvol(0),
+				cumtoday(0), cumavg(0), index(0), iy(0), k(0), 
+				barstoday(0), barsperday(0), actualstart(0), newday(false), firstday(true),
+				shortday(false);
+// about 60 bars per day (15m from midnight to 3:15 Central, allow 100 days
+   array:   vol[9600](0), bartime[9600](0), avgvol[96](0);
+
+	if currentbar = 1 then begin
+		lasttradetime = calctime(endtime,-lasttradebeforeclose);
+		if usefutures then investment = futuresinvestment else investment = stockinvestment;
+// for volume
+		barsperday = (timetominutes(endtime) - timetominutes(starttime))/barinterval + 1;
+		index = barsperday*volperiod;
+		actualstart = starttime;
+		if momperiod <> 0 and highmomentum <> 0 then
+				entryrule = 0
+			else
+				entryrule = rule;
+		end;
+
+// ======================= volume calculations by bar ================================
+	tvol = volume;
+
+// Test for first new day
+   if date <> date[1] and time >= starttime and time <= endtime 
+				and firstday and nbar = 0 then begin
+			actualstart = time;
+// count days
+			nd = 1;
+// count bars from 1 to period x maxbars each day
+			nbar = 1;
+// bar count today
+			barstoday = 1;
+			vol[nbar] = tvol;
+			cumtoday = tvol;
+			bartime[nbar] = time;
+			maxbars = 1; 
+			end
+// First day, not first bar
+		else if date = date[1] and time >= starttime and time <= endtime and firstday then begin
+			nbar = nbar + 1;
+			barstoday = barstoday + 1;
+			vol[nbar] = tvol;
+			bartime[nbar] = time;
+			maxbars = nbar;
+			if time = endtime then nd = nd + 1; { some reason count is off }
+			end;
+
+// New day starts and doesn't match first time
+		if date <> date[1] or newday then begin
+			firstday = false;
+			shortday = false;
+			newday = true;
+ 			if barstoday < barsperday then begin
+				shortday = true;
+				end;
+
+			if time >= actualstart and time <= endtime then begin
+				newday = false;
+// filled entire array
+				if nbar >= index and shortday = false then begin
+// calculate averages for each bar
+					for iy = 1 to barsperday begin
+						avgvol[iy] = 0;
+						for ix = 1 to volperiod begin
+							k = (ix-1)*barsperday + iy;
+							avgvol[iy] = avgvol[iy] + vol[k];
+							end;
+						end;	
+					for iy = 1 to barsperday begin
+						avgvol[iy] = avgvol[iy]/volperiod;
+						end;
+// shift everything down maxbars
+// do not shift if today's bars not enough, then just reset and overwrite
+					if shortday = false then begin
+//   	 				print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Short day - overwrite"); 
+						k = 0;
+						for ix = barsperday + 1 to index begin
+							k = k + 1;
+							vol[k] = vol[ix];
+							bartime[k] = bartime[ix];
+							end;
+						end;
+// next bar to fill n = index - maxbars + 1, begin new day
+					nbar = index - barstoday;
+					end;
+// save first bar of new day
+				nd = nd + 1;
+				nbar = nbar + 1;
+				barstoday = 1;
+				vol[nbar] = tvol;
+				bartime[nbar] = time;
+				cumtoday = tvol;
+				cumavg = avgvol[1];
+			end;
+		end;
+
+// normal sequential data
+	if date = date[1] and time > actualstart and time <= endtime and 
+				firstday = false then begin
+		nbar = nbar + 1;
+		barstoday = barstoday + 1;
+		vol[nbar] = tvol;
+		cumtoday = cumtoday + tvol;
+		cumavg = cumavg + avgvol[barstoday];
+		bartime[nbar] = time;
+		end;
+
+	voldiff = cumtoday - cumavg;
+
+// =========================== end volume calculations =============================
+
+// if profit-taking
+	if marketposition = 0 and psignal <> 0 then waitfornewsignal = true;	
+
+// =================== new day save daily data for trend and ATR ===================
+	if date <> date[1] then begin
+		ndays = ndays + 1;
+		drange[ndays] = thigh - tlow;
+		dhigh[ndays] = thigh;
+		dlow[ndays] = tlow;
+		dclose[ndays] = close[1];
+//		barstoday = 0; set previously for volume
+		pphigh = phigh;
+		pplow = plow;
+		phigh = thigh;
+		plow = tlow;
+		if phigh < pphigh and plow > pplow then
+			insideday = true else insideday = false;
+		topen = open;
+		thigh = high;
+		tlow = low;
+// daily trading range
+		vlty = 0;
+		if dailyATRper < ndays and dailyATRper <> 0 then begin
+			for ix = ndays - dailyATRper + 1 to ndays begin
+				vlty = vlty + drange[ix];
+				end;
+			vlty = vlty / dailyATRper;
+			dailyATR[ndays] = vlty;
+			end;
+// size for new trades
+		if usefutures then begin
+				if dailyATR[ndays] = 0 then
+						newsize = 0
+					else 
+						newsize = investment/(dailyATR[ndays]*bigpointvalue);
+				end
+			else
+				newsize = investment/close;
+
+// ====================== test options to be used at entry =====================
+// compression based on daily data (ndays)
+		if compressiondays <> 0 and ndays > compressiondays then begin
+			compression = true;
+			for ix = ndays - compressiondays to ndays - 1 begin
+				if drange[ndays] > drange[ix] then compression = false;
+				end;
+			end;
+
+// inside compression of daily data
+		if insidecompressiondays <> 0 and ndays > insidecompressiondays + 10 then begin
+			insidecompression = true;
+			for ix = ndays - insidecompressiondays to ndays - 1 begin
+				if dhigh[ix] > dhigh[ix-insidecompressiondays-1] or 
+					dlow[ix] < dlow[ix-insidecompressiondays-1] then insidecompression = false;
+				end;
+			end;
+			
+// if missed exiting at end of day
+		if holdovernight = false and marketposition <> 0 and 
+				(time = starttime or time > endtime) then begin
+			if marketposition > 0 then sell ("XLopen") all contracts this bar on close
+				else buy to cover ("XSopen") all contracts this bar on close;
+			tradecost = tradecost + currentcontracts*costperside;
+			totalcost = totalcost - tradecost;
+			end;
+
+// use daily trend then calculate
+		if usetrend <> 0 and usetrend < ndays then begin
+			trend[ndays] = 0;
+			for ix = 0 to usetrend-1 begin
+				trend[ndays] = trend[ndays] + dclose[ix];
+				end;
+			trend[ndays] = trend[ndays]/usetrend;
+			if trend[ndays] > trend[ndays-1] then trenddir = 1
+				else if trend[ndays] < trend[ndays-1] then trenddir = -1;
+			end;
+
+		waitfornewsignal = false;
+		meanreversiontrade = false;
+		breakouttrade = false;
+		end;
+
+// ================= end of daily processing ===========================
+		
+// save high and low for today
+	thigh  = maxlist(thigh,high);
+	tlow = minlist(tlow,low);
+	tradecost = 0;
+
+// calculate momentum option
+	if momperiod <> 0 and highmomentum <> 0 then begin
+		mom = 100*(close - lowest(low,momperiod))/
+					(highest(high,momperiod) - lowest(low,momperiod));
+		end;
+
+// ======================new position entered, was this mean reversion? ================
+	if tradeMR then begin
+		if marketposition < 0 and marketposition <> psignal and entryprice >= MRsell then 
+				meanreversiontrade = true
+			else if marketposition > 0 and marketposition <> psignal and entryprice < MRbuy then
+				meanreversiontrade = true;
+		end;
+
+	if marketposition <> 0 and meanreversiontrade = false then breakouttrade = true;
+
+// ====================== if MR with mom exit only ================================
+	if tradeMR and entryrule = 0 then begin
+// measure from open
+		MRsell = topen + MRupfactor*dailyATR[ndays];
+		MRbuy = topen - MRdownfactor*dailyATR[ndays];
+// measure from prior close
+//		MRsell = dclose[ndays] + MRupfactor*dailyATR[ndays];
+//		MRbuy = dclose[ndays] - MRdownfactor*dailyATR[ndays];
+		end;
+		
+
+// ================================== update breakout values ======================
+// Rule 1 Update breakout until max 
+	if entryrule = 1 and barstoday <= breakoutbars then begin
+		breakoutup = thigh;
+		breakoutdown = tlow;
+		MRsell = thigh;
+		MRbuy = tlow;
+		end;
+// Rule 2 Breakout from yesterday's high or low
+	if entryrule = 2 then begin
+		breakoutup = dhigh[ndays];
+		breakoutdown = dlow[ndays];
+		MRsell = dhigh[ndays];
+		MRbuy = dlow[ndays];
+		end;
+// Rule 3 Volatility from open setup
+	if entryrule = 3 then begin
+		breakoutup = topen + BOupfactor*dailyATR[ndays];
+		breakoutdown = topen - BOdownfactor*dailyATR[ndays];
+		MRsell = topen + MRupfactor*dailyATR[ndays];
+		MRbuy = topen - MRdownfactor*dailyATR[ndays];
+		end;
+// Rule 4 Volatility from previous close setup
+	if entryrule = 4 then begin
+		breakoutup = dclose[ndays] + BOupfactor*dailyATR[ndays];
+		breakoutdown = dclose[ndays] - BOupfactor*dailyATR[ndays];
+		MRsell = dclose[ndays] + MRupfactor*dailyATR[ndays];
+		MRbuy = dclose[ndays] - MRdownfactor*dailyATR[ndays];
+		end;
+
+
+// ============================ exit options ===================================
+// exit if volume declines relative to bar
+	if marketposition <> 0 and (usevolume = true and cumtoday > cumavg) then begin
+//	if marketposition <> 0 and (usevolume = true and tvol < avgvol[barstoday]) then begin
+		if marketposition > 0 then sell ("XLvol") all contracts next bar on open
+			else if marketposition < 0 then buy to cover ("XSvol") all contracts next bar on open;
+		end;
+
+// exit if crosses close after entering breakout
+	if exitBOpriorclose and breakouttrade then begin
+		if marketposition > 0 and close < dclose[ndays] then
+				sell ("XLcloseX") all contracts next bar on open
+			else if marketposition < 0 and close > dclose[ndays] then
+				buy to cover ("XScloseX") all contracts next bar on open;
+		end;
+
+// profit-taking
+	if PTperiod > 0 and PTfactor > 0 then begin
+//		ATR = avgtruerange(PTperiod);
+		if marketposition > 0 then 
+				sell ("PTlong") all contracts next bar at entryprice + PTfactor*dailyATR[ndays] limit;
+		if marketposition < 0 then 
+				buy to cover ("PTshort") all contracts next bar at entryprice - PTfactor*dailyATR[ndays] limit;
+		end;
+
+// exit if trend changes
+	if usetrend <> 0 then begin
+		if marketposition	> 0 and trenddir < 0 then
+				sell ("XLtrend") all contracts next bar on open
+			else if marketposition < 0 and trenddir > 0 then
+				buy to cover ("XStrend") all contracts next bar on open;
+		end;
+
+// exit if basic signal in opposite direction if not using mean reversion
+	if tradeMR = false then begin
+		if marketposition > 0 and low < breakoutdown then 
+					sell ("XL") all contracts next bar on open
+			else if marketposition < 0 and high > breakoutup then 
+					buy to cover ("XS") all contracts next bar on open;
+		end;
+
+// =============================== momentum entry =====================================
+//	if entryrule = 0 and marketposition = 0 then begin
+//		if mom > highmomentum then buy ("Lmom") newsize contracts next bar on open
+//			else if mom < 100 - highmomentum then sell short ("Smom") newsize contracts next bar on open;
+//		end;
+
+// ========================== mean reversion entry ====================================
+	if tradeMR and (starttime = 0 or time >= starttime) and time < lasttradetime then begin
+		if waitfornewsignal = false and (precedebyinsideday = false or insideday) and 
+				(compressiondays = 0 or compression) and 
+					(insidecompressiondays = 0 or insidecompression) { then begin }
+// volume must be less than average
+						and (usevolume = false or voldiff < voldiff[1]) then begin
+//						and (usevolume = false or tvol < avgvol[barstoday]) then begin
+//						and (usevolume = false or cumtoday < cumavg) then begin
+//						and (usevolume = false or tvol < tvol[1]) then begin
+// if short or no position
+			if marketposition <= 0 and (usetrend = 0 or trenddir >= 0) and
+// mom is low and volume is falling ==> reversal
+					(entryrule <> 0 or (momperiod > 0 and mom < 100 - highmomentum)) then begin
+				buy ("MRbuy") newsize contracts next bar {on open} at MRbuy limit;
+//				meanreversiontrade = true;
+				end;
+// if long or no position
+			if marketposition >= 0 and (usetrend = 0 or trenddir <= 0) and
+					(entryrule <> 0 or mom > highmomentum) then begin
+				if longonly then sell ("BOLexitMR") all contracts next bar at MRsell limit
+					else sell short ("MRsell") newsize contracts next bar {on open} at MRsell limit;
+//				meanreversiontrade = true;
+				end;
+			end;
+		end;
+
+// =================================== Basic Breakout Entries ==================================
+//	Rule 1 Breakout of N bars from open wait until todaybars > breakoutbars
+	if tradebreakout and entryrule = 1 and barstoday >= breakoutbars then begin
+		if (starttime = 0 or time >= starttime) and time < lasttradetime and breakoutup <> 0 then begin
+			if waitfornewsignal = false and (precedebyinsideday = false or insideday) and 
+					(compressiondays = 0 or compression) and
+						(insidecompressiondays = 0 or insidecompression) then begin
+// if short or no position
+				if marketposition <= 0 and (usetrend = 0 or trenddir > 0) and high > breakoutup then 
+						buy ("BOupR1") newsize contracts next bar at {on open} breakoutup stop
+// if long or no position
+					else if longonly = false and marketposition >= 0 and 
+							(usetrend = 0 or trenddir < 0) and low < breakoutdown then 
+						sell short ("BOdownR1") newsize contracts next bar {on open} breakoutdown stop;
+				end;
+			end;
+		end;
+
+// Rules 2, 3, and 4 all have breakout levels set
+// new trend direction
+	if tradebreakout and entryrule = 2 or entryrule = 3 or entryrule = 4 then begin
+		if (starttime = 0 or time >= starttime) and time < lasttradetime then begin
+			if waitfornewsignal = false and (precedebyinsideday = false or insideday) and 
+					(compressiondays = 0 or compression) and
+						(insidecompressiondays = 0 or insidecompression) then begin
+// if short or no position
+				if marketposition <= 0 and (usetrend = 0 or trenddir > 0) then 
+						buy ("BOup") newsize contracts next bar at breakoutup stop
+// if long or no position
+					else if longonly = false and marketposition >= 0 and 
+							(usetrend = 0 or trenddir < 0) then 
+						sell short ("BOdown") newsize contracts next bar at breakoutdown stop;
+				end;
+			end;
+		end;
+
+// =============================== Exit end of day =======================================
+	if holdovernight = false and marketposition <> 0 and time >= endtime then begin
+		if marketposition > 0 then sell ("XLEOD") all contracts this bar on close
+				else buy to cover ("XSEOD") all contracts this bar on close;
+		tradecost = tradecost + currentcontracts*costperside;
+		totalcost = totalcost - tradecost;
+		end;
+	
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	PLtoday = equity - equity[1];
+
+{ long and short PL }
+	if marketposition > 0 then begin
+			PLlong = PLlong + PLtoday;
+			if marketposition <> psignal then begin
+				PLlong = PLlong - currentcontracts*costperside;
+				end;
+			end
+		else if marketposition < 0 then begin
+			PLshort = PLshort + PLtoday;
+			if marketposition <> psignal then begin
+				PLshort = PLshort + currentcontracts*costperside;
+				end;
+		end;
+
+	if marketposition <> psignal then begin
+		factor = 1;
+		if holdovernight then factor = 2;
+		tradecost = tradecost + factor*currentcontracts*costperside;
+		end;
+	totalcost = totalcost - tradecost;
+
+	psignal = marketposition;
+	pcurrcontracts = currentcontracts;
+
+	if printoption then begin
+		once begin
+ 	   	print(file("c:\tradestation\PJK_ID_BO-MR_Toly_detail.csv"),
+					"date,time,open,high,low,close,Volume,CumToday,CumAvg,VolDiff,Dhigh,Dlow,",
+					"thigh,tlow,BOup,BOdown,MRsell,MRbuy,trend,mom,possize,entry,",
+					"todayPL,PLlong,PLshort,netPL"); 
+//	    	print(file("c:\tradestation\Guide_ID_BO-MR_PL.csv"),"Date,TotalPL");
+			end;
+		end;
+
+	if printoption and dailyATRper <= ndays then begin
+		adate = ELdatetostring(date);
+   	print(file("c:\tradestation\PJK_ID_BO-MR_Toly_detail.csv"), adate, "," ,time:4:0, ",", 
+			open:7:4, ",", high:7:4, ",", low:7:4, ",", close:7:4, ",", 
+			volume:10:0, ",", cumtoday:10:0, ",", cumavg:10:0, ",", voldiff:10:0, ",", 
+			dhigh[ndays]:8:4, ",", dlow[ndays]:8:4, ",", thigh:7:4, ",", tlow:7:4, ",", 
+			breakoutup:7:4, ",", breakoutdown:7:4, ",", MRsell:7:4, ",", MRbuy:7:4, ",", 
+			trenddir:7:4, ",", mom:5:3, ",", currentcontracts*marketposition:8:0, ",", 
+			entryprice:6:4, ",", PLtoday:8:0, ",", PLlong:8:0, ",", PLshort:8:0, ",", 
+			equity+totalcost:10:0);
+//   	if date <> date[1] then print(file("c:\tradestation\Guide_ID_BO-MR_PL.csv"), 
+//			adate, "," ,equity:8:0);
+		end;
+
+		

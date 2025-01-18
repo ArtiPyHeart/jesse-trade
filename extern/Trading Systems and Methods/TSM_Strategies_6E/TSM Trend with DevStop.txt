@@ -1,0 +1,57 @@
+//	TSM DevStop
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+//	This strategy is based on Cynthia Kase's concept of a standard deviation stop
+// The code for the placement of the stop can be found online
+// The trading rules were added and there is no assurance that they are
+//		anything similar to what Kase uses.
+// The strategy used here is a 5 and 21-day cross, entered with 3 contracts
+// Each stop removes 1 contract
+// A reentry occurs if the price moves back above both trends
+
+	Inputs: 	fastperiod(10), slowperiod(21), ATRperiod(20);
+	Vars: 	DTR(0), avg(0), size(3), MAfast(0), MAslow(0), sd(0),
+				Warning(0), DevStop1(0), DevStop2(0), DevStop3(0);
+
+// 2-Day ATR
+	DTR = maxlist(maxlist(High - Low[2], absvalue(High - Close[2])),
+				maxlist(absvalue(Low - Close[2]),(absvalue(Low - Close[2]))));
+	avg = average(DTR,ATRperiod);
+	sd = stddev(DTR,ATRperiod);
+ 
+	MAFast = average(close,fastperiod);
+	MASlow = average(close,slowperiod);
+ 
+// if fast > slow
+	if maFast crosses above maSlow then begin
+			if marketposition < 0 then 
+					buy to cover all contracts next bar on open;
+			buy size contracts next bar on open;
+ 			Warning = close - avg;
+ 			DevStop1 = close - avg - sd;
+ 			DevStop2 = close - avg - 2.2*sd;
+ 			DevStop3 = close - avg - 3.6*sd;
+			end
+// fast < slow
+		else if mafast crosses below maslow then begin
+			if marketposition > 0 then
+				sell all contracts next bar on open;
+			sell short size contracts next bar on open;
+			Warning = close + avg;
+ 			DevStop1 = close + avg + sd;
+ 			DevStop2 = close + avg + 2.2*sd;
+ 			DevStop3 = close + avg + 3.6*sd;
+		end;
+
+// stops on longs
+	if marketposition > 0 then begin
+			if currentcontracts = 3 and close < DevStop1[1] then sell 1 contract next bar on open;
+			if currentcontracts >= 2 and close < DevStop2[1] then sell 1 contract next bar on open;
+			if currentcontracts >= 1 and close < DevStop3[1] then sell 1 contract next bar on open;
+			end
+// stops on shorts
+		else if marketposition < 0 then begin
+			if currentcontracts = 3 and close > DevStop1[1] then buy to cover 1 contract next bar on open;
+			if currentcontracts >= 2 and close > DevStop2[1] then buy to cover 1 contract next bar on open;
+			if currentcontracts >= 1 and close > DevStop3[1] then buy to cover 1 contract next bar on open;
+		end;
+

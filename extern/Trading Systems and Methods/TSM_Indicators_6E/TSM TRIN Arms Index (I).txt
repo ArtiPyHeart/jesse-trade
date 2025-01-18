@@ -1,0 +1,21 @@
+{ TSM TRIN Arms Index
+  Copyright 2018, P.J.Kaufman. All rights reserved. }
+  
+ { Volume data UVDV is data2:
+ 	High = advances
+ 	Low = declines
+ 	Volume = Up volume
+ 	OpInt = Down volume }
+  
+  vars:		TRIN(0), Index(0);
+  
+	if low of data2 <> 0 and openint of data2 <> 0 then 
+			TRIN = (high of data2/low of data2)/(volume of data2/openint of data2);
+	Index = index + Trin;
+				    
+  Plot1(TRIN,"TRIN");
+  Plot2(2,"Sell");
+  Plot3(0.5,"Buy");
+//	Plot1(Index,"TRIN");
+  
+  

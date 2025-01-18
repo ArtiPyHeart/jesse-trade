@@ -1,0 +1,72 @@
+// TSM5 Fade the MA Trend (with profit-taking)
+//	Copyright P.J.Kaufman, 2017-2018. All rights reserved.
+//	Buy in direction of slow trend when fast trend turns down
+// Low vol filter in $ or local currency
+	
+	inputs:	FastMA(4), SlowMA(160), ATRperiod(20), lowvolfilter(0), highvolfilter(0), 
+				profitfactor(3), longonly(true),usestocks(true), usefutures(false), printoption(false); 
+	vars:		size(0), investment(0), stockinvestment(10000), futuresinvestment(25000), 
+				MAfast(0), MAslow(0), equity(0), PL(0), PLlong(0), PLshort(0), adate(" "),
+				ATR(0), signal(0);
+	
+	MAfast = average(close,fastMA);
+	MAslow = average(close,slowMA);
+	ATR = avgtruerange(ATRperiod);
+	signal = marketposition;
+
+// Exit when fastMA goes in direction of position or slow trend changes
+	if marketposition >= 0 then begin
+			if close < MAslow or close > MAfast then begin
+				sell all contracts next bar on open;
+				end
+		else if marketposition <= 0 then begin
+			if MAslow > close or close < MAfast then begin
+				buy to cover all contracts next bar on open;
+				end;
+			end;
+		end;
+
+// position size
+		if usestocks then begin
+				size = stockinvestment / close[1];
+				end
+			else if usefutures then begin
+				size = futuresinvestment / (ATR*bigpointvalue);
+			end;
+//		size = maxlist(size,1);
+
+// Enter new trade when fast goes in conflict with slow
+	if ATR > lowvolfilter and (highvolfilter = 0 or ATR < highvolfilter) then begin
+		if longonly = false and marketposition >= 0 and close < MAslow and close > MAfast then begin
+				sell short size contracts next bar on open;
+				end
+			else if marketposition <= 0 and close > MAslow and close < MAfast then begin
+				buy size contracts next bar on open;
+			end;
+		end;
+
+// set profit target
+	if profitfactor > 0 and ATRperiod > 0 then begin
+		if marketposition > 0 then 
+					sell all contracts next bar at entryprice + ATR*profitfactor limit
+			else if marketposition < 0 then 
+					buy to cover all contracts next bar at entryprice - ATR*profitfactor limit;
+		end;
+
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if signal[1] > 0 or signal > 0 then
+			PLlong = PLlong + PL
+		else if signal[1] < 0 or signal < 0 then
+			PLshort = PLshort + PL;
+	signal = marketposition;
+
+	if printoption then begin
+  		adate = ELdatetostring(date);
+		If Currentbar = 1 then print(file("c:\tradestation\Fade_2_Trends_PL.csv"), 
+							"Date,mktpos,size,ATRval,netPL,PLlong,PLshort");
+		print(file("c:\tradestation\Fade_2_Trends_PL.csv"),adate, ",", marketposition:5:0, ",", size:8:3, ",", 
+							ATR:6:3, ",", equity:8:4, ",", PLlong:8:4, ",",PLshort:8:4);
+		end;
+
+			

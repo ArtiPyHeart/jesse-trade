@@ -1,0 +1,17 @@
+{ Bolton-Tremblay Index
+  Copyright 2018, P.J.Kaufman. All rights reserved. }
+// using UVDV
+// open = total advancing + declining
+//	high = advancing
+// low = declining
+// close = unchanged
+  
+  inputs: period(10);
+  vars:	 BT(0), BTindex(0);
+  
+  BT = (high - low)/close;
+	if BT > 0 then BTindex = BTindex + squareroot(BT)
+		else if BT < 0 then BTindex = BTindex - squareroot(absvalue(BT));
+  
+  plot1(BTindex,"BTindex");
+  

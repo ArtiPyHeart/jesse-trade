@@ -1,0 +1,131 @@
+// PJK Walk-Forward Persistence
+// Choose trend period based on n-day insample and w-day out of sample
+// Record out-of-sample returns
+// Use ETFs
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+	input:	periodfrom(5), periodto(80), incr(5), insampledays(120), outofsampledays(20),
+				printdaily(true);
+	vars:		investment(10000), size(0), returns(0), UPfreq(0), ix(0), jx(0), kx(0),
+				status(0), besttrend(0), bestresult(0), calcper(0), trend(0), signal(0),
+				adate(" "), ndays(0), maxindex(0), bestindex(0), psignal(0), OOS(0),
+				PLtoday(0), totalOOS(0);
+	arrays:	TR[100](0), OOSresults[100](0), TP[100](0);
+
+	if currentbar = 1 then begin
+		jx = periodfrom;
+		maxindex = (periodto - periodfrom + incr)/incr;
+		for ix = 1 to maxindex begin
+			TP[ix] = jx;
+			jx = jx + incr;
+			end;
+		print(file("c:\tradestation\WalkForward_DailyDetail.csv"), 
+			"Date,Count,MA5,MA10,MA15,MA20,MA25,MA30,MA35,MA40,MA45,MA50,MA55,MA60,MA65,MA70,",
+			"MA75,MA80");
+		print(file("c:\tradestation\WalkForward_DailyDetail.csv"),adate, ",", maxindex:5:0, ",", 
+				TP[1]:5:0, ",",  TP[2]:5:0, ",", TP[3]:5:0, ",", TP[4]:5:0, ",", TP[5]:5:0, ",", TP[6]:5:0, ",",
+				TP[7]:5:0, ",", TP[8]:5:0, ",", TP[9]:5:0, ",", TP[10]:5:0, ",", TP[11]:5:0, ",",
+				TP[12]:5:0, ",", TP[13]:5:0, ",", TP[14]:5:0, ",", TP[15]:5:0, ",", TP[16]:5:0);
+		status = -1;
+		end;
+
+// status =0 (start), = -1 (in sample), = 1 (out of sample)
+	
+	if status = -1 then begin
+// calculate returns for jx moving averages
+		besttrend = 0;
+		bestresult = -999999;
+//		print(file("c:\tradestation\WalkForward_DailyDetail.csv"),"Date,CalcPer,$PL,Best,Best$PL");
+		for ix = 1 to maxindex begin
+			calcper = TP[ix];
+			TR[ix] = 0;
+			psignal = 0;
+	  		adate = ELdatetostring(date);
+// start back "insampledays"
+			for kx = insampledays downto 1 begin
+				trend = average(close[kx],calcper);
+				if close[kx] >= trend then signal = 1 else signal = -1;
+// test if new trade
+					if signal <> psignal then begin
+						size = investment/close[kx];
+						end;
+				TR[ix] = TR[ix] + psignal*size*(close[kx] - close[kx+1]);
+				psignal = signal;
+//				print(file("c:\tradestation\WalkForward_DailyDetail.csv"),date[kx]:8:0, 
+//						",price=,", close[kx]:5:3, ",trend=,", 
+//						trend:5:3, ",", signal:5:0, ",", size:5:2, ",", TR[ix]:5:3);
+
+				end;
+			if TR[ix] > bestresult then begin
+				bestresult = TR[ix];
+				besttrend = calcper;
+				bestindex = ix;
+				end;
+// print results for this calc period
+	  		adate = ELdatetostring(date);
+//			print(file("c:\tradestation\WalkForward_DailyDetail.csv"),date:8:0, ",", calcper:5:0, 
+//						",", TR[ix]:5:2, ",", bestresult:5:2, ",", besttrend:5:0);
+			end;
+		end;
+
+// Print in-sample results
+  	If printdaily and status < 0 then begin
+	  	adate = ELdatetostring(date);
+//		If Currentbar = 1 then begin
+//			print(file("c:\tradestation\WalkForward_DailyDetail.csv"), 
+//						"Date,Best,MA5,MA10,MA15,MA20,MA25,MA30,MA35,MA40,MA45,MA50,MA55,MA60,MA65,",
+//						"MA70,MA75,MA80");
+//			end;
+		print(file("c:\tradestation\WalkForward_DailyDetail.csv"),adate, ",", besttrend:5:0, ",", 
+				TR[1]:5:2, ",", TR[2]:5:2, ",", TR[3]:5:2, ",", TR[4]:5:2, ",", TR[5]:5:2, ",", TR[6]:5:2, ",",
+				TR[7]:5:2, ",", TR[8]:5:2, ",", TR[9]:5:2, ",", TR[10]:5:2, ",", TR[11]:5:2, ",",
+				TR[12]:5:2, ",", TR[13]:5:2, ",", TR[14]:5:2, ",", TR[15]:5:2, ",", TR[16]:5:2);
+		end;
+
+// done with in-sample
+	if status < 0 then begin
+		status = 1;
+		ndays = 0;
+		size = investment/close[1];
+//		print(file("c:\tradestation\WalkForward_DailyDetail.csv"),adate, ",start out-of-sample");
+		end;
+
+// find the out-of-sample results using the best trend
+	if status > 0 and ndays < outofsampledays then begin
+			ndays = ndays + 1;
+			trend = average(close,besttrend);
+			if close > trend then signal = 1
+				else if close < trend then signal = -1;
+			if signal <> signal[1] then size = investment/close;
+			if ndays > 1 then begin
+				PLtoday = psignal*size*(close - close[1]);
+				OOS = OOS + PLtoday;
+				OOSresults[bestindex] = OOSresults[bestindex] + PLtoday;
+	 			adate = ELdatetostring(date);
+//				print(file("c:\tradestation\WalkForward_DailyDetail.csv"),adate, ",OOS$=,", PLtoday:8:2);
+				end;
+			psignal = signal;
+			end
+		else begin	
+	 		adate = ELdatetostring(date);
+//			print(file("c:\tradestation\WalkForward_DailyDetail.csv"),adate, ",OOS$=,", OOS:8:2);
+			status = -1;
+			ndays = 0;
+		end;
+
+	if lastbaronchart then begin
+		print(file("c:\tradestation\WalkForward_DailyDetail.csv")," ");
+		print(file("c:\tradestation\WalkForward_DailyDetail.csv"), 
+			"Date,Total OOS,MA5,MA10,MA15,MA20,MA25,MA30,MA35,MA40,MA45,MA50,MA55,MA60,MA65,MA70,",
+			"MA75,MA80");
+		totalOOS = 0;
+		for ix = 1 to maxindex begin
+			totalOOS = totalOOS + OOSresults[ix];
+			end;
+		print(file("c:\tradestation\WalkForward_DailyDetail.csv"),adate, ",", totalOOS:8:0, ",",
+				OOSresults[1]:5:2, ",", OOSresults[2]:5:2, ",", OOSresults[3]:5:2, ",", OOSresults[4]:5:2, ",", 
+				OOSresults[5]:5:2, ",", OOSresults[6]:5:2, ",", OOSresults[7]:5:2, ",", OOSresults[8]:5:2, ",", 
+				OOSresults[9]:5:2, ",", OOSresults[10]:5:2, ",", OOSresults[11]:5:2, ",", OOSresults[12]:5:2, ",",
+				OOSresults[13]:5:2, ",", OOSresults[14]:5:2, ",", OOSresults[15]:5:2, ",", OOSresults[16]:5:2);
+		end;
+				

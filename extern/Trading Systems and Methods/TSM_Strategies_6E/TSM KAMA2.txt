@@ -1,0 +1,67 @@
+   { PJK KAMA : Kaufman's Adaptive Moving Average
+     Copyright 1993,2011,2013,2018, P J Kaufman, All rights reserved. }
+
+   Inputs: 	period(8), fast(3), slow(30), usesdfilter(false), useturnfilter(true), 
+				filter(.001), filterper(20), longonly(true), shortonly(false), variablesize(true), 
+				futures(true), printfile(false);
+
+   vars:    KAMA(0), diff(0), sd(0), equity(0), PL(0), adate(" "), size(1), newsize(0),
+				filtersize(0), stockinvestment(10000), futuresinvestment(25000), tradehigh(0),
+				tradelow(0);
+
+   { ADAPTIVE MOVING AVERAGE }
+   KAMA = TSMKAMA(period,fast,slow);
+
+	diff = KAMA - KAMA[1];
+	sd = stddev(diff,filterper);
+
+	if futures then
+			newsize = futuresinvestment/(Avgtruerange(20)*bigpointvalue)
+		else
+			newsize = stockinvestment/close[1];
+
+	if usesdfilter then begin
+			if marketposition > 0 then
+					filtersize = KAMA[1] - filter*sd
+				else
+					filtersize = KAMA[1] + filter*sd;
+			end
+		else if useturnfilter then begin
+			if marketposition > 0 then begin
+					tradehigh = maxlist(tradehigh,KAMA);
+					filtersize = tradehigh*(1 - filter);
+					end
+				else begin
+					tradelow = minlist(tradelow,KAMA);
+					filtersize = tradelow*(1 + filter);
+				end;
+		end;
+
+// new positions long
+	if marketposition >= 0 and KAMA < filtersize then begin
+			if longonly then sell ("XLong") all contracts next bar on open;
+			if longonly = false then begin
+				sell short ("EShort") newsize contracts next bar on open;
+				tradelow = KAMA;
+				end;
+			end
+// new positions short
+		else if marketposition <= 0 and KAMA > filtersize then begin
+			if shortonly then buy to cover ("XShort") all contracts next bar on open;
+			if shortonly = false then begin
+				buy ("Elong") newsize contracts next bar on open;
+				tradehigh = KAMA;
+				end;
+		end;
+
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if printfile then begin
+		adate = ELdatetostring(date);
+		If Currentbar = 1 then 
+			print(file("c:\tradestation\KAMA_PL.csv"), 
+					"Date,size,price,TRhigh,TRlow,KAMA,filter,Pos,PLtoday,netPL");
+  		print(file("c:\tradestation\KAMA_PL.csv"),adate, ",", currentcontracts:8:3, ",", close:8:5, ",",  
+					tradehigh:8:5, ",", tradelow:8:5, ",", kama:8:5, ",", filtersize:8:5, ",", 
+					marketposition:3:0, ",", PL:8:4, ",", equity:8:4);
+		end;

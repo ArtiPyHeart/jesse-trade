@@ -1,0 +1,38 @@
+[LegacyColorValue = true]; 
+
+// TSM AMA-Alpirine : Adaptive Moving Average (variantion)
+// From the article "Adaptive Exponential Moving Average" by Vitali Apirine
+// Published in TAS&C, April 2019
+// Copyright 2019 P J Kaufman, All rights reserved. }
+
+  	inputs: 	numperiod(10), denomperiod(10), fast(2), slow(30);
+ 	vars:		efratio(0), smooth(1), fastend(.666), slowend(.0645), 
+				signal(0), AMA(0), adate(" ");
+
+{ calculate efficiency ratio }
+	if currentbar = 1 then begin
+			AMA = close;
+			fastend = 2/(fast + 1);
+			slowend = 2/(slow + 1);
+			end
+		else begin
+			efratio = 1;
+			signal = absvalue(close - close[numperiod]);
+// this is the same as a raw stochastic
+			efratio = (close - lowest(low,denomperiod))/
+						(highest(high,denomperiod) - lowest(low,denomperiod));
+			smooth = power(efratio*(fastend - slowend) + slowend,2);
+			AMA = AMA[1] + smooth*(close - AMA[1]);
+		end;
+// ADAPTIVE MOVING AVERAGE
+   Plot1(AMA,"AMA");
+
+		adate = ELdatetostring(date);
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\AMA_Detail.csv"),
+					"Date,close,signal,noise,smooth,AMA");
+			end;
+
+  		print(file("c:\tradestation\AMA_Detail.csv"),adate, ",", close:8:5, ",", signal:8:5, ",",
+					smooth:8:5, ",", ama:8:5);
+   

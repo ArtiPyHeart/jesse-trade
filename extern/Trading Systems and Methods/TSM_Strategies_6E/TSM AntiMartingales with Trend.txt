@@ -1,0 +1,84 @@
+[LegacyColorValue = true]; 
+
+{ TSM Anti-Martingales with Trend
+  Copyright 2011, 2018 P J Kaufman. All rights reserved. }
+
+{ period = length of trend }
+  input: period(60), cap(8), investment(1000), addequal(false), longonly(true), printPL(true);
+  vars:	size(1), equity(0), trend(0), totalsize(0), nseq(0), startsize(o), adate(" ");
+  			
+  	trend = average(close,period);
+  	
+{ long sequences }  	
+  	if trend > trend[1] then begin
+  		if marketposition <= 0 then begin
+	  			if longonly = false then buy to cover all shares this bar on close;
+{ start sequence }
+				startsize = investment/close;
+				totalsize = investment/close;
+ 	 			buy totalsize shares this bar on close;
+				nseq = 1;
+ 	 			end
+{ add if profitable } 	 			
+  			else if marketposition = 1 and close > close[1] then begin
+  				if cap = 0 or nseq < cap then begin
+					if addequal then
+							totalsize = totalsize + startsize
+						else
+							totalsize = totalsize + totalsize;
+  					buy totalsize shares this bar on close;
+					nseq = nseq + 1;
+					end;
+  				end
+{ when price move negatively, reset to original size }  				
+  			else if marketposition = 1 and close < close[1] then begin
+  				sell all shares this bar on close;
+				startsize = investment/close;
+  				totalsize = investment/close;
+  				buy totalsize shares this bar on close;
+  			end;
+  		end;
+  			
+{ short sequences }  	
+  	if trend < trend[1] then begin
+  		if marketposition >= 0 then begin
+  				sell all shares this bar on close;
+{ start sequence }
+				if longonly = false then begin
+					startsize = investment/close;
+					totalsize = investment/close;
+  					sell short totalsize shares this bar on close;
+					nseq = 1;
+					end;
+  				end
+{ add if profitable }  				
+  			else if longonly = false and marketposition = -1 and close < close[1] then begin
+  				if cap = 0 or nseq < cap then begin
+					if addequal then
+							totalsize = totalsize + startsize
+						else
+							totalsize = totalsize + totalsize;
+ 					totalsize = totalsize + totalsize;
+  					sell short totalsize shares this bar on close;
+					nseq = nseq + 1;
+					end;
+  				end
+{ when price move profitably, reset to original size }  				
+  			else if marketposition = -1 and close > close[1] then begin
+  				if longonly = false then buy to cover all shares this bar on close;
+				startsize = investment/close;
+  				totalsize = investment/close;
+				buy totalsize shares this bar on close;
+  			end;
+  		end;
+    	
+ 	equity = netprofit + openpositionprofit;
+  	
+  	If printPL then begin
+	  	adate = ELdatetostring(date);
+  		If Currentbar = 1 then print(file("c:\TradeStation\Anti-Martingaleswithtrend.csv"),
+  				 "Date,close,trend,size,netPL,Equity");
+  		print(file("c:\TradeStation\Anti-Martingaleswithtrend.csv"),adate, ",", close:6:5, ",", 
+  						trend:6:5, ",", marketposition*totalsize:8:3, ",", 
+  						netprofit + openpositionprofit:5:5, ",", equity:8:4);
+		end;

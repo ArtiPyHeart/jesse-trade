@@ -1,0 +1,153 @@
+[LegacyColorValue = true]; 
+// TSM Intraday Volume Bars V2
+// Does not use average off
+// Copyright 2018,2019, P.J. Kaufman.  All rights reserved.
+
+//   Produce a Volume histrogram by bar with the current Volume overlayed
+// Choose "histogram" for the style of the cumulative average Volume
+// Choose "point" for the style of today's cumulative Volume
+
+	inputs:	period(3), starttime(745), endtime(1515), debug(false);
+   vars:    nbar(0), maxbars(0), nd(0), minper(20), tvol(0),
+				cumtoday(0), cumavg(0), adate(" "), index(0), ix(0), iy(0), k(0), 
+				barstoday(0), barsperday(0), actualstart(0), newday(false), firstday(true),
+				shortday(false);
+// about 60 bars per day (15m from midnight to 3:15 Central, allow 100 days
+   array:   vol[9600](0), bartime[9600](0), avgvol[96](0);
+
+	if currentbar = 1 then begin
+    	if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"), 
+								"Date,Time,High,Low,nd,nbar,tvol,vol(bar)");
+		barsperday = (timetominutes(endtime) - timetominutes(starttime))/barinterval + 1;
+		index = barsperday*period;
+    	if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Bars/Day=,", barsperday:5:0, 
+				",ArrayBars=,", index:5:0);
+		actualstart = starttime;
+		end;
+
+	tvol = volume;
+
+// Test for first new day
+   if date <> date[1] and time >= starttime and time <= endtime 
+				and firstday and nbar = 0 then begin
+    		if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"start first day");
+			actualstart = time;
+// count days
+			nd = 1;
+// count bars from 1 to period x maxbars each day
+			nbar = 1;
+// bar count today
+			barstoday = 1;
+			vol[nbar] = tvol;
+			cumtoday = tvol;
+			bartime[nbar] = time;
+// should this be maxbars = barstoday?
+			maxbars = 1; 
+    		if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Day 1 Bar=,", nbar:5:0, ",time=,", 
+						time:6:0, ",vol=,", tvol:5:3, ",volbar=,", vol[nbar]:5:3, ",maxbars=,", maxbars:8:0);
+			end
+// First day, not first bar
+		else if date = date[1] and time >= starttime and time <= endtime and firstday then begin
+			nbar = nbar + 1;
+			barstoday = barstoday + 1;
+			vol[nbar] = tvol;
+			bartime[nbar] = time;
+			maxbars = nbar;
+    		if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Day 1 Bar=,", nbar:5:0, ",time=,", 
+						time:6:0, ",volbar=,", vol[nbar]:5:3, ",barstoday=,", barstoday:5:0, ",maxbars=,", 
+						maxbars:8:0);
+			if time = endtime then nd = nd + 1; { some reason count is off }
+			end;
+
+// New day starts and doesn't match first time
+		if date <> date[1] or newday then begin
+			firstday = false;
+			shortday = false;
+			newday = true;
+    		if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv")," new daytime=,", time:6:0, 
+					",match=,", actualstart:6:0);
+			if time < actualstart and debug then
+    			print(file("c:\tradestation\TSM_Intraday_Volume.csv")," No match");
+			if barstoday < barsperday then begin
+    			if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv")," Previous day is short");
+				shortday = true;
+				end;
+
+			if time >= actualstart and time <= endtime then begin
+				newday = false;
+// then begin
+// 	   		print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"start next day");
+// do we need to shift everything down?
+//   	 		print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"test for shift");
+// filled entire array
+				if nbar >= index and shortday = false then begin
+// calculate averages for each bar
+	    			if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Calculate averages"); 
+					for iy = 1 to barsperday begin
+						avgvol[iy] = 0;
+						for ix = 1 to period begin
+							k = (ix-1)*barsperday + iy;
+							avgvol[iy] = avgvol[iy] + vol[k];
+							end;
+						end;	
+					for iy = 1 to barsperday begin
+						avgvol[iy] = avgvol[iy]/period;
+	    				if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Avg vol,bar=", iy:4:0, 
+									",vol=,", avgvol[iy]:8:3); 
+						end;
+// shift everything down maxbars
+// do not shift if today's bars not enough, then just reset and overwrite
+					if shortday = false then begin
+//   	 				print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Short day - overwrite"); 
+						k = 0;
+						for ix = barsperday + 1 to index begin
+							k = k + 1;
+							vol[k] = vol[ix];
+							bartime[k] = bartime[ix];
+							end;
+						end;
+// next bar to fill n = index - maxbars + 1, begin new day
+					nbar = index - barstoday;
+					end;
+// save first bar of new day
+	    		if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"First bar new day"); 
+				nd = nd + 1;
+				nbar = nbar + 1;
+				barstoday = 1;
+				vol[nbar] = tvol;
+				bartime[nbar] = time;
+				cumtoday = tvol;
+				cumavg = avgvol[1];
+   			if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Day", nd:5:0, ",Bar=,", 
+					nbar:5:0, ",time=,", time:6:0, ",volbar=,", vol[nbar]:5:3, 
+					",barstoday=,", barstoday:5:0);	{
+//				end;
+}			end;
+		end;
+
+// normal sequential data
+	if date = date[1] and time > actualstart and time <= endtime and 
+				firstday = false then begin
+		nbar = nbar + 1;
+		barstoday = barstoday + 1;
+		vol[nbar] = tvol;
+		cumtoday = cumtoday + tvol;
+		cumavg = cumavg + avgvol[barstoday];
+//		if nbar > maxbars then begin
+//			maxbars = maxlist(maxbars,nbar);
+			bartime[nbar] = time;
+//			end;
+    	if debug then print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"SeqDay", nd:5:0, ",Bar=,", nbar:5:0, 
+						",time=,", time:6:0, ",volbar=,", vol[nbar]:5:3, ",barstoday=,", barstoday:5:0);
+		plot1(cumavg,"avgvol");
+		plot2(cumtoday,"today");
+		end;
+{
+//	adate = ELdatetostring(date);
+//   if currentbar = 1 then 
+//			print(file("c:\tradestation\TSM_Intraday_Volume.csv"),"Date,Time,High,Low,nd,nbar,tvol,",
+//				"avgvol,vol[bar],cumavg,cumtoday");
+//   print(file("c:\tradestation\TSM_Intraday_Volume.csv"),adate, ",", time:4:0, ",", high:5:4, ",",
+// 			low:5:4, ",", nd:4:0, ",", nbar:4:0, ",", tvol:8:4, ",", avgvol:8:4, ",", 
+//			vol[nbar]:8:4, ",", cumavg:8:4, ",", cumtoday:8:4);
+}

@@ -1,0 +1,18 @@
+// TSM Trend of OpenInterest
+
+inputs:	type(0), period(80);
+
+vars:		trend(o), sc(0);
+
+if type = 0 then
+		trend = average(openint,period)
+	else if type = 1 then begin
+		sc = 2/(period + 1);
+		trend = trend[1] + sc*(openint - trend[1]);
+		end
+	else if type = 2 then
+		trend = linearregslope(openint,period);
+
+plot1(openint,"OpInt");
+plot2(trend,"Trend");
+		

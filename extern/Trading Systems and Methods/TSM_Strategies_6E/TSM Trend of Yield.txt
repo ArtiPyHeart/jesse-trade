@@ -1,0 +1,106 @@
+{ TSM Trend of Yield
+	data1 - data2
+	Copyright 2019, P.J.Kaufman. All rights reserved. }
+
+	input: trendperiod(60), trendlag(1), minturn(0), longonly(true), printdetail(true);
+	vars:	diff(0), trend(0), adate(" "), bdate(" "), PL(0), PL1(0), PL2(0), PLlong(0), PLshort(0), 
+			totalPL(0), totalPL1(0), totalPL2(0), signal(0), investment(25000), ATR1(0), ATR2(0),
+			size1(0), size2(0), psignal(0), psize1(0), psize2(0), tradePL1(0), tradePL2(0),
+			tradePL(0), cumtradePL(0), edate(0), eprice1(0), eprice2(0), ntrade(0),
+			PLtradelong(0), PLtradeshort(0), bestprice(0), turn(0);
+
+	diff = close of data1 - close of data2;
+	trend = average(diff,trendperiod);
+
+	if currentbar = 1 and printdetail then begin
+		print(file("c:\tradestation\Trend_of_Yield_Trades.csv"), 
+				"Trade,Entry,Exit,Pos1,Entry1,Exit1,Pos2,Entry2,Exit2,PLtoday,",
+				"PL1,PL2,PLlong,PLshort,TotalPL");
+		end;		
+
+	if marketposition > 0 and close > bestprice then bestprice = close
+		else if marketposition <= 0 and close < bestprice then bestprice = close;
+	if marketposition <= 0 then turn = close - bestprice
+		else if marketposition > 0 then turn = bestprice - close;
+
+	if marketposition <= 0 and trend > trend[trendlag] and turn > minturn then begin
+			ATR1 = avgtruerange(20);
+			size1 = investment/(ATR1*bigpointvalue);
+			ATR2 = avgtruerange(20) of data2;
+			size2 = investment/(ATR2*bigpointvalue of data2);
+			buy ("TurnsUp") size1 contracts next bar on open;
+			signal = 1;
+			ntrade = ntrade + 1;
+			end
+		else if marketposition >= 0 and trend < trend[trendlag] and turn > minturn then begin
+			ATR1 = avgtruerange(20);
+			size1 = investment/(ATR1*bigpointvalue);
+			ATR2 = avgtruerange(20) of data2;
+			size2 = investment/(ATR2*bigpointvalue of data2);
+			if longonly then begin
+					sell ("ExitLong") all contracts next bar on open;
+					signal = 0;
+					size1 = 0;
+					size2 = 0;
+					end
+				else begin
+					sell short ("TurnsDown") size1 contracts next bar on open;
+					signal = -1;
+					ntrade = ntrade + 1;
+				end;
+		end;
+
+// position changed, print trade
+	if signal <> psignal then begin
+		if psignal <> 0 and psize1 <> 0 then begin
+	  		adate = ELdatetostring(edate);
+			bdate = ELdatetostring(date);
+			tradePL1 = psignal*psize1*(open - eprice1)*bigpointvalue;
+			tradePL2 = -psignal*psize2*(open of data2 - eprice2)*bigpointvalue of data2;
+			tradePL = tradePL1 + tradePL2;
+			cumtradePL = cumtradePL + tradePL;
+			if psignal > 0 then PLtradelong = PLtradelong + tradePL
+				else if psignal < 0 then PLtradeshort = PLtradeshort + tradePL;
+			if printdetail then begin
+				print(file("c:\tradestation\Trend_of_Yield_Trades.csv"),ntrade:5:0, ",",
+					adate, ",", bdate, ",", psignal*psize1:8:2, ",", eprice1:8:4, ",", open:8:4, ",", 
+					-psignal*psize2:8:2, ",", eprice2:8:4, ",", open of data2:8:4, ",", 
+					tradePL1:8:2, ",", tradePL2:8:2, ",", tradePL:8:2, ",", PLtradelong:8:2, ",",
+					PLtradeshort:8:2, ",", cumtradePL:8:2);
+				end;
+			end;
+		edate = date;
+		eprice1 = open;
+		eprice2 = open of data2;
+		bestprice = open;
+		end;
+
+	if psignal <> 0 then begin
+		PL1 = psignal*psize1*(close - close[1])*bigpointvalue;
+ 		PL2 = -psignal*psize2*(close of data2 - close[1] of data2)*bigpointvalue of data2;
+		PL = PL1 + PL2;
+		totalPL1 = totalPL1 + PL1;
+		totalPL2 = totalPL2 + PL2;
+		totalPL = totalPL + PL;
+		end;
+	if psignal > 0 then
+			PLlong = PLlong + PL
+		else if psignal < 0 then
+			PLshort = PLshort + PL;
+
+	psignal = marketposition;
+	psize1 = size1;
+	psize2 = size2;
+
+	if printdetail and date <> date[1] then begin
+	  	adate = ELdatetostring(date);
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\Trend_of_Yield_Detail.csv"), 
+				"Date,Close1,Close2,Diff,Trend,ATR1,ATR2,Pos1,Pos2,PL1,PL2,PLtoday,PLlong,PLshort,",
+				"TotalPL1,TotalPL2,TotalPL");
+			end;
+  		print(file("c:\tradestation\Trend_of_Yield_Detail.csv"),adate, ",", close:8:4, ",", 
+			close of data2:8:4, ",", Diff:8:4, ",", trend:8:4, ",", ATR1:6:4, ",", ATR2:6:4, ",",
+			signal*size1:6:2, ",", -signal*size2:6:2, ",", PL1:8:2, ",", PL2:8:2, ",", PL:8:2, ",", 
+			PLlong:8:2, ",", PLshort:8:2, ",", TotalPL1:8:2, ",", TotalPL2:8:2, ",", TotalPL:8:4);
+		end;

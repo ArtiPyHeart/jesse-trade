@@ -1,0 +1,77 @@
+[LegacyColorValue = true]; 
+
+{ TSM5 Outside Day with an Outside Close
+  Copyright 2011, 2018, P.J. Kaufman. All rights reserved. }
+
+	input:	exitdays(3), profitperiod(20), profitfactor(1.0), meanreversion(true), 
+				usefutures(true), printfile(false);
+	vars: 	debug(true), size(0), status(" "), futuresinvestment(25000), stockinvestment(10000), 
+				ATR(0), adate(" ");
+
+{ Exit trades after "exitdays" }
+	If marketposition <> 0 and barssinceentry >= exitdays then begin
+		If Marketposition > 0 then sell this bar on close
+			Else if Marketposition < 0 then buy to cover this bar on close;
+		end;
+
+{ if outside day then test to enter trades }
+	status = " ";
+	If high > high[1] and low < low[1] then begin
+		Status = "outside";
+		if usefutures then begin
+				size = futuresinvestment/(AvgTrueRange(10)*bigpointvalue);
+				end
+			else begin
+				size = stockinvestment/close;
+			end;
+		If meanreversion = False then begin
+			If close < low[1] then begin
+					status = "outside low";
+					sell short size contracts next bar on open;
+// profit-taking
+					if profitperiod <> 0 and profitfactor <> 0 then begin
+						ATR = avgtruerange(profitperiod);
+						buy to cover ("PTShort") all contracts next bar at entryprice - profitfactor*ATR limit;
+						end;
+					end
+				Else if close > high[1] then begin
+					status = "outside high";
+					buy size contracts next bar on open;
+// profit-taking
+					if profitperiod <> 0 and profitfactor <> 0 then begin
+						ATR = avgtruerange(profitperiod);
+						sell ("PTLong") all contracts next bar at entryprice + profitfactor*ATR limit;
+						end;
+				end;
+			end;
+		If meanreversion = True then begin
+			If close < low[1] then begin
+					status = "outside low";
+					buy size contracts next bar on open;
+					if profitperiod <> 0 and profitfactor <> 0 then begin
+						ATR = avgtruerange(profitperiod);
+						sell ("PTLongMR") all contracts next bar at entryprice + profitfactor*ATR limit;
+						end;
+					end
+				Else if close > high[1] then begin
+					status = "outside high";
+					sell short size contracts next bar on open;
+					if profitperiod <> 0 and profitfactor <> 0 then begin
+						ATR = avgtruerange(profitperiod);
+						buy to cover ("PTShortMR") all contracts next bar at entryprice - profitfactor*ATR limit;
+						end;
+				end;
+			end;
+		
+		end;
+
+{ print detail for debugging }
+	if printfile then begin
+		if currentbar = 1 then
+			print (file("c:\tradestation\OutsideDay.csv"),
+				"Date,High,Low,Close,status,size,marketposition,openPL,netPL");
+
+		print (file("c:\tradestation\OutsideDay.csv"),adate, ",",high:5:4, ",", low:5:4, ",", close:5:4,",",
+			status, ",", currentcontracts:5:0, ",", marketposition:4:0, ",", openpositionprofit:8:0, ",", 
+			netprofit:8:0);
+		end;

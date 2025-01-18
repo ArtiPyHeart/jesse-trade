@@ -1,0 +1,27 @@
+// VFI: Volume Flow Indicator
+// From Markos Katsanos, "Ranking" article
+// TAS&C June 2018
+
+	inputs:	coef(numericsimple), vcoef(numericsimple), period(numericsimple),
+				smoothedperiod(numericsimple), myvolume(numericref), cutoff(numericref),
+				vc(numericref), mf(numericref), VFI(numericref);
+	vars:		mytypicalprice(0), inter(0), vinter(0), vave(0), myvolavg(0), vmax(0),
+				directionalvolume(0);
+
+	mytypicalprice = typicalprice;
+	myvolavg = average(myvolume,period);
+	mf = mytypicalprice - mytypicalprice[1];
+
+	if mytypicalprice > 0 and mytypicalprice[1] > 0 then begin
+			inter = log(mytypicalprice) - log(mytypicalprice[1]);
+			vinter = stddev(inter,30);
+			cutoff = coef*vinter*close;
+			vave = myvolavg[1];
+			vmax = vave*vcoef;
+			vc = IFF(myvolume < vmax, myvolume, vmax);
+			directionalvolume = IFF(mf > cutoff, +vc, IFF(mf < -cutoff, -vc, 0));
+			VFI = summation(directionalvolume,period) / vave;
+			VolumeFlowIndex = Xaverage(VFI,smoothedperiod);
+			end
+		else	
+			VolumeFlowIndex = 0;

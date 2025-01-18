@@ -1,0 +1,33 @@
+[LegacyColorValue = true]; 
+
+ // TSM KAMA : Kaufman's Adaptive Moving Average
+ // Copyright 1993,2011,2018 P J Kaufman, All rights reserved. }
+
+  	inputs: 	period(8), fast(3), slow(30);
+ 	vars:		efratio(0), smooth(1), fastend(.666), slowend(.0645), diff(0), signal(0), noise(0);
+   vars:    KAMA(0), adate(" "), MA(0);
+
+// calculate efficiency ratio 
+	if currentbar = 1 then begin
+			KAMA = close;
+			fastend = 2/(fast + 1);
+			slowend = 2/(slow + 1);
+			end
+		else begin
+			efratio = 1;
+			diff = absvalue(close - close[1]);
+			signal = absvalue(close - close[period]);
+			noise = summation(diff,period);
+			if noise <> 0 then efratio = signal / noise;
+			smooth = power(efratio*(fastend - slowend) + slowend,2);
+			KAMA = KAMA[1] + smooth*(close - KAMA[1]);
+		end;
+// ADAPTIVE MOVING AVERAGE
+   Plot1(KAMA,"KAMA");
+		
+	adate = ELdatetostring(date);
+	if currentbar = 1 then
+		print(file("c:\tradestation\KAMA_indicator.csv"), "Date,EFratio,MA,KAMA");
+	MA = 2./smooth - 1;
+	print(file("c:\tradestation\KAMA_indicator.csv"), adate, ",", efratio:8:4, ",", MA:6:2, ",", KAMA:8:3);
+   

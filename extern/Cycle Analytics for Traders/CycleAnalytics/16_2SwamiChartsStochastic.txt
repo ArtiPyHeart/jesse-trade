@@ -1,0 +1,112 @@
+{
+SwamiCharts Stochastic
+© 2013 John F. Ehlers
+}
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	Lookback(0),
+	count(0),
+	HighestC(0),
+	LowestC(0),
+	Color1(0),
+	Color2(0),
+	Color3(0);
+	
+Arrays:
+	Ratio[48, 2](0),
+	Stoc[48, 3](0);
+	
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+//Compute Stochastic for each lookback period
+For Lookback = 5 to 48 Begin
+	Ratio[Lookback, 2] = Ratio[Lookback, 1];
+	Stoc[Lookback, 3] = Stoc[Lookback, 2];
+	Stoc[Lookback, 2] = Stoc[Lookback, 1];
+	HighestC = Filt;
+	LowestC = Filt;
+	For count = 0 to Lookback -1 Begin
+		If Filt[count] > HighestC then HighestC = Filt[count];
+		If Filt[count] < LowestC then LowestC = Filt[count];
+	End;
+	Ratio[Lookback, 1] = (Filt - LowestC) / (HighestC - LowestC);
+	//Smooth with a 10 bar Super Smoother. Coefficients are computed above
+	Stoc[Lookback, 1] = c1*(Ratio[Lookback, 1] + Ratio[Lookback, 2]) / 2 + c2*Stoc[Lookback, 2] + c3*Stoc[Lookback, 3];
+	//Ensure Stoc[Lookback, 1] does not exceed the 0 to 1 limits
+	If Stoc[Lookback, 1] < 0 Then Stoc[Lookback, 1] = 0;
+	If Stoc[Lookback, 1] > 1 Then Stoc[Lookback, 1] = 1;
+End;
+
+//Plot as a Heatmap
+For Lookback = 5 to 48 Begin
+	// StopLight Colors
+	If Stoc[Lookback, 1] >= .5 Then Begin
+		Color1 = 255*(2 - 2*Stoc[Lookback, 1]);
+		Color2 = 255;
+		Color3 = 0;
+		End
+		Else If Stoc[Lookback, 1] < .5 Then Begin
+		Color1 = 255;
+		Color2 = 255*2*Stoc[Lookback, 1];
+		Color3 = 0;
+	End;
+	If Lookback = 5 Then Plot5(5, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 6 Then Plot6(6, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 7 Then Plot7(7, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 8 Then Plot8(8, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 9 Then Plot9(9, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 10 Then Plot10(10, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 11 Then Plot11(11, "S11", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 12 Then Plot12(12, "S12", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 13 Then Plot13(13, "S13", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 14 Then Plot14(14, "S14", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 15 Then Plot15(15, "S15", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 16 Then Plot16(16, "S16", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 17 Then Plot17(17, "S17", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 18 Then Plot18(18, "S18", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 19 Then Plot19(19, "S19", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 20 Then Plot20(20, "S20", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 21 Then Plot21(21, "S21", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 22 Then Plot22(22, "S22", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 23 Then Plot23(23, "S23", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 24 Then Plot24(24, "S24", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 25 Then Plot25(25, "S25", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 26 Then Plot26(26, "S26", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 27 Then Plot27(27, "S27", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 28 Then Plot28(28, "S28", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 29 Then Plot29(29, "S29", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 30 Then Plot30(30, "S30", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 31 Then Plot31(31, "S31", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 32 Then Plot32(32, "S32", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 33 Then Plot33(33, "S33", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 34 Then Plot34(34, "S34", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 35 Then Plot35(35, "S35", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 36 Then Plot36(36, "S36", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 37 Then Plot37(37, "S37", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 38 Then Plot38(38, "S38", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 39 Then Plot39(39, "S39", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 40 Then Plot40(40, "S40", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 41 Then Plot41(41, "S41", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 42 Then Plot42(42, "S42", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 43 Then Plot43(43, "S43", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 44 Then Plot44(44, "S44", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 45 Then Plot45(45, "S45", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 46 Then Plot46(46, "S46", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 47 Then Plot47(47, "S47", RGB(Color1, Color2, Color3),0,4);
+	If Lookback = 48 Then Plot48(48, "S48", RGB(Color1, Color2, Color3),0,4);
+End;

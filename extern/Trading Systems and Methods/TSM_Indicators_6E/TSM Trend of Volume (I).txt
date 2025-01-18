@@ -1,0 +1,18 @@
+// TSM Trend of Volume
+
+inputs:	type(0), period(80);
+
+vars:		trend(o), sc(0);
+
+if type = 0 then
+		trend = average(volume,period)
+	else if type = 1 then begin
+		sc = 2/(period + 1);
+		trend = trend[1] + sc*(volume - trend[1]);
+		end
+	else if type = 2 then
+		trend = linearregslope(volume,period);
+
+plot1(volume,"Volume");
+plot2(trend,"Trend");
+		

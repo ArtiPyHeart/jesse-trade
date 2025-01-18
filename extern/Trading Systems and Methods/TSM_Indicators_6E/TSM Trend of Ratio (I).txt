@@ -1,0 +1,11 @@
+// PJK Trend of Ratio
+// Simple MA of ratio data1/data2
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+inputs:	period(40);
+vars:		trend(0), ratio(0);
+
+ratio = close/close of data2;
+trend = average(ratio,period);
+
+plot1(trend,"Trend");

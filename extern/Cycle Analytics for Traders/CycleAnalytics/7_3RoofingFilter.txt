@@ -1,0 +1,33 @@
+{
+Roofing Filter Indicator
+© 2013 John F. Ehlers
+}
+Inputs:
+	LPPeriod(40),
+	HPPeriod(80);
+
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	Filt2(0);
+
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / HPPeriod) + Sine (.707*360 / HPPeriod) - 1) / Cosine(.707*360 / HPPeriod);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / LPPeriod);
+b1 = 2*a1*Cosine(1.414*180 / LPPeriod);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+
+Plot1(Filt);
+Plot2(Filt[2]);
+Plot6(0);

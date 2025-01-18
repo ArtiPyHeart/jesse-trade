@@ -1,0 +1,171 @@
+{
+Autocorrelation Periodogram
+© 2013 John F. Ehlers
+}
+Vars:
+	AvgLength(3),
+	M(0),
+	N(0),
+	X(0),
+	Y(0),
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	Lag(0),
+	count(0),
+	Sx(0),
+	Sy(0),
+	Sxx(0),
+	Syy(0),
+	Sxy(0),
+	Period(0),
+	Sp(0),
+	Spx(0),
+	MaxPwr(0),
+	DominantCycle(0),
+	Color1(0),
+	Color2(0),
+	Color3(0);
+
+Arrays:
+	Corr[48](0),
+	CosinePart[48](0),
+	SinePart[48](0),
+	SqSum[48](0),
+	R[48, 2](0),
+	Pwr[48](0);
+
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)* (1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+//Pearson correlation for each value of lag
+For Lag = 0 to 48 Begin
+	//Set the averaging length as M
+	M = AvgLength;
+	If AvgLength = 0 Then M = Lag;
+	Sx = 0;
+	Sy = 0;
+	Sxx = 0;
+	Syy = 0;
+	Sxy = 0;
+	For count = 0 to M - 1 Begin
+		X = Filt[count];
+		Y = Filt[Lag + count];
+		Sx = Sx + X;
+		Sy = Sy + Y;
+		Sxx = Sxx + X*X;
+		Sxy = Sxy + X*Y;
+		Syy = Syy + Y*Y;
+	End;
+	If (M*Sxx - Sx*Sx)*(M*Syy - Sy*Sy) > 0 Then Corr[Lag] = (M*Sxy - Sx*Sy)/SquareRoot((M*Sxx - Sx*Sx)*(M*Syy - Sy*Sy));
+End;
+For Period = 10 to 48 Begin
+	CosinePart[Period] = 0;
+	SinePart[Period] = 0;
+	For N = 3 to 48 Begin
+		CosinePart[Period] = CosinePart[Period] + Corr[N]*Cosine(370*N / Period);
+		SinePart[Period] = SinePart[Period] + Corr[N]*Sine(370*N / Period);
+	End;
+	SqSum[Period] = CosinePart[Period]*CosinePart[Period] + SinePart[Period]*SinePart[Period];
+End;
+For Period = 10 to 48 Begin
+	R[Period, 2] = R[Period, 1];
+	R[Period, 1] = .2*SqSum[Period]*SqSum[Period] + .8*R[Period, 2];
+End;
+//Find Maximum Power Level for Normalization
+MaxPwr = .995*MaxPwr;
+For Period = 10 to 48 Begin
+	If R[Period, 1] > MaxPwr Then MaxPwr = R[Period, 1];
+End;
+For Period = 3 to 48 Begin
+	Pwr[Period] = R[Period, 1] / MaxPwr;
+End;
+//Compute the dominant cycle using the CG of the spectrum
+Spx = 0;
+Sp = 0;
+For Period = 10 to 48 Begin
+	If Pwr[Period] >= .5 Then Begin
+		Spx = Spx + Period*Pwr[Period];
+		Sp = Sp + Pwr[Period];
+	End;
+End;
+If Sp <> 0 Then DominantCycle = Spx / Sp;
+Plot2(DominantCycle, "DC", RGB(0, 0, 255), 0, 2);
+{
+//Increase Display Resolution by raising the NormPwr to a
+higher mathematical power (optional)
+For Period = 10 to 48 Begin
+Pwr[Period] = Power(Pwr[Period], 2);
+End;
+}
+
+//Plot as a Heatmap
+Color3 = 0;
+For Period = 10 to 48 Begin
+	If Pwr[Period] > .5 Then Begin
+		Color1 = 255;
+		Color2 = 255*(2*Pwr[Period] - 1);
+		End
+		Else Begin
+		Color1 = 2*255*Pwr[Period];
+		Color2 = 0;
+	End;
+	If Period = 3 Then Plot3[0](3, "S3", RGB(Color1, Color2, Color3),0,4);
+	If Period = 4 Then Plot4[0](4, "S4", RGB(Color1, Color2, Color3),0,4);
+	If Period = 5 Then Plot5[0](5, "S5", RGB(Color1, Color2, Color3),0,4);
+	If Period = 6 Then Plot6[0](6, "S6", RGB(Color1, Color2, Color3),0,4);
+	If Period = 7 Then Plot7[0](7, "S7", RGB(Color1, Color2, Color3),0,4);
+	If Period = 8 Then Plot8[0](8, "S8", RGB(Color1, Color2, Color3),0,4);
+	If Period = 9 Then Plot9[0](9, "S9", RGB(Color1, Color2, Color3),0,4);
+	If Period = 10 Then Plot10[0](10, "S10", RGB(Color1, Color2, Color3),0,4);
+	If Period = 11 Then Plot11[0](11, "S11", RGB(Color1, Color2, Color3),0,4);
+	If Period = 12 Then Plot12[0](12, "S12", RGB(Color1, Color2, Color3),0,4);
+	If Period = 13 Then Plot13[0](13, "S13", RGB(Color1, Color2, Color3),0,4);
+	If Period = 14 Then Plot14[0](14, "S14", RGB(Color1, Color2, Color3),0,4);
+	If Period = 15 Then Plot15[0](15, "S15", RGB(Color1, Color2, Color3),0,4);
+	If Period = 16 Then Plot16[0](16, "S16", RGB(Color1, Color2, Color3),0,4);
+	If Period = 17 Then Plot17[0](17, "S17", RGB(Color1, Color2, Color3),0,4);
+	If Period = 18 Then Plot18[0](18, "S18", RGB(Color1, Color2, Color3),0,4);
+	If Period = 19 Then Plot19[0](19, "S19", RGB(Color1, Color2, Color3),0,4);
+	If Period = 20 Then Plot20[0](20, "S20", RGB(Color1, Color2, Color3),0,4);
+	If Period = 21 Then Plot21[0](21, "S21", RGB(Color1, Color2, Color3),0,4);
+	If Period = 22 Then Plot22[0](22, "S22", RGB(Color1, Color2, Color3),0,4);
+	If Period = 23 Then Plot23[0](23, "S23", RGB(Color1, Color2, Color3),0,4);
+	If Period = 24 Then Plot24[0](24, "S24", RGB(Color1, Color2, Color3),0,4);
+	If Period = 25 Then Plot25[0](25, "S25", RGB(Color1, Color2, Color3),0,4);
+	If Period = 26 Then Plot26[0](26, "S26", RGB(Color1, Color2, Color3),0,4);
+	If Period = 27 Then Plot27[0](27, "S27", RGB(Color1, Color2, Color3),0,4);
+	If Period = 28 Then Plot28[0](28, "S28", RGB(Color1, Color2, Color3),0,4);
+	If Period = 29 Then Plot29[0](29, "S29", RGB(Color1, Color2, Color3),0,4);
+	If Period = 30 Then Plot30[0](30, "S30", RGB(Color1, Color2, Color3),0,4);
+	If Period = 31 Then Plot31[0](31, "S31", RGB(Color1, Color2, Color3),0,4);
+	If Period = 32 Then Plot32[0](32, "S32", RGB(Color1, Color2, Color3),0,4);
+	If Period = 33 Then Plot33[0](33, "S33", RGB(Color1, Color2, Color3),0,4);
+	If Period = 34 Then Plot34[0](34, "S34", RGB(Color1, Color2, Color3),0,4);
+	If Period = 35 Then Plot35[0](35, "S35", RGB(Color1, Color2, Color3),0,4);
+	If Period = 36 Then Plot36[0](36, "S36", RGB(Color1, Color2, Color3),0,4);
+	If Period = 37 Then Plot37[0](37, "S37", RGB(Color1, Color2, Color3),0,4);
+	If Period = 38 Then Plot38[0](38, "S38", RGB(Color1, Color2, Color3),0,4);
+	If Period = 39 Then Plot39[0](39, "S39", RGB(Color1, Color2, Color3),0,4);
+	If Period = 40 Then Plot40[0](40, "S40", RGB(Color1, Color2, Color3),0,4);
+	If Period = 41 Then Plot41[0](41, "S41", RGB(Color1, Color2, Color3),0,4);
+	If Period = 42 Then Plot42[0](42, "S42", RGB(Color1, Color2, Color3),0,4);
+	If Period = 43 Then Plot43[0](43, "S43", RGB(Color1, Color2, Color3),0,4);
+	If Period = 44 Then Plot44[0](44, "S44", RGB(Color1, Color2, Color3),0,4);
+	If Period = 45 Then Plot45[0](45, "S45", RGB(Color1, Color2, Color3),0,4);
+	If Period = 46 Then Plot46[0](46, "S46", RGB(Color1, Color2, Color3),0,4);
+	If Period = 47 Then Plot47[0](47, "S47", RGB(Color1, Color2, Color3),0,4);
+	If Period = 48 Then Plot48[0](48, "S48", RGB(Color1, Color2, Color3),0,4);
+End; 

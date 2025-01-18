@@ -1,0 +1,43 @@
+{
+Modified RSI Indicator
+© 2013 John F. Ehlers
+}
+Inputs:
+	Length(10);
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	ClosesUp(0),
+	ClosesDn(0),
+	count(0),
+	Denom(0),
+	MyRSI(0);
+
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+ClosesUp = 0;
+ClosesDn = 0;
+For count = 0 to Length - 1 Begin
+	If Filt[count] > Filt[count + 1] Then ClosesUp = ClosesUp + (Filt[count] - Filt[count + 1]);
+	If Filt[count] < Filt[count + 1] Then ClosesDn = ClosesDn + (Filt[count + 1] - Filt[count]);
+End;
+Denom = ClosesUp + ClosesDn;
+If Denom <> 0 and Denom[1] <> 0 Then MyRSI = c1*(ClosesUp / Denom + ClosesUp[1] / Denom[1]) / 2 + c2*MyRSI[1] + c3*MyRSI[2];
+
+Plot1(MyRSI);
+Plot2(.7);
+Plot6(.3);

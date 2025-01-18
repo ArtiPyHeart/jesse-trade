@@ -1,0 +1,147 @@
+[LegacyColorValue = true]; 
+
+{ TSM Adding on Profits using a moving average strategy
+	This version for stocks
+  Copyright 2011, 2019 P J Kaufman. All rights reserved. }
+
+{ period = length of calculaton
+  maxposition = maximum shares or contracts
+  compoundingmethod = compounding method, 
+  				1 adding equal on new highs, n days apart
+  				2, adding 1/2 on new highs, n days apart
+}
+  input: period(80), maxadds(5), daysbetween(1), compoundingmethod(1), 
+			usefutures(false), printfile(false);
+  vars:	signal(0), trend(0), totalPL(0), size(0), maxprofit(0), lastprofitbar(0),
+  			nadds(0), lastprofit(0), adate(" "), dailyPL(0), psignal(0), sumsize(0),
+			maxsize(0), investment(100000), ix(0), startsize(0), startcost(0);
+  			
+	trend = average(close,period);
+	if trend > trend[1] then signal = 1
+		else if trend < trend[1] then signal = -1;
+
+// maxsize for adding 1/2
+	if currentbar = 1 and compoundingmethod = 2 then begin
+		maxsize = 1;
+		for ix = 2 to maxadds begin
+			maxsize = maxsize * 2;
+			end;
+		startsize = power(2,maxadds);
+		startcost = investment*startsize/maxsize;
+//  		print(file("c:\TradeStation\Adding_on_Profits.csv"), "adds=,", maxadds:5:0, ",maxsize=,", 
+//					maxsize:8:2, ",start=,", startsize:8:2, ",cost=,", startcost:8:0);
+		end;
+		
+// new trend start initial position either option
+	if signal <> signal[1] or currentbar = 1 then begin
+// calculate equal position size for new trade
+		if compoundingmethod = 1 then begin
+			if usefutures then begin
+					maxsize = investment/(avgtruerange(20)*bigpointvalue);
+					if daysbetween = 0 or maxadds = 0 then begin
+							size = maxsize;
+							end
+						else begin
+							size = maxsize/maxadds;
+						end;
+					end
+// method 1, equities, multiple entries
+				else begin
+					maxsize = investment/close;
+					if daysbetween = 0 or maxadds = 0 then begin
+							size = maxsize;
+							end
+						else begin
+							size = maxsize/maxadds;
+						end;
+				end;
+			end;
+// method 2
+		if compoundingmethod = 2 then begin
+			if daysbetween = 0 or maxadds = 0 then begin
+					size = maxsize;
+					end
+				else begin
+					maxsize = power(2,maxadds);
+					sumsize = power(2,maxadds+1) - 1;
+					size = investment*(maxsize/sumsize)/close;
+//  					print(file("c:\TradeStation\Adding_on_Profits.csv"), "maxsize=,", 
+//						maxsize:8:2, ",sumsize=,", sumsize:8:2, ",size=,", size:8:0);
+				end;
+			end;
+// new long position
+		if signal > 0 then begin
+				if marketposition < 0 then buy to cover all shares next bar on open;
+				if daysbetween = 0 or maxadds = 0 then begin
+						buy ("Long Max") size shares next bar on open;
+						signal = 1;
+						maxprofit = 0;
+						lastprofit = 0;
+						end
+// new long trend
+					else begin
+						buy ("new_long") size shares next bar on open;
+						nadds = 1;
+						signal = 1;
+						maxprofit = 0;
+						lastprofit = 0;
+						lastprofitbar = currentbar;
+					end;
+				end
+// new short trend
+			else if signal < 0 then begin
+				if marketposition > 0 then sell all shares next bar on open;
+				if daysbetween = 0 or maxadds = 0 then begin
+						sell short ("Short Max") size shares next bar on open;
+						maxprofit = 0;
+						lastprofit = 0;
+						signal = -1;
+						end
+					else begin
+						sell short ("new_short") size shares next bar on open;
+						maxprofit = 0;
+						nadds = 1;
+						signal = -1;
+						lastprofit = 0;
+						lastprofitbar = currentbar;
+					end;
+				end;
+			end;
+	
+// not a new trend, look to add size
+//	if marketposition <> 0 and marketposition = psignal and daysbetween <> 0 then begin
+	if signal = signal[1] and daysbetween <> 0 and maxadds <> 0 then begin
+		maxprofit = maxlist(maxprofit,openpositionprofit);
+		if nadds < maxadds and maxprofit > lastprofit and
+				currentbar - lastprofitbar >= daysbetween then begin
+			if compoundingmethod = 2 then size = size/2;
+			if signal > 0 and size > 0 then begin
+					buy ("next_long") size shares next bar on open;
+					lastprofit = maxprofit;
+					lastprofitbar = currentbar;
+					end
+				else if signal < 0 and size > 0 then begin
+					sell short ("next_short") size shares next bar on open;
+					lastprofit = maxprofit;
+					lastprofitbar = currentbar;
+				end;
+			nadds = nadds + 1;
+			end;
+		end;
+ 	
+  	totalPL = netprofit + openpositionprofit;
+  	dailyPL = totalPL - totalPL[1];
+	psignal = marketposition;
+  	
+	if printfile then begin
+  		If Currentbar = 1 then print(file("c:\TradeStation\Adding_on_Profits.csv"), 
+  					"Date,close,trend,signal,mktpos,curpos,nadds,openprofit,lastprofit,netPL,",
+					"maxPL,maxsize,newsize,DailyPL,TotalPL");
+ 		adate = ELdatetostring(date);
+  		print(file("c:\TradeStation\Adding_on_Profits.csv"),adate, ",", close:6:4, ",", trend:6:4, ",", 
+					signal:3:0, ",", marketposition:3:0, ",", currentshares:8:3, ",", 
+  					nadds:5:0, ",", openpositionprofit:8:2, ",", lastprofit:5:0, ",",
+ 					netprofit + openpositionprofit:8:2, ",", 
+  					maxprofit:8:2, ",", maxsize:8:2, ",", size:8:2, ",", dailyPL:8:2, ",", 
+					totalPL:8:2);
+		end;

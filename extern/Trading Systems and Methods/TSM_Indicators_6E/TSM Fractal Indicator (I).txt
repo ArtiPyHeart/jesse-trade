@@ -1,0 +1,31 @@
+{ TSM Fractal Indicator
+	Copyright 2018, P.J.Kaufman. All rights reserved. 
+	Input period must be odd }
+	
+	inputs: 	period(5);
+	vars:		span(0), MP(0), fractalup(false), fractaldown(false), ix(0), adate(" ");	
+
+	span = intportion(period/2);
+	MP = span;
+
+// test up fractal
+	fractalup = true;
+	for ix = period-1 downto 0  begin
+		if ix <> MP and high[ix] > high[MP] then fractalup = false;
+		end;
+	if fractalup = true then plot1[span](1.005*high[MP],"upfractal");
+
+// test down fractal
+	fractaldown = true;
+	for ix = period-1 downto 0 begin
+		if ix <> MP and low[ix] < low[MP] then fractaldown = false;
+		end;
+	if fractaldown = true then plot2[span](0.995*low[MP],"downfractal");
+
+	If Currentbar = 1 then 
+			print(file("c:\tradestation\Fractal_Indicator.csv"), 
+					"Date,High,Low,StartH,StartL,FractUp,FractDn");
+		adate = ELdatetostring(date);
+		print(file("c:\tradestation\Fractal_Indicator.csv"), adate, ",", 
+					High:8:3, ",", Low:8:3, ",", high[period-1]:8:3,  ",", low[period-1]:8:3,
+					",", fractalup, ",", fractaldown);

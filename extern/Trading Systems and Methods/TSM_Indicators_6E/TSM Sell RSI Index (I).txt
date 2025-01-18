@@ -1,0 +1,32 @@
+// TSM Sell RSI Index
+// Copyright 2019, P.J.Kaufman. All rights reserved.
+
+// This is from an article "Sell Relative Strength Index" by Howard Wang
+// published by Technical Analysis of Stocks & Commodities, February 2019
+
+	inputs:	period(20);
+	vars:		srsi(0), closetoopen(0), hightolow(0), ratio(0);
+
+//	for k = 0 to period - 1 begin
+//	closetoopen = absvalue(close - open);
+	closetoopen = close - open;
+	hightolow = absvalue(high - low);
+//	hightolow = high - low;
+	if hightolow = 0 then
+			ratio = 0
+		else
+			ratio = closetoopen/hightolow;
+	srsi = average(ratio,period);
+
+	plot1(0.38);
+	plot2(srsi);
+	plot3(-0.38);
+	plot4(0);
+
+	if srsi > 0 then setplotcolor(2,green);
+	if srsi < 0 then setplotcolor(2,red);
+	if srsi >= -0.05 and srsi <= 0.05 then setplotcolor(2,darkblue);
+
+	setplotcolor(1,darkred);
+	setplotcolor(3,darkgreen);
+	setplotcolor(4,cyan);

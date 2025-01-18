@@ -1,0 +1,11 @@
+{ PJK Volume Trend and Outliers
+	Copyright 2013, P.J.Kaufman. All rights reserved. }
+
+	inputs:	period(64), extremefactor(2.0);
+	vars:		avg(0), extreme(0), lag(10);
+
+	avg = average(volume,period);
+	plot1(avg[lag],"AvgVolume");
+	extreme = avg[lag]*extremefactor;
+	plot2(extreme[lag],"Extreme");
+	plot3(volume,"Volume");

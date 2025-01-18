@@ -1,0 +1,227 @@
+// PJK Early Intraday Move
+//	Copyright P.J.Kaufman, 2018. All rights reserved.
+//	Enter early breakout, exit middayish
+	
+	inputs:	trendper(120), ATRperiod(20), mingapratio(0.1), exitnewHL(true), takeprofits(false), 
+				profitfactor(0), allowreversals(false), longonly(true), usestocks(true),  
+				usefutures(false), starttime(700), endtime(1600), printoption(false); 
+	vars:		size(0), investment(0), stockinvestment(10000), futuresinvestment(25000), 
+				equity(0), PL(0), PLlong(0), PLshort(0), adate(" "), signal(0), k(0),
+				tradestoday(0), ndays(0), ix(0), barstoday(0), openinggap(0),  
+				thigh(0), tlow(0), trenddir(0), maxbarstoday(0), thighbar(0), tlowbar(0),
+				highestcount(0), lowestcount(0), openinggapratio(0), thighestbar(0), tlowestbar(0);
+	arrays:	dhighbar[10000](0), dlowbar[10000](0), davgATR[10000](0), 
+				highcount[10000](0), lowcount[10000](0), trend[10000](0), dclose[10000](0), 
+				dhigh[10000](0), dlow[10000](0);
+	
+// average of opening bar
+	if date <> date[1] then begin
+		tradestoday = 0;
+		maxbarstoday = maxlist(maxbarstoday,barstoday);
+		barstoday = 0;
+		ndays = ndays + 1;
+		if ndays > 1 then begin
+			dclose[ndays-1] = close[1];
+			dhigh[ndays-1] = thigh;
+			dlow[ndays-1] = tlow;
+			dhighbar[ndays-1] = thighbar;
+			dlowbar[ndays-1] = tlowbar;
+			for ix = 1 to maxbarstoday begin
+				highcount[ix] = 0;
+				lowcount[ix] = 0;
+				end;
+// find most frequent occurrence of high and low bars
+			if ndays > ATRperiod + 1 then begin
+				for ix = ndays - ATRperiod to ndays-1 begin
+					k = dhighbar[ix];
+					highcount[k] = highcount[k] + 1;
+					k = dlowbar[ix];
+					lowcount[k] = lowcount[k] + 1;
+					end;
+				end;
+// DOES THIS NEED TO BE SEPARATED INTO GAP HIGHER, GAP LOWER?
+// find highest and lowest bar count
+// thighbar and tlowbar are the most frequent
+			highestcount = highcount[1];
+			lowestcount = lowcount[1];
+			thighestbar = 1;
+			tlowestbar = 1;
+			for ix = 2 to maxbarstoday begin
+				if highcount[ix] > highestcount then begin
+					thighestbar = ix;
+					highestcount = highcount[ix];
+					end;
+				if lowcount[ix] > lowestcount then begin
+					tlowestbar = ix;
+					lowestcount = lowcount[ix];
+					end;
+				end;
+			end;
+		thighbar = 1;
+		tlowbar = 1;
+
+// daily ATR
+		if ndays > ATRperiod + 1 then begin
+			davgATR[ndays-1] = 0;
+			for ix = ndays - ATRperiod to ndays - 1 begin
+				davgATR[ndays-1] = davgATR[ndays-1] + dhigh[ndays-1] - dlow[ndays-1];
+				end;
+			davgATR[ndays-1] = davgATR[ndays-1]/ATRperiod; 
+// daily trend
+			trend[ndays-1] = 0;
+			trenddir = 0;
+			if trendper > 0 and ndays - 1 > trendper then begin
+				for ix = ndays - trendper to ndays - 1 begin
+					trend[ndays-1] = trend[ndays-1] + dclose[ix];
+					end;
+				trend[ndays-1] = trend[ndays-1]/trendper;
+				if trend[ndays-1] > trend[ndays-2] then trenddir = 1 else trenddir = -1;
+				end;
+			end;
+		end;
+
+// position size
+	if ndays > 1 then begin
+		if usestocks then
+				if dclose[ndays-1] <> 0 then size = stockinvestment/dclose[ndays-1]
+			else
+				if davgATR[ndays-1] <> 0 then size = futuresinvestment/(davgATR[ndays-1]*bigpointvalue);
+		end;
+
+// opening gap as of start time
+	if time >= starttime and time[1] < starttime and ndays > 1 then begin
+		openinggap = open - dclose[ndays-1];
+		openinggapratio = 0;
+		if davgATR[ndays-1] > 0 then openinggapratio = openinggap/davgATR[ndays-1];
+		thigh = high;
+		tlow = low;
+		barstoday = 1;
+		thighbar = barstoday;
+		tlowbar = barstoday;
+// price must be moving in the right direction
+		if openinggapratio > mingapratio and close > close[1] then begin
+				buy ("Bopen") size contracts this bar on close;
+				k = profitfactor*davgATR[ndays-1];
+				sell ("LPTopen") all contracts next bar at entryprice + k limit;
+				tradestoday = 1;
+				end
+			else if openinggapratio < -mingapratio and close < close[1] then begin
+				sell short ("Sopen") size contracts this bar on close;
+				tradestoday = 1;
+			end;
+		end;
+
+// not the open
+	if time > starttime and time <= endtime then begin
+		barstoday = barstoday + 1;
+		if high > thigh then begin
+			thighbar = barstoday;
+			thigh = high;
+			end;
+		if low < tlow then begin
+			tlowbar = barstoday;
+			tlow = low;
+			end;
+		end;
+
+// take profits at bar high/low or ATR factor
+	if takeprofits and ndays > 1 then begin
+		k = profitfactor*davgATR[ndays-1];
+		if marketposition > 0 then begin
+				sell ("LPTatr") all contracts next bar at entryprice + k limit;
+				end
+			else if marketposition < 0 then begin
+				buy to cover ("SPTatr") all contracts next bar at entryprice - k limit;
+			end;
+		end;
+
+// take profits at most frequent bar high or low
+	if marketposition > 0 and barstoday = thighestbar then begin
+			sell ("LPTcount") all contracts this bar on close;
+			end
+		else if marketposition < 0 and barstoday = tlowestbar then begin
+			buy to cover ("SPTcount") all contracts this bar on close;
+		end;
+
+// exit on new high or low after midday
+	if marketposition > 0 and time >= 1200 and low < tlow[1] and tradestoday = 1 then begin
+			sell ("LXmidday") all contracts this bar on close;
+			end
+		else if marketposition < 0 and time >= 1200 and high > high[1] and low > low[1] 
+				and tradestoday = 1 then begin
+			buy to cover ("SXmidday") all contracts this bar on close;
+		end;
+	
+// reversal on new high or low
+	if allowreversals then begin
+			if marketposition > 0 and low < tlow[1] and tradestoday = 1 then begin
+				sell ("LXrev") all contracts this bar on close;
+				if longonly = false then begin
+					sell short ("Srev") size contracts this bar on close;
+					tradestoday = tradestoday + 1;
+					end;
+				end
+			else if marketposition < 0 and high > thigh[1] and tradestoday = 1 then begin
+				buy ("Lrev") size contracts this bar on close;
+				tradestoday = tradestoday + 1;
+			end;
+		end;
+
+// exit new high or low on second trade
+	if marketposition <> 0 and tradestoday = 2 then begin
+		if marketposition > 0 and low < tlow[1] then 
+					sell ("XLstop") all contracts this bar on close
+			else if marketposition < 0 and high > thigh[1] then 
+					buy to cover ("XSstop") all contracts this bar on close;
+		end;
+
+// Exit end of day
+	if (time >= sess1endtime or date <> date[1]) and marketposition <> 0 then begin
+		if marketposition > 0 then sell ("XLongEOD") all contracts this bar on close
+			else buy to cover ("XShortEOD") all contracts this bar on close;
+		end;
+
+// Exit when the trend changes
+	if trendper <> 0 and ndays > 1 then begin
+		if marketposition >= 0 then begin
+				if trenddir < 0 then begin
+					sell ("XLtrend") all contracts next bar on open;
+					end
+			else if marketposition <= 0 then begin
+				if trenddir > 0 then begin
+					buy to cover ("XStrend") all contracts next bar on open;
+					end;
+				end;
+			end;
+		end;
+
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if signal[1] > 0 or signal > 0 then
+			PLlong = PLlong + PL
+		else if signal[1] < 0 or signal < 0 then
+			PLshort = PLshort + PL;
+	signal = marketposition;
+
+	if printoption then begin
+  		adate = ELdatetostring(date);
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\Early_Intraday_Move_PL.csv"), 
+							"Date,mktpos,size,netPL,PLlong,PLshort");
+			print(file("c:\tradestation\Early_Intraday_Move_detail.csv"),"Date,Time,Open,High,Low,Close,",
+					"dHigh,dLow,dClose,Gap,AvgDlyATR,Days,Bars,Trend,tHighest,tLowest,OpGapRatio,Size,Pos,",
+					"PLlong,PLshort,PL,cumPL");
+			end; 
+		if date <> date[1] then begin 
+			print(file("c:\tradestation\Early_Intraday_Move_PL.csv"),adate, ",", marketposition:5:0, ",",  
+						size:8:3, ",", equity:8:4, ",", PLlong:8:4, ",",PLshort:8:4);
+			end;
+		if date > 1180000 then
+		print(file("c:\tradestation\Early_Intraday_Move_detail.csv"),adate, ",", time:4:0, ",", open:6:4, ",", 
+						high:6:4, ",", low: 6:4, ",", close:6:4, ",", dhigh[ndays-1]:6:4, ",",
+						dlow[ndays-1]:6:4, ",", dclose[ndays-1]:6:4, ",", openinggap:6:4, ",", davgATR[ndays-1]:6:4, ",", 
+						ndays:6:0, ",", barstoday:4:0, ",", trend[ndays-1]:8:4, ",", thighestbar:6:4, ",", 
+						tlowestbar:6:4, ",", openinggapratio:3:4, ",", size:6:0, ",", 
+						currentcontracts*marketposition:5:0, ",", 
+						PLlong:8:0, ",", PLshort:8:0, ",", PL:8:0, ",", equity:8:0);
+		end;

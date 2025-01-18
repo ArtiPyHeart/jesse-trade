@@ -1,0 +1,89 @@
+[LegacyColorValue = true]; 
+
+{ PJK VIX-HV Arbitrage 
+  Copyright 2016, 2018 P J Kaufman. All rights reserved. }
+
+{ 	Data1		SPY
+	Data2		VIX-I
+	period	20
+	}
+  
+	input: 	period(20), highentry(20), lowentry(-80), exitlong(0), exitshort(0), tradeonclose(false), 
+				investment(10000), printoption(false);
+
+ 	vars:		adate(" "), xdate(" "),VIXstoch(0), HVstoch(0), VIXvol(0), HVvol(0), volratio(0), size(0),
+				equity(0), longequity(0), shortequity(0), PL(0), signal(0), psignal(0), diff(0), VIXreturns(0),
+				HVreturns(0), entrysize(0);
+	vars:		tradeentrydate(0), tradeexitdate(0), ntrades(0), TradePL(0), TotalPL(0);
+
+	HVstoch = 100*(close - lowest(low,period))/(highest(high,period) - lowest(low,period));
+	VIXstoch = 100*(close of data2 - lowest(low of data2,period))/
+					(highest(high of data2,period) - lowest(low of data2,period));
+	Diff = VIXstoch - HVstoch;
+
+	VIXreturns = close of data2/close[1] of data2 - 1;
+	HVreturns = close/close[1] - 1;
+
+	VIXvol = stddev(VIXreturns,period)*squareroot(252);
+	HVvol = stddev(HVreturns,period)*squareroot(252);
+	volratio = VIXvol/HVvol;
+
+	tradeexitdate = 0;
+
+// exits first
+	if marketposition > 0 and diff > exitlong then begin
+			sell all shares next bar on open;
+			signal = 0;
+			end
+		else if marketposition < 0 and diff <= exitshort then begin
+			buy to cover all shares next bar on open;
+			signal = 0;
+		end;
+
+// entries
+	if marketposition = 0 then begin
+		size = investment/close;
+		if diff[1] >= highentry and diff < diff[1] then begin
+				sell short size shares next bar on open;
+				entrysize = size;
+				signal = 1;
+				end
+			else if diff <= lowentry then begin
+				buy size shares next bar on open;
+				entrysize = size;
+				signal = -1;
+			end;
+		end;
+						 	
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if marketposition > 0 then longequity = longequity + PL
+		else if marketposition < 0 then shortequity = shortequity + PL;
+
+ 	adate = ELdatetostring(date);
+	if printoption then begin
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\VIX-HV_Arbitrage2_detail.csv"), "Date,Close,VIX,HVvol,VIXvol,",
+						"HVstoch,VIXstoch,Diff,MktPos,entrysize,PLtoday,LongPL,ShortPL,TotalPL");
+//			print(file("c:\tradestation\VIX-HV_Arbitrage_trades.csv"), "Trade#,Date,HVsize,HVprice,VIXsize,VIXprice,",
+//						"Date,HVexit,VIXexit,HVtradePL,VIXtradePL,NetTradePL,TotalPL");
+			end;
+		print(file("c:\tradestation\VIX-HV_Arbitrage2_detail.csv"), adate, ",", close:8:4, ",", close of data2:8:4, ",", 
+				HVvol:8:4, ",", VIXvol:8:4, ",", HVstoch:8:4, ",", VIXstoch:8:4, ",", diff:8:4, ",",
+				marketposition:3:0, ",", entrysize:8:2, ",", PL:8:2, ",", longequity:8:2, ",", 
+				shortequity:8:2, ",", equity:8:2);
+
+{		if tradeexitdate <> 0 then begin
+			ntrades = ntrades + 1;
+			VIXtradePL = VIXentrysize*(VIXexit - VIXentry);
+			HVtradePL = HVentrysize*(HVexit - HVentry);
+			NetTradePL = VIXtradePL + HVtradePL;
+			TotalPL = TotalPL + NetTradePL;
+ 			adate = ELdatetostring(tradeentrydate);
+ 			xdate = ELdatetostring(tradeexitdate);
+			print(file("c:\tradestation\VIX-HV_Arbitrage_trades.csv"), ntrades:5:0, ",", adate, ",", 
+				HVentrysize:8:4, ",", HVentry:8:4, ",", VIXentrysize:8:4, ",", VIXentry:8:4, ",", 
+				xdate, ",", HVexit:8:4, ",", VIXexit:8:4, ",",
+				HVtradePL:8:2, ",", VIXtradePL:8:2, ",", NetTradePL:8:2, ",", TotalPL:8:2);
+			end; }
+		end;

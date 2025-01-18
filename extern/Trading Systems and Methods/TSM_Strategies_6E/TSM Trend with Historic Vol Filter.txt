@@ -1,0 +1,77 @@
+[LegacyColorValue = true]; 
+
+{ PJK Trend with Historic Vol Filter
+  Copyright 2018 P J Kaufman. All rights reserved. }
+
+{ 	riskoption	
+					0= annualized vol
+					1= ATR vol
+	volperiod = length of annualized vol
+	volthreshold = entry threshold
+	volexitthreshold = exit threshold
+	}
+  
+input: 	trendperiod(120), riskoption(0), volperiod(20), riskentrythreshold(0.40),
+			riskexitthreshold(0.60), ATRperiod(20), longonly(false), 
+			investment(10000), printoption(false);
+
+  vars:	avol(0), trend(0), size(1), returns(0), adate(" "), equity(0), PL(0);
+
+	size = investment/close;
+// annualized vol
+	returns = close/close[1] - 1;
+	
+// annualized vol
+	if riskoption = 0 then begin
+			avol = stddev(returns,volperiod)*squareroot(252.);
+			end
+// ATR
+		else if riskoption <> 0 then begin
+			avol = avgtruerange(volperiod);
+		end;
+
+// trend
+	trend = average(close,trendperiod);
+
+// exits first
+	if marketposition > 0 then begin
+		if trend < trend[1] then begin
+				sell ("TRExitLong") all contracts next bar on open;	
+				end
+			else if riskexitthreshold <> 0 and avol > riskexitthreshold then begin
+				sell ("VolExitLong") all contracts next bar on open;
+			end;
+		end;
+	if marketposition < 0 then begin
+		if trend > trend[1] then begin
+				buy to cover ("TRExitShort") all contracts next bar on open;
+				end
+			else if riskexitthreshold <> 0 and avol > riskexitthreshold then begin
+				buy to cover ("VolExitShort") all contracts next bar on open;
+			end;
+		end;
+
+// entries
+	if marketposition <= 0 and trend > trend[1] and 
+				(riskentrythreshold = 0 or avol < riskentrythreshold) then begin
+			buy ("NewLong") size contracts next bar on open;
+			end
+		else if marketposition >= 0 and trend < trend[1] and 
+				(riskentrythreshold = 0 or avol < riskexitthreshold) then begin
+			sell ("XLong") all contracts next bar on open;
+			if longonly = false then sell short ("NewShort") size contracts next bar on open;
+		end;
+  	
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+
+ 	adate = ELdatetostring(date);
+	if printoption then begin
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\Trend_with_Hist_Vol_Filter_detail.csv"), "Date,Close,Returns,Trend,AVol,",
+						"Size,Pos,PLtoday,CumPL");
+			end;
+		print(file("c:\tradestation\Trend_with_Hist_Vol_Filter_detail.csv"), adate, ",", close:8:4, ",", 
+				returns:8:5, ",", trend:8:4, ",", avol:4:5, ",", currentcontracts:8:3, ",", marketposition:3:0, ",", 
+				PL:12:2, ",", equity:12:2);
+		end;

@@ -1,0 +1,117 @@
+{ TSM 3-Day Trade for TSM6
+  Copyright 2016, P.J.Kaufman. All rights reserved. }
+{	input explanation:
+	entryrun		= number of days to signal an entry
+	exitrun		= number of days to hold until exit on close
+	trendper		= 0, then no trend filter; > 0 then moving average period used as a filter
+	longonly		= true then show only long trades
+	volfilter	= 0, then no filter; > 0 then don't take any trades when the volatility is above this level
+	printdetail	= true then print both a net PL file and a "detail" file that shows all values each day
+}
+	inputs:	entryrun(3), exitrun(2), trendper(0), longonly(false), volfilter(0), printdetail(false);
+
+	vars:  currentdir(0), upcount(0), downcount(0), prevupcount(0), prevdowncount(0), trend(0), 
+			size(1), equity(0), PL(0), adate(" "), prevdir(0), rundays(0), exitdays(0), 
+			waitforreset(0), eprice(0), signal(0), psignal(0), tradePL(0), dailyPL(0), esize(0),
+			stockinvestment(10000), returns(0), volatility(0);
+
+	rundays = entryrun;
+	exitdays = exitrun;
+	returns = close/close[1] - 1;
+
+// calculate volatility and trend if necessary
+	if volfilter <> 0 then volatility = stddev(returns,20)*squareroot(252);
+	if trendper <> 0 then trend = average(close,trendper);
+
+// calculate position size for any new trades
+	size = stockinvestment/close;
+
+// count runs and direction
+	prevupcount = upcount;
+	prevdowncount = downcount;
+	prevdir = currentdir;
+	if close > close[1] then begin
+			if close[1] > close[2] then 
+				 	upcount = upcount + 1
+				else begin
+					currentdir = 1;
+					upcount = 1;
+					downcount = 0;
+				end;
+			end
+		else if close < close[1] then begin
+			if close[1] < close[2] then
+					downcount = downcount + 1
+				else begin
+					currentdir = -1;
+					downcount = 1;
+					upcount = 0;
+				end;
+		end;
+
+{ exits }
+	if marketposition > 0 and barssinceentry >= exitdays then
+			sell ("Lexit") all contracts this bar on close
+		else if marketposition < 0 and barssinceentry >= exitdays then
+			buy to cover ("Sexit") all contracts this bar on close;
+
+	signal = marketposition;
+
+	if psignal = 0 then begin
+		tradePL = 0;
+		dailyPL = 0;
+		end;
+
+{ new long position }
+{ previous direction was down and run is satisfied then }
+	if currentdir <= 0 and downcount >= rundays and (trendper = 0 or trend > trend[1]) and 
+				(volfilter = 0 or volatility < volfilter) and waitforreset >= 0 then begin
+			if marketposition < 0 then buy to cover ("Lreverse") all contracts this bar on close;
+			buy ("upday") size contracts this bar on close;
+			eprice = close;
+			signal = 1;
+			esize = size;
+			dailyPL = 0;
+			tradePL = 0;
+			waitforreset = 0;
+			end
+
+// Short sales when trend is down
+		else if currentdir >= 0 and upcount >= rundays and (trendper = 0 or trend < trend[1]) and 
+				(volfilter = 0 or volatility < volfilter) and waitforreset <= 0 then begin
+			if marketposition > 0 then sell ("Sreverse") all contracts this bar on close;
+			if longonly = false then begin
+				sell short ("downday") size contracts this bar on close;
+				eprice = close;
+				signal = -1;
+				esize = size;
+				end;
+			dailyPL = 0;
+			tradePL = 0;
+			waitforreset = 0;
+		end;
+
+	psignal = signal;
+
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	adate = ELdatetostring(date);
+
+	if printdetail then begin
+		if Currentbar = 1 then begin
+   	 	print(file("c:\tradestation\TSM6_3-Day_Trade.csv"),"date,open,high,low,close,trend,",
+							"currentdir,upcount,downcount,pos,openPL,totPL,tradePL,dailyPL,reset");
+    		print(file("c:\tradestation\TSM6_3-Day_Trade_PL.csv"),"Date,TotalPL");
+			end;
+
+   	print(file("c:\tradestation\TSM6_3-Day_Trade.csv"), adate, "," ,open:7:4, ",", high:7:4, ",", low:7:4, ",", 
+			close:7:4, ",", trend:3:0, ",", currentdir:5:0, ",", 
+			upcount:5:0, ",",downcount:5:0, ",",marketposition:3:0, ",", openpositionprofit:8:0, ",", 
+			equity:8:0, ",", tradePL:8:0, ",", dailyPL:8:0, ",", waitforreset:3:0);
+ 	  	print(file("c:\tradestation\TSM6_3-Day_Trade_PL.csv"), adate, "," ,equity:8:0);
+		end;
+
+
+
+
+

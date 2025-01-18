@@ -1,0 +1,40 @@
+[LegacyColorValue = true]; 
+
+{ TSM Momentum System 
+  Copyright 1994-1999,2011,2018, P J Kaufman. All rights reserved. }
+
+{ period = length of calculation }
+
+  input: period(20), usefutures(false), printfile(true);
+  vars:  nhigh(0), nlow(0), adate(" "),
+			totalPL(0), dailyPL(0), psignal(0), ATR(0), ATRperiod(20), size(0),
+			futuresinvestment(25000), stockinvestment(10000);;
+
+	if usefutures then begin
+			size = futuresinvestment/(avgtruerange(ATRperiod)*bigpointvalue);
+			end
+		else size = stockinvestment/close[1];
+		
+{ Buy and sell signals }
+  if close > close[period] then begin
+	buy to cover all contracts this bar on close;
+	Buy size contracts This Bar on close;
+	end;
+  if close < close[period] then begin
+	sell all contracts this bar on close;
+	Sell Short size contracts This Bar on close;
+	end;
+
+  	totalpl = netprofit + openpositionprofit;
+  	dailyPL = psignal*currentshares*(close - close[1]);
+	psignal = marketposition;
+
+{ print detail for debugging }
+	if printfile then begin
+ 		adate = ELdatetostring(date);
+		if currentbar = 1 then
+			print (file("c:\tradestation\Momentum_PL.csv"), "Date,size,marketposition,openPL,netPL");
+
+		print (file("c:\tradestation\Momentum_PL.csv"),adate, ",", currentcontracts:5:0, ",", 
+				marketposition:4:0, ",", openpositionprofit:8:0, ",", totalPL:8:0);
+		end;

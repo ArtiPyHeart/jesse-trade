@@ -1,0 +1,44 @@
+// TSM Crossmarket SPY-HighYield
+// Copyright 2019, P.J.Kaufman. All rights reserved.
+
+// This is an pseudo-arbitrage that buys SPY when it yields less than the
+//		average of HYG and JNK over 5 days.
+//	SPY in window1
+// HYG in window2
+// JNK in window3
+
+	inputs:	corrper1(20), corrper2(252), returnthreshold(0.005), corrthreshold(0.65), mindays(5);
+	vars:		JNKcorr1(0), HYGcorr1(0), JNKcorr2(0), HYGcorr2(0), retJNK(0), retHYG(0), retSPY(0),
+				avg1R(0), avg2R(0), SPYreturndays(0), HYGreturndays(0), JNKreturndays(0), 
+				investment(10000), size(0);
+
+	retSPY = close/close[1] - 1;
+	retHYG = close of data2/close[1] of data2 - 1;
+	retJNK = close of data3/close[1] of data3 - 1;
+
+	HYGcorr1 = correlation(retSPY,retHYG,corrper1);	
+	JNKcorr1 = correlation(retSPY,retJNK,corrper1);
+	HYGcorr2 = correlation(retSPY,retHYG,corrper2);	
+	JNKcorr2 = correlation(retSPY,retJNK,corrper2);
+
+	avg1R = (HYGcorr1 + JNKcorr1)/2;
+	avg2R = (HYGcorr2 + JNKcorr2)/2;
+
+	SPYreturndays = close/close[mindays] - 1;
+	HYGreturndays = close of data2/close[mindays] of data2 - 1;
+	JNKreturndays = close of data3/close[mindays] of data3 - 1;
+
+
+	size = investment/close;
+
+// enter when SPY return is less than the combined returns of HYG and JNK
+	if avg1R < corrthreshold and 
+			SPYreturndays < HYGreturndays + JNKreturndays - returnthreshold then
+				buy size shares next bar on open;
+
+// exit when the correlations return to normal
+	if marketposition <> 0 and avg1R > avg2R then sell ("Xcorr") all shares next bar on open;
+
+// exit if the SPY return is greater than the combined return of HYG and JNK
+	if marketposition <> 0 and SPYreturndays >= HYGreturndays + JNKreturndays then
+				sell ("Xreturn") all shares next bar on open;

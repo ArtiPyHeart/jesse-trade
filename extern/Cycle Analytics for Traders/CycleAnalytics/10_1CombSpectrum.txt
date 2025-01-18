@@ -1,0 +1,145 @@
+{
+Comb BandPass Spectrum
+© 2013 John F. Ehlers
+}
+Inputs:
+	ShortestPeriod(10),
+	LongestPeriod(48),
+	SpectralDilationCompensation(true),
+	Bandwidth(.3);
+	
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	Comp(0),
+	beta1(0),
+	gamma1(0),
+	delta1(0),
+	N(0),
+	M(0),
+	Period(0),
+	Sp(0),
+	Spx(0),
+	MaxPwr(0),
+	DominantCycle(0),
+	Color1(0),
+	Color2(0),
+	Color3(0);
+
+Arrays:
+	BP[48,48](0),
+	Pwr[48](0);
+	
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+
+For N = 10 to 48 Begin
+	For M = 48 DownTo 2 Begin
+		BP[N, M] = BP[N, M - 1];
+	End;
+End;
+If CurrentBar > 12 Then Begin
+	For N = 10 to 48 Begin
+		Comp = N;
+		If SpectralDilationCompensation = False Then Comp = 1;
+		beta1 = Cosine(360 / N);
+		gamma1 = 1 / Cosine(360*Bandwidth / N);
+		alpha1 = gamma1 - SquareRoot(gamma1*gamma1 - 1);
+		BP[N, 1] = .5*(1 - alpha1)*(Filt - Filt[2]) + beta1*(1 + alpha1)*BP[N, 2] - alpha1*BP[N, 3];
+		Pwr[N] = 0;
+		For M = 1 to N Begin
+			Pwr[N] = Pwr[N] + (BP[N, M] / Comp)*(BP[N, M] / Comp);
+		End;
+	End;
+End;
+//Find Maximum Power Level for Normalization
+MaxPwr = .995*MaxPwr;
+For Period = ShortestPeriod to 48 Begin
+	If Pwr[Period] > MaxPwr Then MaxPwr = Pwr[Period];
+End;
+//Normalize Power Levels and Convert to Decibels
+For Period = 10 to 48 Begin
+	If MaxPwr > 0 Then Pwr[Period] = Pwr[Period] / MaxPwr;
+End;
+//Compute the dominant cycle using the CG of the spectrum
+Spx = 0;
+Sp = 0;
+For Period = ShortestPeriod to LongestPeriod Begin
+	If Pwr[Period] >= .5 Then Begin
+		Spx = Spx + Period*Pwr[Period];
+		Sp = Sp + Pwr[Period];
+	End;
+End;
+If Sp <> 0 Then DominantCycle = Spx / Sp;
+Plot2(DominantCycle, "DC", RGB(0, 0, 255), 0, 2);
+{
+//Increase Display Resolution by raising the Pwr to a higher
+mathematical power
+For Period = 10 to 48 Begin
+Pwr[Period] = Power(Pwr[Period], 3);
+End;
+}
+For N = 10 to 48 Begin
+	Color3 = 0;
+	If Pwr[N] > .5 Then Begin
+		Color1 = 255;
+		Color2 = 255*(2*Pwr[N] - 1);
+		End
+		Else Begin
+		Color1 = 2*255*Pwr[N];
+		Color2 = 0;
+	End;
+	If N = 10 Then Plot10(N, "S10", RGB(Color1, Color2, Color3),0,5);
+	If N = 11 Then Plot11(N, "S11", RGB(Color1, Color2, Color3),0,5);
+	If N = 12 Then Plot12(N, "S12", RGB(Color1, Color2, Color3),0,5);
+	If N = 13 Then Plot13(N, "S13", RGB(Color1, Color2, Color3),0,5);
+	If N = 14 Then Plot14(N, "S14", RGB(Color1, Color2, Color3),0,5);
+	If N = 15 Then Plot15(N, "S15", RGB(Color1, Color2, Color3),0,5);
+	If N = 16 Then Plot16(N, "S16", RGB(Color1, Color2, Color3),0,5);
+	If N = 17 Then Plot17(N, "S17", RGB(Color1, Color2, Color3),0,5);
+	If N = 18 Then Plot18(N, "S18", RGB(Color1, Color2, Color3),0,5);
+	If N = 19 Then Plot19(N, "S19", RGB(Color1, Color2, Color3),0,5);
+	If N = 20 Then Plot20(N, "S20", RGB(Color1, Color2, Color3),0,5);
+	If N = 21 Then Plot21(N, "S21", RGB(Color1, Color2, Color3),0,5);
+	If N = 22 Then Plot22(N, "S22", RGB(Color1, Color2, Color3),0,5);
+	If N = 23 Then Plot23(N, "S23", RGB(Color1, Color2, Color3),0,5);
+	If N = 24 Then Plot24(N, "S24", RGB(Color1, Color2, Color3),0,5);
+	If N = 25 Then Plot25(N, "S25", RGB(Color1, Color2, Color3),0,5);
+	If N = 26 Then Plot26(N, "S26", RGB(Color1, Color2, Color3),0,5);
+	If N = 27 Then Plot27(N, "S27", RGB(Color1, Color2, Color3),0,5);
+	If N = 28 Then Plot28(N, "S28", RGB(Color1, Color2, Color3),0,5);
+	If N = 29 Then Plot29(N, "S29", RGB(Color1, Color2, Color3),0,5);
+	If N = 30 Then Plot30(N, "S30", RGB(Color1, Color2, Color3),0,5);
+	If N = 31 Then Plot31(N, "S31", RGB(Color1, Color2, Color3),0,5);
+	If N = 32 Then Plot32(N, "S32", RGB(Color1, Color2, Color3),0,5);
+	If N = 33 Then Plot33(N, "S33", RGB(Color1, Color2, Color3),0,5);
+	If N = 34 Then Plot34(N, "S34", RGB(Color1, Color2, Color3),0,5);
+	If N = 35 Then Plot35(N, "S35", RGB(Color1, Color2, Color3),0,5);
+	If N = 36 Then Plot36(N, "S36", RGB(Color1, Color2, Color3),0,5);
+	If N = 37 Then Plot37(N, "S37", RGB(Color1, Color2, Color3),0,5);
+	If N = 38 Then Plot38(N, "S38", RGB(Color1, Color2, Color3),0,5);
+	If N = 39 Then Plot39(N, "S39", RGB(Color1, Color2, Color3),0,5);
+	If N = 40 Then Plot40(N, "S40", RGB(Color1, Color2, Color3),0,5);
+	If N = 41 Then Plot41(N, "S41", RGB(Color1, Color2, Color3),0,5);
+	If N = 42 Then Plot42(N, "S42", RGB(Color1, Color2, Color3),0,5);
+	If N = 43 Then Plot43(N, "S43", RGB(Color1, Color2, Color3),0,5);
+	If N = 44 Then Plot44(N, "S44", RGB(Color1, Color2, Color3),0,5);
+	If N = 45 Then Plot45(N, "S45", RGB(Color1, Color2, Color3),0,5);
+	If N = 46 Then Plot46(N, "S46", RGB(Color1, Color2, Color3),0,5);
+	If N = 47 Then Plot47(N, "S47", RGB(Color1, Color2, Color3),0,5);
+	If N = 48 Then Plot48(N, "S48", RGB(Color1, Color2, Color3),0,5);
+End;

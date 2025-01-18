@@ -1,0 +1,122 @@
+[LegacyColorValue = true]; 
+
+{ PJK Trend with Vol Filter
+  Copyright 2016 P J Kaufman. All rights reserved. }
+
+{ 	Data1		SPY
+	Data2		VIX-I
+	Data3		VXX
+	usesizing	
+	userisk
+	trendperiod = length of trend
+	riskoption	
+					0=SPY annualized vol
+					1=VIX-I
+					2=VXX (tradeable VIX)
+	volperiod = length of annualized vol
+	volthreshold = entry threshold
+	volexitthreshold = exit threshold
+	sizeoption	0, single contract or 100 shares
+					1 = investment/price
+					2 = use price volatility
+					3 = use VIX
+	}
+  
+input: 	userisk(false), trendperiod(120), riskoption(0), volperiod(20), 
+			riskentrythreshold(40), riskexitthreshold(50), sizeoption(0), ATRperiod(20),
+			investment(10000), capvalue(false), printoption(false);
+
+  vars:	avol(0), trend(0), signal(0), psignal(0), size(1), entrysize(0), exittoday(false),
+			returns(0), adate(" "), ATR(0), equity(0), PL(0), posvalue(0), capratio(1), x(0);
+
+		ATR = avgtruerange(ATRperiod);  
+
+		psignal = marketposition;
+
+// use fixed size
+		if sizeoption = 0 then
+				size = 100
+// use price for sizing
+			else if sizeoption = 1 then 	
+				size = investment/close
+// use volatility
+			else if sizeoption = 2 then 
+//				size = minlist(investment/ATR,investment/close);
+				size = investment/ATR
+// use VIX for sizing
+			else if sizeoption = 3 then begin
+				x = maxlist(0,100 - close of data2)/100.;
+				size = x*(investment/close);
+			end;
+
+// cap values to investment size
+	if capvalue then begin
+		posvalue = size*close[1];
+		capratio = posvalue/investment;
+		if capratio > 1 then begin
+			size = investment/close;
+			end;
+		end;
+
+// annualized vol
+	returns = close/close[1] - 1;
+	exittoday = false;
+	
+	if riskoption = 0 then begin
+			avol = 100*standarddev(returns,volperiod,2)*squareroot(252.);
+			end
+		else if riskoption <> 0 then begin
+			avol = close of data2;
+		end;
+
+// trend
+	trend = average(close,trendperiod);
+
+// exits first
+	if marketposition > 0 then begin
+		if trend < trend[1] then begin
+				sell ("TRExitLong") all contracts next bar on open;	
+				exittoday = true;
+				end
+			else if userisk and avol > riskexitthreshold then begin
+				sell ("VolExitLong") all contracts next bar on open;
+				exittoday = true;
+			end;
+		end;
+	if exittoday = false and marketposition < 0 then begin
+		if trend > trend[1] then begin
+				buy to cover ("TRExitShort") all contracts next bar on open;
+				end
+			else if userisk and avol > riskexitthreshold then begin
+				buy to cover ("VolExitShort") all contracts next bar on open;
+			end;
+		end;
+
+// entries
+	if marketposition <= 0 and trend > trend[1] and 
+				(userisk = false or (avol < riskentrythreshold and avol < riskexitthreshold)) then begin
+			entrysize = size;
+			buy ("NewLong") size contracts next bar on open;
+			end
+		else if marketposition >= 0 and trend < trend[1] and 
+				(userisk = false or (avol < riskentrythreshold and avol < riskexitthreshold)) then begin
+			sell short ("NewShort") size contracts next bar on open;
+			entrysize = size;
+		end;
+  	
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	posvalue = currentcontracts*close;
+
+ 	adate = ELdatetostring(date);
+	if printoption then begin
+		If Currentbar = 1 then begin
+//			print(file("c:\tradestation\Trend_with_Vol_Filter.csv"), "Date,size,PLtoday,netPL");
+			print(file("c:\tradestation\Trend_with_Vol_Filter_detail.csv"), "Date,Close,Vol,Returns,Trend,AVol,",
+						"Size,Pos,PosValue,PLtoday,CumPL");
+			end;
+//		print(file("c:\tradestation\Trend_with_Vol_Filter.csv"),adate, ",", entrysize:8:3, ",", PL:8:4, ",", equity:8:4);
+		print(file("c:\tradestation\Trend_with_Vol_Filter_detail.csv"), adate, ",", close:8:4, ",", close of data2:8:4, ",", 
+				returns:8:5, ",", trend:8:4, ",", avol:4:5, ",", currentcontracts:8:3, ",", marketposition:3:0, ",", 
+				posvalue:8:0, ",", PL:8:4, ",", equity:8:4);
+		end;

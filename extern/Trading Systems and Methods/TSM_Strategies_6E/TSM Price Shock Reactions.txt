@@ -1,0 +1,42 @@
+{ TSM Price Shock Reactions
+  Copyright 2011,2018, P.J.Kaufman. All rights reserved. 
+  
+  Given an input criteria, in %, show the price shock and 10-day cumulative reaction }
+   
+  inputs: factor(2.0), zone(.25);
+  vars:	 ndays(7), lag(30), ATR(0), ratio(0), location(0), adate(" "), dayofshock(0);
+  
+   If Currentbar = 1 then begin
+		print (file("c:\TradeStation\Price_Shock_Reactions_Upwards.csv"),
+			 "Date,Ratio,Zone,Shock,Day1,Day2,Day3,Day4,Day5,Day6"); 
+		print (file("c:\TradeStation\Price_Shock_Reactions_Downwards.csv"),
+			 "Date,Ratio,Zone,Shock,Day1,Day2,Day3,Day4,Day5,Day6"); 
+		end;
+   
+// identify shock 7 days ago
+   ATR = AvgTrueRange(60);
+   if ATR[lag] = 0 then ratio = 0
+   	else ratio = truerange[ndays] / ATR[lag];
+   	
+   If ratio >= factor then begin
+   	location = (close[ndays] - low[ndays])/(High[ndays] - low[ndays]);
+ 		dayofshock = close[ndays] - close[ndays+1];
+		adate = ELdatetostring(date[ndays]);
+// print cumulative returns from day of shock
+  		If dayofshock > 0 and (location <= zone or location >= 1 - zone) then begin
+					print (file("c:\TradeStation\Price_Shock_Reactions_Upwards.csv"), adate, ",", 
+						ratio:4:3, ",", location:3:3, ",", dayofshock:6:4, ",", 
+					close[ndays-1] - close[ndays]:6:4, ",",
+					close[ndays-2] - close[ndays]:6:4, ",", close[ndays-3] - close[ndays]:6:4, ",",
+ 					close[ndays-4] - close[ndays]:6:4, ",", close[ndays-5] - close[ndays]:6:4, ",",
+					close[ndays-6] - close[ndays]:6:4);
+					end
+				else if dayofshock < 0 and (location <= zone or location >= 1 - zone) then begin
+					print (file("c:\TradeStation\Price_Shock_Reactions_Downwards.csv"), adate, ",", 
+						ratio:4:3, ",", location:3:3, ",",dayofshock:6:4, ",", 
+					close[ndays-1] - close[ndays]:6:4, ",",
+					close[ndays-2] - close[ndays]:6:4, ",", close[ndays-3] - close[ndays]:6:4, ",",
+ 					close[ndays-4] - close[ndays]:6:4, ",", close[ndays-5] - close[ndays]:6:4, ",",
+					close[ndays-6] - close[ndays]:6:4);
+				end;
+		end;

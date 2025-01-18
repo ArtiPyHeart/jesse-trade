@@ -1,0 +1,149 @@
+[LegacyColorValue = true]; 
+
+{ TSM 2 Trend Crossover
+  Copyright 2018 P J Kaufman. All rights reserved. }
+
+{ period = length of calculaton
+  crossoption =0 using trendline, =1 use price crossing trendline
+	type 	0 or 1 = moving average
+			2 = breakout
+			3 = linear regression slope
+	signaloption = 0, price above both trends
+					 = 1, fast trend and slow trend in same direction
+					 = 2, price above fast and slow in same direction
+}
+  input: slowperiod(200), slowtype(0), fastperiod(50), fasttype(0), 
+			signaloption(0), longonly(false), reinvest(true), usefutures(false),
+			stockinvestment(100000), futuresinvestment(25000), printfiles(false);
+  vars:	TrendSlow(0), TrendFast(0), signal(0), price(0), size(0), adate(" "),
+			fastdir(0), slowdir(0),investment(0),
+			equity(0), PL(0), PLlong(0), PLshort(0), dailyreturn(0), NAV(100);
+
+	once begin
+		if usefutures then investment = futuresinvestment
+			else investment = stockinvestment;
+		end;
+
+// moving average slow signal
+	if slowtype = 0 or slowtype = 1 then begin
+			TrendSlow = average(close,slowperiod);
+			if TrendSlow > TrendSlow[1] then slowdir = 1
+				else if TrendSlow < TrendSlow[1] then slowdir = -1;
+			end
+// breakout slow signal
+		else if slowtype = 2 then begin
+			if close > highest(high,slowperiod)[1] then slowdir = 1
+				else if close < lowest(low,slowperiod)[1] then slowdir = -1;
+			end
+// regression slow signals
+		else if slowtype = 3 then begin
+			TrendSlow = linearregslope(close,slowperiod);
+			if TrendSlow > 0 then slowdir = 1
+				else if TrendSlow < 0 then slowdir = -1;
+		end;
+
+// moving average fast signal
+	if fasttype = 0 or fasttype = 1 then begin
+			Trendfast = average(close,fastperiod);
+			if Trendfast > Trendfast[1] then fastdir = 1
+				else if Trendfast < Trendfast[1] then fastdir = -1;
+			end
+// breakout slow signal
+		else if fasttype = 2 then begin
+			if close > highest(high,fastperiod)[1] then fastdir = 1
+				else if close < lowest(low,fastperiod)[1] then fastdir = -1;
+			end
+// regression fast signals
+		else if fasttype = 3 then begin
+			TrendFast = linearregslope(close,fastperiod);
+			if Trendfast > 0 then fastdir = 1
+				else if TrendFast < 0 then fastdir = -1;
+		end;
+
+	if usefutures then begin
+			size = investment/(avgtruerange(20)*bigpointvalue);
+			end
+		else begin
+			size = investment/close;
+		end;
+
+// new longs
+	If Marketposition <> 1 then begin
+// both are moving averages
+		if slowtype <= 1 and fasttype <= 1 then begin
+// price above both trends
+			if signaloption = 0 and close > trendslow and close > trendfast then begin
+					buy ("BuyMAprice") size shares next bar on open;
+					end
+				else if signaloption <> 0 and slowdir > 0 and fastdir > 0 then begin
+					buy ("BMixprice") size shares next bar on open;
+				end;
+			end;
+// neither are moving averages then go with trend direction
+		if slowtype  > 1 or fasttype > 1 then begin
+			if slowdir > 0 and fastdir > 0 then begin
+					buy ("BLRS") size shares next bar on open;
+				end;
+			end;
+		end;
+
+// New shorts
+	If Marketposition <> -1 then begin
+// both moving averages
+		if slowtype <= 1 and fasttype <= 1 then begin
+// price above both trends
+			if signaloption = 0 and close < trendslow and close < trendfast then begin
+					sell ("XLMAprice") all shares next bar on open;
+					if longonly = false then sell short ("SellMAprice") size shares next bar on open;
+					end
+				else if signaloption <> 0 and slowdir < 0 and fastdir < 0 then begin
+					sell ("XLMixPrice") all shares next bar on open;
+					if longonly = false then sell short ("SMixprice") size shares next bar on open;
+				end;
+			end;
+// neither are moving averages then go with trend direction
+		if slowtype  > 1 or fasttype > 1 then begin
+			if slowdir < 0 and fastdir < 0 and longonly = false then begin
+					sell short ("SLRS") size shares next bar on open;
+				end;
+			end;
+		end;
+
+// Exit price between two trends
+	if slowtype <= 1 and fasttype <= 1 then begin
+		if signaloption = 0 then begin
+			if marketposition > 0 and (close < trendfast or close < trendslow) then begin
+					sell ("XLopt1") all shares next bar on open;
+					end
+				else if marketposition < 0 and (close > trendfast or close > trendslow) then begin
+					buy to cover ("XSopt1") all shares next bar on open;
+				end;
+			end;
+		end;
+
+// Exit when trends conflict
+	if signaloption <> 0 and fastdir <> slowdir then begin
+		if marketposition > 0 then sell ("Exitlong") all shares next bar on open
+			else if marketposition < 0 then buy to cover ("ExitShort") all shares next bar on open;
+		end;
+
+// PL and equity calculations
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	dailyreturn = PL/investment;
+	NAV = NAV*(1 + dailyreturn);
+	if marketposition > 0 then
+			PLlong = PLlong + PL
+		else if marketposition < 0 then
+			PLshort = PLshort + PL;
+
+	if reinvest then investment = stockinvestment + equity;
+
+  	If printfiles then begin
+	  	adate = ELdatetostring(date);
+		If Currentbar = 1 then print(file("c:\tradestation\Crossover_PL.csv"), 
+						"Date,Close,Investment,size,netPL,PLlong,PLshort,PLtoday,Return,NAV");
+  		print(file("c:\tradestation\Crossover_PL.csv"),adate, ",", close:6:4, ",", investment:10:0, "," ,
+						marketposition*size:8:3, ",", equity:8:4, ",", PLlong:8:4, ",", PLshort:8:4, ",", 
+						PL:8:4, ",", dailyreturn:6:5, ",", NAV:10:3);
+		end;

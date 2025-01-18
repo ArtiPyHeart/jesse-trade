@@ -1,0 +1,183 @@
+// TSM5 Intraday PB or Trend
+//	Copyright P.J.Kaufman, 2018. All rights reserved.
+//	Depending on opening volatility, enter MR or Trend trade
+// Low vol filter in $ or local currency
+// Allow 1 breakout on pullback and one reversal
+	
+	inputs:	trendper(160), ATRperiod(20), longATRperiod(200), volthreshold(0.2), gapratio(1.5),
+				lowvolfilter(0), highvolfilter(0), exitnewHL(true), profitfactor(3), maxtradesperday(2), 
+				longonly(true),usestocks(true), usefutures(false), printoption(false); 
+	vars:		size(0), investment(0), stockinvestment(10000), futuresinvestment(25000), 
+				equity(0), PL(0), PLlong(0), PLshort(0), adate(" "), signal(0), ATR(0), ATRvalue(0), 
+				ATRratio(0), tradestoday(0), volregime(0), ndays(0), ix(0),
+				sumATR(0), openingavgATR(0), barstoday(0), openinggap(0), 
+				avgmoveup(0), avgmovedown(0), thigh(0), tlow(0), trenddir(0),
+				initialmove(0);
+	arrays:	openingTR[10000](0),initmoveup[10000](0), initmovedown[10000](0), 
+				trend[10000](0), dclose[10000](0); 
+	
+	ATR = avgtruerange(ATRperiod);
+	ATRvalue = ATR*bigpointvalue;
+	ATRratio = truerange/ATR;
+// position size
+	if usestocks then
+			size = stockinvestment/close[1]
+		else
+			size = futuresinvestment/(avgtruerange(ATRperiod)*bigpointvalue);
+
+
+// average of opening bar
+	if date <> date[1] then begin
+		tradestoday = 0;
+		barstoday = 0;
+		ndays = ndays + 1;
+		openingTR[ndays] = truerange;
+		openingavgATR = 0;
+		initmoveup[ndays] = 0;
+		initmovedown[ndays] = 0;
+		dclose[ndays] = close[1];
+		trend[ndays] = 0;
+		trenddir = 0;
+		if trendper <> 0 and ndays > trendper then begin
+			for ix = ndays - trendper + 1 to ndays begin
+				trend[ndays] = trend[ndays] + dclose[ndays];
+				end;
+			trend[ndays] = trend[ndays]/trendper;
+			if trend[ndays] > trend[ndays-1] then trenddir = 1 else trenddir = -1;
+			end;
+
+		thigh = high;
+		tlow = low;
+		sumATR = 0;
+		if ndays > ATRperiod + 2 then begin
+			for ix = ndays - ATRperiod + 1 to ndays begin
+				sumATR = sumATR + openingTR[ix];
+				end;
+// opening ATR ratio, 1 = average
+			openingavgATR = sumATR/ATRperiod;
+			openinggap = open - close[1];
+			initialmove = openinggap;
+			if openinggap > 0 and close < close[1] then begin
+//					sell short ("Sbar1rev") size contracts this bar on close;
+					buy ("Lbar1rev") size contracts this bar on close;
+					tradestoday = 1;
+					end
+				else if openinggap < 0 and close > close[1] then begin
+//					buy ("Lbar1rev") size contracts this bar on close;
+					sell short ("Sbar1rev") size contracts this bar on close;
+					tradestoday = 1;
+				end;
+			end;
+		end;
+
+	barstoday = barstoday + 1;
+	thigh = maxlist(thigh,high);
+	tlow = minlist(tlow,low);
+
+// reversal on new high or low
+	if marketposition > 0 and low < tlow[1] and tradestoday = 1 then begin
+			sell short ("Srev") size contracts this bar on close;
+			tradestoday = tradestoday + 1;
+{			end
+		else if marketposition < 0 and high > thigh[1] and tradestoday = 1 then begin
+			buy ("Lrev") size contracts this bar on close;
+			tradestoday = tradestoday + 1;
+}		end;
+
+// reversal bars
+	if barstoday > 1 and openinggap > 0 and initmoveup[ndays] = 0 and 
+						high < high[1] and low < low[1] then begin
+// find average point where initial up move ends
+			initmoveup[ndays] = barstoday;
+// Find average up HV pullback bar
+			avgmoveup = 0;
+			for ix = ndays - ATRperiod + 1 to ndays begin
+				avgmoveup = avgmoveup + initmoveup[ix];
+				end;
+			avgmoveup = avgmoveup/ATRperiod;
+			end
+// find average point where down move ends
+		else if barstoday > 1 and openinggap < 0 and initmovedown[ndays] = 0 and 
+						high > high[1] and low > low[1] then begin
+			initmovedown[ndays] = barstoday;
+// Find average down HV pullback bar
+			avgmovedown = 0;
+			for ix = ndays - ATRperiod + 1 to ndays begin
+				avgmovedown = avgmovedown + initmovedown[ix];
+				end;
+			avgmovedown = avgmovedown/ATRperiod;
+		end;	{barstoday > 1 }
+
+// exit new high or low on second trade
+	if marketposition <> 0 and tradestoday = 2 then begin
+		if marketposition > 0 and low < tlow[1] then 
+					sell ("XLstop") all contracts this bar on close
+			else if marketposition < 0 and high > thigh[1] then 
+					buy to cover ("XSstop") all contracts this bar on close;
+		end;
+
+// Exit end of day
+	if (time >= sess1endtime or date <> date[1]) and marketposition <> 0 then begin
+		if marketposition > 0 then sell ("XLongEOD") all contracts this bar on close
+			else buy to cover ("XShortEOD") all contracts this bar on close;
+		end;
+
+// Exit on first reversal bar after threshold
+	if tradestoday = 1 then begin
+		if marketposition > 0 and barstoday > avgmoveup and close < close[1] then begin
+				sell ("XLbars") all contracts this bar on close;
+				end
+			else if marketposition < 0 and barstoday > avgmovedown and close > close[1] then begin
+				buy to cover ("XSbars") all contracts this bar on close;
+			end;
+		end; 
+
+// Exit when the trend changes
+	if trendper <> 0 and ndays > 1 then begin
+		if marketposition >= 0 then begin
+				if trenddir < 0 then begin
+					sell ("XLtrend") all contracts next bar on open;
+					end
+			else if marketposition <= 0 then begin
+				if trenddir > 0 then begin
+					buy to cover ("XStrend") all contracts next bar on open;
+					end;
+				end;
+			end;
+		end;
+
+// set profit target
+	if profitfactor > 0 and ATRperiod > 0 then begin
+		if marketposition > 0 then 
+					sell all contracts next bar at entryprice + ATR*profitfactor limit
+			else if marketposition < 0 then 
+					buy to cover all contracts next bar at entryprice - ATR*profitfactor limit;
+		end;
+
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if signal[1] > 0 or signal > 0 then
+			PLlong = PLlong + PL
+		else if signal[1] < 0 or signal < 0 then
+			PLshort = PLshort + PL;
+	signal = marketposition;
+
+	if printoption then begin
+  		adate = ELdatetostring(date);
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\Intraday_Pullback_PL.csv"), 
+							"Date,mktpos,size,netPL,PLlong,PLshort");
+			print(file("c:\tradestation\Intraday_Pullback_detail.csv"),"Date,Time,Open,High,Low,Close,",
+					"Gap,AvgOpenGap,Days,Bars,Trend,AvgMovUp,AvgMovDn,Pos,PLlong,PLshort,PL,cumPL");
+			end; 
+		if date <> date[1] then begin 
+			print(file("c:\tradestation\Intraday_Pullback_PL.csv"),adate, ",", marketposition:5:0, ",",  
+						size:8:3, ",", equity:8:4, ",", PLlong:8:4, ",",PLshort:8:4);
+			end;
+		if date > 1180000 then
+		print(file("c:\tradestation\Intraday_Pullback_detail.csv"),adate, ",", time:4:0, ",", open:6:4, ",", 
+						high:6:4, ",", low: 6:4, ",", close:6:4, ",", openinggap:6:4, ",", openingavgATR:6:4, ",", 
+						ndays:6:0, ",", barstoday:4:0, ",", trend[ndays]:8:4, ",", avgmoveup:6:4, ",", avgmovedown:6:4, ",", 
+						currentcontracts*marketposition:5:0, ",", PLlong:8:0, ",", PLshort:8:0, ",", PL:8:0, ",", 
+						equity:8:0);
+		end;

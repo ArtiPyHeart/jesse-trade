@@ -1,0 +1,36 @@
+{
+Classic Hilbert Transformer
+© 2013 John F. Ehlers
+}
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	Real(0),
+	Imag(0),
+	IPeak(0);
+
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+IPeak = .991*IPeak[1];
+If Absvalue(Filt) > IPeak Then IPeak = AbsValue(Filt);
+Real = Filt / IPeak;
+//Truncated Hilbert Transform FIR filter as a test
+Imag = (.091*Real + .111*Real[2] + .143*Real[4] + .2*Real[6] + .333*Real[8] + Real[10] - Real[12] - .333*Real[14] - .2*Real[16] - .143*Real[18] - .111*Real[20] - .091*Real[22]) / 1.865;
+
+Plot1(Real);
+Plot2(0);
+Plot6[11](Imag);

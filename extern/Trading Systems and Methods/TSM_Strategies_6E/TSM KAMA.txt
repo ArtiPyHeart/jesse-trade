@@ -1,0 +1,89 @@
+   { PJK KAMA : Kaufman's Adaptive Moving Average
+     Copyright 1993,2011,2013,2018, P J Kaufman, All rights reserved. }
+
+   Inputs: 	period(8), fast(3), slow(30), usesdfilter(false), useturnfilter(true), 
+				filter(.001), filterper(20), turndays(10), longonly(true), variablesize(true), 
+				futures(true), printfile(false);
+
+   vars:    KAMA(0), diff(0), sd(0), equity(0), PL(0), adate(" "), size(1), newsize(0),
+				buyfiltersize(0), sellfiltersize(0), stockinvestment(10000), 
+				futuresinvestment(25000), tradehigh(0), tradelow(0);
+
+   { ADAPTIVE MOVING AVERAGE }
+   KAMA = TSMKAMA(period,fast,slow);
+
+	diff = KAMA - KAMA[1];
+	sd = stddev(diff,filterper);
+
+	if futures then
+			newsize = futuresinvestment/(Avgtruerange(20)*bigpointvalue)
+		else
+			newsize = stockinvestment/close;
+
+	if usesdfilter then begin
+			buyfiltersize = filter*sd;
+			sellfiltersize = filter*sd;
+			if marketposition <= 0 and KAMA > KAMA[1] + buyfiltersize then begin
+					buy to cover all contracts next bar on open;
+					buy newsize contracts next bar on open;
+					end
+				else if marketposition >= 0 and KAMA < KAMA[1] - sellfiltersize then begin
+					sell all contracts next bar on open;
+					if longonly = false then
+						sell short newsize contracts next bar on open;
+				end;
+			end;
+
+// use turn filter
+	if useturnfilter then begin
+		if marketposition > 0 then begin
+				tradehigh = highest(KAMA,turndays);
+// AHA filter must be very small as % of price
+				sellfiltersize = tradehigh*(1 - filter);
+				end
+			else if marketposition <= 0 then begin
+				tradelow = lowest(KAMA,turndays);
+				buyfiltersize = tradelow*(1 + filter);
+			end;
+// turn filter trades
+		if marketposition <= 0 and KAMA > buyfiltersize then begin
+				buy to cover all contracts next bar on open;
+				buy newsize contracts next bar on open;
+				end
+			else if marketposition >= 0 and KAMA < sellfiltersize then begin
+				sell all contracts next bar on open;
+				if longonly = false then
+					sell short newsize contracts next bar on open;
+			end;
+		end;
+
+// no filter
+	if usesdfilter = false and useturnfilter = false then begin
+		if marketposition <= 0 and KAMA > KAMA[1] then begin
+				buy to cover all contracts next bar on open;
+				buy newsize contracts next bar on open;
+				end
+			else if marketposition >= 0 and KAMA < KAMA[1] then begin
+				sell all contracts next bar on open;
+				if longonly = false then
+					sell short newsize contracts next bar on open;
+			end;
+		end;
+
+
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+
+	if printfile then begin
+		adate = ELdatetostring(date);
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\KAMA_PL.csv"),"Date,netPL");
+			print(file("c:\tradestation\KAMA_Detail.csv"),
+					"Date,close,KAMA,TradeH,TradeL,buyfilter,sellfilter,pos,PL,TotalPL");
+			end;
+
+		print(file("c:\tradestation\KAMA_PL.csv"),adate, ",", equity:8:4);
+  		print(file("c:\tradestation\KAMA_Detail.csv"),adate, ",", close:8:5, ",", kama:8:5, ",", 
+				tradehigh:8:5, ",", tradelow:8:5, ",", buyfiltersize:8:5, ",", sellfiltersize:8:5, ",", 
+				marketposition*currentcontracts:8:3, ",", PL:8:4, ",", equity:8:4);
+		end;

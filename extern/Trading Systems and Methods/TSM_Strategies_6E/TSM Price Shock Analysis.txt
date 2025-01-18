@@ -1,0 +1,63 @@
+[LegacyColorValue = true]; 
+
+// Price shock analysis applied to futures (ES and CL)
+//  Copyright 2016, P J Kaufman. All rights reserved.
+
+  	input: 	trendperiod(80), daysinshock(1), shockfactor(2.5), lag(20), longonly(false), 
+				printoption(false);
+  	vars:		ATRperiod(20), MA(0), size(0), adate(" "), ATR(0), investment(25000), nshocks(0),  
+				nlongshocks(0), nshortshocks(0), netPLlongshocks(0), netPLshortshocks(0), 
+				longPL(0), shortPL(0), totalPL(0);
+
+	MA = average(close,trendperiod);
+	size = investment/(avgtruerange(ATRperiod)*bigpointvalue); 	
+	if daysinshock = 1 then
+			ATR = avgtruerange(ATRperiod)
+		else 
+			ATR = highest(high,daysinshock) - lowest(low,daysinshock);
+
+// tally shocks
+	if currentbar > 20 and truerange > shockfactor*ATR[lag] then begin
+		nshocks = nshocks + 1;
+		if marketposition > 0 then begin
+				nlongshocks = nlongshocks + 1;
+				netPLlongshocks = netPLlongshocks + size*(close - close[daysinshock])*bigpointvalue;
+				end
+			else if marketposition < 0 then begin
+				nshortshocks = nshortshocks + 1;
+				netPLshortshocks = netPLshortshocks + size*(close[daysinshock] - close)*bigpointvalue;
+			end;
+		end;
+
+// Exits
+	if marketposition > 0 and MA < MA[1] then begin
+			sell all contracts this bar on close;
+			end
+		else if marketposition < 0 and MA > MA[1] then begin
+			buy to cover all contracts this bar on close;
+		end;
+
+// new positions
+  	if marketposition <> 1 and MA > MA[1] then begin
+  			Buy size contracts This Bar at close;
+  			end
+  		else if marketposition <> -1 and MA < MA[1] then begin
+			if longonly = false then sell short size contracts next bar on open;
+ 		end;
+	
+	if marketposition > 0 then
+			longPL = longPL + size*(close - close[1])*bigpointvalue
+		else
+			shortPL = shortPL - size*(close - close[1])*bigpointvalue;
+
+ 	totalPL = netprofit + openpositionprofit;
+	adate = ELdatetostring(date);
+	if currentbar = 1 and printoption then print(file("c:\TradeStation\Price_shock_analysis.csv"),
+				"Date,Close,TRange,f*ATR,MA,Shocks,nlong,nshort,longshockPL,shortshockPL,",
+				"LongPL,ShortPL,totalPL");
+
+	if printoption then 
+		print(file("c:\TradeStation\Price_shock_analysis.csv"),adate, ",", close:8:4, ",", 
+			truerange:8:3, ",", shockfactor*ATR[lag]:8:3, ",", MA:8:4, ",", 
+			nshocks:8:0, ",", nlongshocks:8:0, ",", nshortshocks:8:0, ",", netPLlongshocks:8:2, "," , 
+			netPLshortshocks:8:2, ",", longPL:8:2, ",", shortPL:8:0, ",", totalPL:8:2);

@@ -1,0 +1,53 @@
+{
+Measuring the Dominant Cycle using the Dual Differentiator
+© 2013 John F. Ehlers
+}
+Inputs:
+	LPPeriod(20);
+	
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	QFilt(0),
+	Real(0),
+	Quad(0),
+	Imag(0),
+	IPeak(0),
+	QPeak(0),
+	IDot(0),
+	QDot(0),
+	Period(0),
+	DomCycle(0);
+	
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / LPPeriod);
+b1 = 2*a1*Cosine(1.414*180 / LPPeriod);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+IPeak = .991*IPeak[1];
+If Absvalue(Filt) > IPeak Then IPeak = AbsValue(Filt);
+Real = Filt / IPeak;
+Quad = (Real - Real[1]);
+QPeak = .991*QPeak[1];
+If Absvalue(Quad) > QPeak Then QPeak = AbsValue(Quad);
+Imag = Quad /QPeak;
+IDot = Real - Real[1];
+QDot = Imag - Imag[1];
+If (Real*QDot - Imag*IDot) <> 0 Then Period = 6.28318*(Real*Real + Imag*Imag) / (-Real*QDot + Imag*IDot);
+If Period < 8 Then Period = 8;
+If Period > 48 Then Period = 48;
+DomCycle = c1*(Period + Period[1]) / 2 + c2*DomCycle[1] + c3*DomCycle[2];
+
+Plot1(DomCycle);
+

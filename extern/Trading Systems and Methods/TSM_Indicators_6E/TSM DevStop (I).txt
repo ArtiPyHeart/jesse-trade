@@ -1,0 +1,44 @@
+//	TSM DevStop
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+//	This strategy is based on Cynthia Kase's concept of a standard deviation stop
+// The code for the placement of the stop can be found online
+// The trading rules were added and there is no assurance that they are
+//		anything similar to what Kase uses.
+// The strategy used here is a 5 and 21-day cross, entered with 3 contracts
+// Each stop removes 1 contract
+// A reentry occurs if the price moves back above both trends
+
+	Inputs: 	fastperiod(10), slowperiod(21), ATRperiod(20);
+	Vars: 	DTR(0), avg(0), size(3), MAfast(0), MAslow(0), sd(0),
+				Warning(0), DevStop1(0), DevStop2(0), DevStop3(0);
+
+// 2-Day ATR
+	DTR = maxlist(maxlist(High - Low[2], absvalue(High - Close[2])),
+				maxlist(absvalue(Low - Close[2]),(absvalue(Low - Close[2]))));
+	avg = average(DTR,ATRperiod);
+	sd = stddev(DTR,ATRperiod);
+ 
+	MAFast = average(close,fastperiod);
+	MASlow = average(close,slowperiod);
+ 
+// if fast > slow
+	if maFast > maSlow then begin
+ 			Warning = close - avg;
+ 			DevStop1 = close - avg - sd;
+ 			DevStop2 = close - avg - 2.2*sd;
+ 			DevStop3 = close - avg - 3.6*sd;
+			end
+// fast < slow
+		else if mafast < maslow then begin
+			Warning = close + avg;
+ 			DevStop1 = close + avg + sd;
+ 			DevStop2 = close + avg + 2.2*sd;
+ 			DevStop3 = close + avg + 3.6*sd;
+		end;
+
+	Plot1(Warning[1],"Warning");
+	Plot2(DevStop1[1],"DV1");
+	Plot3(DevStop2[1],"DV2");
+	Plot4(DevStop3[1],"DV3");
+
+

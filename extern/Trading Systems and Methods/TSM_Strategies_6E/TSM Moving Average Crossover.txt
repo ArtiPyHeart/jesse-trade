@@ -1,0 +1,71 @@
+[LegacyColorValue = true]; 
+
+{ Moving Average crossover
+  Copyright 2013,2019, P J Kaufman. All rights reserved. }
+
+{ long when fast is above slow; short when fast is below slow }
+
+  input: slowper(20), fastper(5), useMA(true), useEXP(false), longonly(true), usefutures(false), 
+			printoption(false);
+  vars:	slowMA(0), fastMA(0), size(0), entrysize(0), stockinvestment(100000),futuresinvestment(25000),
+  			strategy(1), adate(" "), todayPL(0), todayreturn(0), NAV(100), investment(0);
+
+	if currentbar = 1 then begin
+		if usefutures then investment = futuresinvestment
+			else investment = stockinvestment;
+		end;
+
+	if useMA then begin
+			slowMA = average(close,slowper);
+			fastMA = average(close,fastper);
+			end
+		else if useEXP then begin
+			slowMA = smoothedaverage(close,slowper);
+			fastMA = smoothedaverage(close,fastper);
+		end;
+ 
+	if usefutures then 
+			size = futuresinvestment/(avgtruerange(20)*bigpointvalue)
+		else
+			size = stockinvestment/close; 
+	
+  	if marketposition <> 1 and fastMA > slowMA then begin
+  			if marketposition < 0 then buy to cover all contracts this bar on close;
+  			Buy size contracts This Bar at close;
+  			entrysize = size;
+  			end
+  		else if marketposition <> -1 and fastMA < slowMA then begin
+  			if marketposition > 0 then sell all contracts this bar on close;
+			if longonly = false then begin
+  				Sell Short size contracts This Bar on close;
+  				entrysize = size;
+				end;
+ 		end;
+	
+	adate = ELdatetostring(date);
+	if longonly then begin
+			if currentbar = 1 then print(file("c:\TradeStation\MAcrossover_long-only.csv"),
+				"Date,Close,FastMA,SlowMA,Return,NAV,Position,Size");
+	
+			todayreturn = 0;
+			if marketposition > 0 then begin
+				todayPL = entrysize*(close - close[1]);
+				todayreturn = todayPL/investment;
+				NAV = NAV*(1 + todayreturn);
+				end;
+			if printoption then
+				print(file("c:\TradeStation\MAcrossover_long-only.csv"),adate, ",", close:8:4, ",", fastMA:8:4, ",", 
+					slowMA:8:4, ",", todayreturn:8:3, ",", NAV:8:3,",", marketposition*size:5:3, "," , entrysize:5:0);
+			end
+		else begin
+			if currentbar = 1 and printoption then print(file("c:\TradeStation\MAcrossover.csv"),
+				"Date,Close,FastMA,SlowMA,Return,NAV,Position,Size");
+
+			todayPL = entrysize*marketposition*(close - close[1]);
+			todayreturn = todayPL/investment;
+			NAV = NAV*(1 + todayreturn);
+			if printoption then 
+				print(file("c:\TradeStation\MAcrossover.csv"),adate, ",", close:8:4, ",", fastMA:8:4, ",", 
+					slowMA:8:4, ",", todayreturn:8:3, ",", NAV:8:3, ",", marketposition*size:5:3, "," , entrysize:5:0);
+
+		end;

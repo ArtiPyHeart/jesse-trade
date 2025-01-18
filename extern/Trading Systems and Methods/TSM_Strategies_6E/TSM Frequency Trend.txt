@@ -1,0 +1,25 @@
+// PJK Frequency trend
+// Record the past n-day return and percentage of up days
+// Using thresholds, buy or sell
+// Use ETFs
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+	input:	period(20), minreturn(0), minupfreq(.60), investment(100000);
+	vars:		size(0), returns(0), UPfreq(0), ix(0);
+
+// calculate n-bar returns and frequency
+	returns = close/close[period] - 1;
+	UPfreq = 0;
+	for ix = 0 to period-1 begin
+		if close[ix] > close[ix+1] then UPfreq = UPfreq + 1;
+		end;
+	UPfreq = UPfreq/period;
+
+	if marketposition <= 0 and returns > minreturn and UPfreq > minupfreq then begin
+			size = investment/close;
+			buy size shares next bar on open;
+			end
+		else if marketposition >= 0 and returns < -minreturn and UPfreq < 1 - minupfreq then begin
+			size = investment/close;
+			sell short size shares next bar on open;
+		end;

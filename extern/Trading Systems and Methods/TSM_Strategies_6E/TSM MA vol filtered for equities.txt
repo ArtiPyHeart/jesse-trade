@@ -1,0 +1,79 @@
+[LegacyColorValue = true]; 
+
+{ TSM MA Vol Filtered for Equities
+  Copyright 1994-1999,2011, 2018 P J Kaufman. All rights reserved. }
+// This program is for equities because it uses annualized volatility
+
+{  period = length of calculaton
+	volperiod = length of volatility calculation
+   highvolfilter	 <> 0 then don't enter if volatiltiy > highfilter*stdev of returns
+   lowvolfilter     <> 0 don't enter if volatility < lowfilter*stdev of returns
+	reset if reenters valid volatility zone
+}
+   input: period(40), volperiod(20), useAV(true), useATR(false), highfilter(0), lowfilter(0),
+				longonly(true), variablesize(true), printfile(true);
+   vars:	signal(0), size(100), investment(10000), trend(0), adate(" "), totalPL(0), 
+  			returns(0), vol(0), ATR(0),PL(0), PLlong(0), PLshort(0), wait(0), firsttrade(true);
+  	
+	if variablesize then size = investment/close;
+	returns = close/close[1] - 1;
+	if useAV then begin
+			vol = stddev(returns,volperiod)*squareroot(252.);
+			end
+		else if useATR then begin
+			ATR = avgtruerange(volperiod);
+			vol = truerange/ATR;
+		end;
+	trend = average(close,period);
+
+// test "wait"
+	if (wait > 0 and trend < trend[1]) or (wait < 0 and trend > trend[1]) then wait = 0;
+	if vol < highfilter and vol > lowfilter then wait = 0;
+
+// exit long position on high or low volatility
+	if marketposition > 0 and ((highfilter <> 0 and vol > highfilter) or
+ 				(lowfilter <> 0 and vol < lowfilter)) then begin
+			sell ("XLvol") all shares next bar on open;
+			wait = marketposition;
+			end
+// exit short position on high volatility or low
+		else if marketposition < 0 and ((highfilter <> 0 and vol > highfilter) or
+ 				(lowfilter <> 0 and vol < lowfilter)) then begin
+			buy to cover ("XSvol") all shares next bar on open;
+			wait = marketposition;
+		end;
+
+// new entry long
+  	if (marketposition <= 0 or firsttrade) and trend > trend[1] and wait = 0 then begin
+  			if marketposition < 0 then buy to cover ("XStrend") all shares next bar on open;
+			if (highfilter = 0 or vol <= highfilter) and (lowfilter = 0 or vol >= lowfilter) then begin
+  				buy ("Ltrend") size shares next bar on open;
+				firsttrade = false;
+				end;
+  			end
+// new entry short
+	  	else if (marketposition >= 0 or firsttrade) and trend < trend[1] and wait = 0 then begin
+			if marketposition > 0 then sell ("XLtrend") all shares next bar on open;
+			if longonly = false and (highfilter = 0 or vol <= highfilter) and 
+						(lowfilter = 0 or vol >= lowfilter)then begin
+				sell short ("Strend") size shares next bar on open;
+				firsttrade = false;
+				end;
+		end;
+  			
+ 	totalPL = netprofit + openpositionprofit;
+	PL = totalPL - totalPL[1];
+	if marketposition > 0 then
+			PLlong = PLlong + PL
+		else if marketposition < 0 then
+			PLshort = PLshort + PL;
+
+	if printfile then begin
+		If Currentbar = 1 then 
+			print(file("c:\tradestation\TSM_MA_vol_filtered_for_equities.csv"), 
+					"Date,Size,Vol,PLtoday,PLlong,PLshort,TotalPL");
+		adate = ELdatetostring(date);
+		print(file("c:\tradestation\TSM_MA_vol_filtered_for_equities.csv"), adate, ",", 
+					size:8:3, ",", vol:3:3, ",", PL:8:2, ",", PLlong:8:2, ",", PLshort:8:2, ",", 
+					TotalPL:8:2);
+		end;

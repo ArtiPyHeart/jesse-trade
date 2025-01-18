@@ -1,0 +1,23 @@
+// TSM Adaptive bands
+// Based on Jean Folger, "The Adaptive Price Zone," Modern Trader
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+	inputs:	EMAperiod(5), factor(1.5);
+	vars:		HL(0), top(0), bottom(0), smooth(0), MA(0), volatility1(0), volatility2(0);
+
+	once begin
+		smooth = 2/(EMAperiod + 1);
+		volatility1 = (high - low)/2;
+		volatility2 = volatility1;
+		end;
+
+	HL = (high - low)/2;
+
+	volatility1 = xaverage(HL,EMAperiod);;
+	volatility2 = xaverage(volatility1,EMAperiod);
+
+	top = (H + L)/2 + factor*volatility2;
+	bottom = (H + L)/2 - factor*volatility2;
+
+	plot1(top,"Upper");
+	plot2(bottom,"Lower");

@@ -1,0 +1,11 @@
+// TSM ATR Volatility
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+	inputs:	ATRperiod(20);
+	vars:		ATR(0), ratio(0);
+
+	ATR = avgtruerange(ATRperiod);
+
+	ratio = truerange/ATR;
+
+	plot1(ratio,"ATRvlty");

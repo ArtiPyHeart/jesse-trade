@@ -1,0 +1,33 @@
+// TSM Ehlers Early Onset Trend
+// Copyright 2018 P J Kaufman. All rights reserved. 
+// From John Ehlers, "The Quotient Transform," Technical Analysis of Stocks & Commodites,
+//		August 2014.
+
+  	inputs:	LPperiod(30), K(0.85);
+	vars:		alpha1(0), HP(0), a1(0), b1(0), c1(0), c2(0), c3(0), filt(0),
+				peak(0), x(0), quotient(0);
+
+// Highpass filter cyclic components whose periods are shorter than 100 bars
+	alpha1 = (cosine(0.707*360/100) + sine(0.707*360/100) - 1)/ cosine(0.707*360/100);
+	HP = (1 - alpha1/2)*(1-alpha1/2)*(close - 2*close[1] + close[2]) + 
+				2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1-alpha1)*HP[2];
+
+// SuperSmoother Filter
+	a1 = expvalue(-1.414*3.14159/LPperiod);
+	b1 = 2*a1*cosine(1.414*180/LPperiod);
+	c2 = b1;
+	c3 = -a1*a1;
+	c1 = 1 - c2 - c3;
+	filt = c1*(HP + HP[1])/2 + c2*filt[1] + c3*filt[2];
+
+// Fast attack - slow decay algorithm
+	peak = 0.991*peak[1];
+	if absvalue(filt) > peak then peak = absvalue(filt);
+
+// Normalized roofing filter
+	if peak <> 0 then x = filt/peak;
+	quotient = (x + K)/(K*x + 1);
+
+	plot1(quotient,"Quotient");
+	plot2(0);
+	

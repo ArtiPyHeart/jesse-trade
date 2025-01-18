@@ -1,0 +1,52 @@
+[LegacyColorValue = true]; 
+
+// Trend with breadth filter
+//  Copyright 2016, P J Kaufman. All rights reserved.
+
+  	input: 	trendperiod(20), usebreadth(true), breadthperiod(40), useadvancedecline(false), 
+				useupdownvolume(true), printoption(false);
+  	vars:		MA(0), breadthMA(0), size(0), adate(" "), todayPL(0), todayreturn(0), NAV(100);
+	vars:		ADratio(0), UDratio(0), avgAD(0), AvgUD(0), breadth(0), entrysize(0), investment(10000);
+
+	MA = average(close,trendperiod);
+
+	ADratio = 100*high of data2/(high of data2 + low of data2);
+	UDratio = 100*volume of data2/(volume of data2 + openint of data2);
+	AvgAD = average(ADratio,breadthperiod);
+	AvgUD = average(UDratio,breadthperiod);
+	if useadvancedecline then
+			breadth = AvgAD
+		else
+			breadth = AvgUD;
+
+	size = investment/close; 	
+
+// Exits
+	if marketposition > 0 and (MA < MA[1] or (usebreadth = false or breadth < 50)) then begin
+			sell all contracts this bar on close;
+			end
+		else if marketposition < 0 and (MA > MA[1] or (usebreadth = false or breadth > 50))then begin
+			buy to cover all contracts this bar on close;
+		end;
+
+  	if marketposition <> 1 and MA > MA[1] and (usebreadth = false or breadth > 50) then begin
+//  			if marketposition < 0 then buy to cover all contracts this bar on close;
+  			Buy size contracts This Bar at close;
+  			entrysize = size;
+  			end
+  		else if marketposition <> -1 and MA < MA[1] and (usebreadth = false or breadth < 50) then begin
+//  			if marketposition > 0 then sell all contracts this bar on close;
+  			Sell Short size contracts This Bar on close;
+  			entrysize = size;
+ 		end;
+	
+	adate = ELdatetostring(date);
+	if currentbar = 1 and printoption then print(file("c:\TradeStationMA_with_breadth.csv"),
+				"Date,Close,MA,AvgAD,Return,NAV,Position,Size");
+
+	todayPL = entrysize*marketposition*(close - close[1]);
+	todayreturn = todayPL/investment;
+	NAV = NAV*(1 + todayreturn);
+	if printoption then 
+		print(file("c:\TradeStation\MA_with_breadth.csv"),adate, ",", close:8:4, ",", MA:8:4, ",", 
+			breadth:8:4, ",", todayreturn:8:3, ",", NAV:8:3, ",", marketposition*size:5:3, "," , entrysize:5:0);

@@ -1,0 +1,81 @@
+[LegacyColorValue = true]; 
+
+{ TSM Averaging down using a moving average strategy
+  Copyright 2011,2018, P J Kaufman. All rights reserved. }
+
+{ 	period = length of calculaton
+	average down in equal size on any net loss
+}
+  input: period(80), maxadds(5), daysbetween(1), investment(100000),
+			usefutures(false), printfile(false);
+  vars:	signal(0), trend(0), excess(0), size(0), maxsize(0), maximumloss(0),
+  			currentloss(0), nadds(0), lastadd(0), adate(" ");
+
+	trend = average(close,period);
+	if trend > trend[1] then signal = 1
+		else if trend < trend[1] then signal = -1;
+
+// change of trend, enter new long
+	if signal <> signal[1] then begin
+// calculate position size for new trade
+		if usefutures then begin
+				maxsize = investment/(avgtruerange(20)*bigpointvalue);
+				size = maxsize/maxadds;
+				end
+			else begin
+				maxsize = investment/close;
+				size = maxsize/maxadds;
+			end;
+// new long position
+		if signal > 0 then begin
+				if marketposition < 0 then buy to cover all shares this bar on close;
+				if daysbetween = 0 or maxadds = 0 then 
+						buy ("max_long") maxsize shares next bar on open
+					else  
+						buy ("new_long") size shares next bar on open;
+				maximumloss = 0;
+				nadds = 1;
+				lastadd = currentbar;
+				end
+// change of trend, enter new short
+			else if signal < 0 then begin
+				if marketposition > 0 then sell all shares next bar on open;
+				if daysbetween = 0 or maxadds = 0 then
+						sell short ("max short") maxsize shares next bar on open
+					else
+						sell short ("new_short") size shares next bar on open;
+				maximumloss = 0;
+				nadds = 1;
+				lastadd = currentbar;
+			end;
+		end;
+
+// add to existing position
+	if marketposition <> 0 and daysbetween <> 0 and maxadds <> 0 then begin
+		currentloss = minlist(maximumloss,openpositionprofit);
+		if nadds < maxadds and currentloss < maximumloss and
+				currentbar - lastadd >= daysbetween then begin
+// add to long
+			if signal > 0 then begin
+					buy ("next_long") size shares next bar on open;
+					lastadd = currentbar;
+					maximumloss = currentloss;
+					end
+// add to short
+				else if signal < 0 then begin
+					sell short ("next_short") size shares next bar on open;
+					lastadd = currentbar;
+					maximumloss = currentloss;
+				end;
+			nadds = nadds + 1;
+			end;
+		end;
+ 	
+	if printfile then begin
+  		If Currentbar = 1 then print(file("c:\TradeStation\TSM_Averaging_down.csv"), 
+  					"Date,close,trend,new,pos,curpos,nadds,lastadd,maxloss,tradePL,netPL");
+ 		adate = ELdatetostring(date);
+  		print(file("c:\TradeStation\TSM_Averaging_down.csv"),adate, ",", close:6:4, ",", trend:6:4, ",", signal:3:0, ",", 
+  					marketposition:3:0, ",", currentshares:8:3, ",", nadds:5:0, ",", lastadd:5:0, ",", 
+  					maximumloss:8:2, ",", openpositionprofit:6:2, ",", netprofit + openpositionprofit:5:5);
+		end;

@@ -1,0 +1,77 @@
+{
+Measuring the Dominant Cycle using Phase Accumulation
+© 2013 John F. Ehlers
+}
+Inputs:
+	LPPeriod(20);
+	
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	QFilt(0),
+	Real(0),
+	Quad(0),
+	Imag(0),
+	IPeak(0),
+	QPeak(0),
+	Phase(0),
+	DeltaPhase(0),
+	InstPeriod(0),
+	count(0),
+	PhaseSum(0),
+	DomCycle(0);
+	
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / LPPeriod);
+b1 = 2*a1*Cosine(1.414*180 / LPPeriod);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+IPeak = .991*IPeak[1];
+If Absvalue(Filt) > IPeak Then IPeak = AbsValue(Filt);
+Real = Filt / IPeak;
+Quad = (Real - Real[1]);
+QPeak = .991*QPeak[1];
+If Absvalue(Quad) > QPeak Then QPeak = AbsValue(Quad);
+Imag = Quad /QPeak;
+//Use ArcTangent to compute the current phase
+If AbsValue(Real) > 0 then Phase = ArcTangent(AbsValue(Imag / Real));
+//Resolve the ArcTangent ambiguity
+If Real < 0 and Imag > 0 then Phase = 180 - Phase;
+If Real < 0 and Imag < 0 then Phase = 180 + Phase;
+If Real > 0 and Imag < 0 then Phase = 360 - Phase;
+//Compute a differential phase, resolve phase wraparound, and limit delta phase errors
+DeltaPhase = Phase[1] - Phase;
+If Phase[1] < 90 and Phase > 270 then DeltaPhase = 360 + Phase[1] - Phase;
+//Limit DeltaPhase to be within the bounds of 10 bar and 48 bar cycles}
+If DeltaPhase < 10 then DeltaPhase = 10;
+If DeltaPhase > 48 then Deltaphase = 48;
+//Sum DeltaPhases to reach 360 degrees. The sum is the instantaneous period.
+InstPeriod = 0;
+PhaseSum = 0;
+For count = 0 to 50 begin
+	PhaseSum = PhaseSum + DeltaPhase[count];
+	If PhaseSum > 360 and InstPeriod = 0 then begin
+		InstPeriod = count;
+	End;
+End;
+//Resolve Instantaneous Period errors and smooth
+If InstPeriod = 0 then InstPeriod = InstPeriod[1];
+a1 = expvalue(-1.414*3.14159 / 250);
+b1 = 2*a1*Cosine(1.414*180 / 250);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+DomCycle = c1*(InstPeriod + InstPeriod[1]) / 2 + c2*DomCycle[1] + c3*DomCycle[2];
+
+Plot1(DomCycle);

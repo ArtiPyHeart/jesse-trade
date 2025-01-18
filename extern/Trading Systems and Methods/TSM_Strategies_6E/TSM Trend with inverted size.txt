@@ -1,0 +1,75 @@
+[LegacyColorValue = true]; 
+
+// Trend with inverted size ala Bollinger
+// Copyright 2019, P.J.Kaufman. All rights reserved
+
+// Bollinger says that you take larger positions when volatility is high
+// Then as volatility declines you have less risk
+// On the other size you take small positions when volatility is low
+// so that when it increases you have less risk
+
+// rule 1: investment divided by price
+// rule 2: investment divided by annualized vol
+// rule 3: investment*annualized volatility
+
+  input:	rule(1), trendperiod(100), volatilityperiod(20), longonly(false), 
+			investment(10000), printoption(false);
+
+   vars:	trend(0), avol(0), returns(0), size(1), adate(" "), equity(0), PL(0),
+			entrysize(0), ATR(0), exposure(0), maxexposure(0), adjreturn(0), NAV(100);
+
+// trend
+	trend = average(close,trendperiod);
+
+// annualized volatility
+	returns = close/close[1] - 1;
+	avol = stddev(returns,volatilityperiod)*squareroot(252);
+
+// calculate size
+// Rule 1: smaller as price gets larger
+	if rule = 1 then begin
+			size = investment/close;
+			end
+// Rule 2: smaller as volatility get bigger
+		else if rule = 2 then begin
+			if avol <> 0 then size = (investment/avol)/close;
+			end
+// Rule 3: larger as volatility gets greater
+		else if rule = 3 then begin
+			if avol <> 0 then size = investment*avol/close;
+		end;
+
+	if marketposition <= 0 and trend > trend[1] then begin
+			exposure = size*close;
+			maxexposure = maxlist(maxexposure,exposure);
+			entrysize = size;
+			buy size shares next bar on open;
+			end
+		else if marketposition >= 0 and trend < trend[1] then begin
+			exposure = size*close;
+			maxexposure = maxlist(maxexposure,exposure);
+			entrysize = size;
+			sell all shares next bar on open;
+			if longonly = false then sell short size shares next bar on open;
+		end;
+	
+
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if exposure <> 0 then
+			adjreturn = PL/exposure
+		else
+			adjreturn = 0;
+	NAV = NAV*(1 + adjreturn);
+
+ 	adate = ELdatetostring(date);
+	if printoption then begin
+		If Currentbar = 1 then begin
+			print(file("c:\tradestation\TrendInvertedSize_detail.csv"), 
+					"Date,Close,avol,size,Pos,PLtoday,exposure,MaxExp,CumPL,AdjRet,NAV");
+			end;
+		print(file("c:\tradestation\TrendInvertedSize_detail.csv"), adate, ",", close:8:4, ",", 
+				avol:3:4, ",", size:8:3, ",", marketposition*entrysize:10:3, ",",
+				PL:10:0, ",", exposure:10:0, ",", maxexposure:10:0, ",", equity:8:4, ",",
+				adjreturn:8:5, ",", NAV:8:3);
+		end;

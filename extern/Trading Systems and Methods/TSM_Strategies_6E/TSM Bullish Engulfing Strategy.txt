@@ -1,0 +1,35 @@
+// TSM Bullish Engulfing Strategy
+// Copyright 2019, P.J.Kaufman. All rights reserved.
+// This is based on an article in Technical Analysis of Stocks & Commodities
+// "Testing The Engulfing Bullish Pattern" by Pawel Kosinski
+// In that article, the entry points were well defined, but not
+//		the profit targets or stop loss.
+
+	inputs:	trendperiod(0), profitperiod(20), profitfactor(3.0), stopperiod(5),
+				usefutures(false), printfile(false);
+	vars:		trend(0), size(0), investment(100000);
+
+// position size
+	if usefutures then begin
+			size = investment/(avgtruerange(profitperiod)*bigpointvalue);
+			end
+		else begin
+			size = investment/close;
+		end;
+
+// trend filter
+	if trendperiod <> 0 then begin
+		trend = average(close,trendperiod);
+		end;
+
+	if marketposition <> 0 then begin
+// profit target
+		sell all shares next bar at entryprice + profitfactor*avgtruerange(profitperiod) limit;
+// profit target
+		sell all shares next bar at lowest(close,stopperiod) stop;
+		end;
+
+// entry signal
+	if marketposition = 0 and close > high[1] and (trendperiod = 0 or trend > trend[1]) then begin
+		buy size shares next bar on open;
+		end;

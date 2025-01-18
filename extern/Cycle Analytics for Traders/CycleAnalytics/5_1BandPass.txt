@@ -1,0 +1,36 @@
+{
+BandPass Filter
+© 2013 John F. Ehlers
+}
+Inputs:
+	Period(20),
+	Bandwidth(.3);
+
+Vars:
+	alpha2(0),
+	HP(0),
+	gamma1(0),
+	alpha1(0),
+	beta1(0),
+	BP(0),
+	Peak(0),
+	Signal(0),
+	Trigger(0);
+
+alpha2 = (Cosine(.25*Bandwidth*360 / Period) + Sine(.25*Bandwidth*360 / Period) - 1) / Cosine(.25*Bandwidth*360 / Period);
+HP = (1 + alpha2 / 2)*(Close - Close[1]) + (1- alpha2)*HP[1];
+beta1 = Cosine(360 / Period);
+gamma1 = 1 / Cosine(360*Bandwidth / Period);
+alpha1 = gamma1 - SquareRoot(gamma1*gamma1 - 1);
+BP = .5*(1 - alpha1)*(HP - HP[2]) + beta1*(1 + alpha1)*BP[1] - alpha1*BP[2];
+If Currentbar = 1 or CurrentBar = 2 Then BP = 0;
+Peak = .991*Peak[1];
+If AbsValue(BP) > Peak Then Peak = AbsValue(BP);
+If Peak <> 0 Then Signal = BP / Peak;
+Plot1(Signal);
+Plot2(0);
+alpha2 = (Cosine(1.5*Bandwidth*360 / Period) + Sine(1.5*Bandwidth*360 / Period) - 1) / Cosine(1.5*Bandwidth*360 / Period);
+Trigger = (1 + alpha2 / 2)*(Signal - Signal[1]) + (1- alpha2)*Trigger[1];
+
+Plot6(Trigger);
+

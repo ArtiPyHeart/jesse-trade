@@ -1,0 +1,37 @@
+{
+Even Better Sinewave Indicator
+© 2013 John F. Ehlers
+}
+Inputs:
+	Duration(40);
+
+Vars:
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	count(0),
+	Wave(0),
+	Pwr(0);
+
+//HighPass filter cyclic components whose periods are shorter than Duration input
+alpha1 = (1 - Sine (360 / Duration)) / Cosine(360 / Duration);
+HP = .5*(1 + alpha1)*(Close - Close[1]) + alpha1*HP[1];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+//3 Bar average of Wave amplitude and power
+Wave = (Filt + Filt[1] + Filt[2]) / 3;
+Pwr = (Filt*Filt + Filt[1]*Filt[1] + Filt[2]*Filt[2]) / 3;
+//Normalize the Average Wave to Square Root of the Average Power
+Wave = Wave / SquareRoot(Pwr);
+
+Plot1(Wave);

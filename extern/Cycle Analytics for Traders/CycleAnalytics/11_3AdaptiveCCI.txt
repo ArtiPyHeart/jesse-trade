@@ -1,0 +1,133 @@
+{
+Adaptive CCI
+(c) 2013 John F. Ehlers
+}
+Vars:
+	AvgLength(3),
+	M(0),
+	N(0),
+	X(0),
+	Y(0),
+	alpha1(0),
+	HP(0),
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	Filt(0),
+	Lag(0),
+	count(0),
+	Sx(0),
+	Sy(0),
+	Sxx(0),
+	Syy(0),
+	Sxy(0),
+	Period(0),
+	Sp(0),
+	Spx(0),
+	MaxPwr(0),
+	DominantCycle(0);
+
+Arrays:
+	Corr[48](0),
+	CosinePart[48](0),
+	SinePart[48](0),
+	SqSum[48](0),
+	R[48, 2](0),
+	Pwr[48](0);
+
+//Highpass filter cyclic components whose periods are shorter than 48 bars
+alpha1 = (Cosine(.707*360 / 48) + Sine (.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+HP = (1 - alpha1 / 2)*(1 - alpha1 / 2)*(Close - 2*Close[1] + Close[2]) + 2*(1 - alpha1)*HP[1] - (1 - alpha1)*(1 - alpha1)*HP[2];
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 10);
+b1 = 2*a1*Cosine(1.414*180 / 10);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+Filt = c1*(HP + HP[1]) / 2 + c2*Filt[1] + c3*Filt[2];
+//Pearson correlation for each value of lag
+For Lag = 0 to 48 Begin
+	//Set the averaging length as M
+	M = AvgLength;
+	If AvgLength = 0 Then M = Lag;
+	Sx = 0;
+	Sy = 0;
+	Sxx = 0;
+	Syy = 0;
+	Sxy = 0;
+	For count = 0 to M - 1 Begin
+		X = Filt[count];
+		Y = Filt[Lag + count];
+		Sx = Sx + X;
+		Sy = Sy + Y;
+		Sxx = Sxx + X*X;
+		Sxy = Sxy + X*Y;
+		Syy = Syy + Y*Y;
+	End;
+	If (M*Sxx - Sx*Sx)*(M*Syy - Sy*Sy) > 0 Then Corr[Lag] = (M*Sxy - Sx*Sy)/SquareRoot((M*Sxx - Sx*Sx)*(M*Syy - Sy*Sy));
+End;
+For Period = 10 to 48 Begin
+	CosinePart[Period] = 0;
+	SinePart[Period] = 0;
+	For N = 3 to 48 Begin
+		CosinePart[Period] = CosinePart[Period] + Corr[N]*Cosine(360*N / Period);
+		SinePart[Period] = SinePart[Period] + Corr[N]*Sine(360*N / Period);
+	End;
+	SqSum[Period] = CosinePart[Period]*CosinePart[Period] + SinePart[Period]*SinePart[Period];
+End;
+For Period = 10 to 48 Begin
+	R[Period, 2] = R[Period, 1];
+	R[Period, 1] = .2*SqSum[Period]*SqSum[Period] + .8*R[Period, 2];
+End;
+//Find Maximum Power Level for Normalization
+MaxPwr = .991*MaxPwr[1];
+For Period = 10 to 48 Begin
+	If R[Period, 1] > MaxPwr Then MaxPwr = R[Period, 1];
+End;
+For Period = 3 to 48 Begin
+	If MaxPwr <> 0 Then Pwr[Period] = R[Period, 1] / MaxPwr;
+End;
+//Compute the dominant cycle using the CG of the spectrum
+Spx = 0;
+Sp = 0;
+For Period = 10 to 48 Begin
+	If Pwr[Period] >= .5 Then Begin
+		Spx = Spx + Period*Pwr[Period];
+		Sp = Sp + Pwr[Period];
+	End;
+End;
+If Sp <> 0 Then DominantCycle = Spx / Sp;
+If DominantCycle < 10 Then DominantCycle = 10;
+If DominantCycle > 48 Then DominantCycle = 48;
+
+Vars:
+	Price(0),
+	AvePrice(0),
+	RMS(0),
+	Num(0),
+	Denom(0),
+	Ratio(0),
+	MyCCI(0);
+
+//Adaptive CCI starts here, using the measured dominant cycle for tuning
+Price = Filt;
+AvePrice = 0;
+For count = 0 to DominantCycle - 1 Begin;
+	AvePrice = AvePrice + Price[count];
+End;
+AvePrice = AvePrice / DominantCycle;
+RMS = 0;
+For count = 0 to DominantCycle - 1 Begin;
+	RMS = RMS + (Price[count] - AvePrice[count])*(Price[count] - AvePrice[count]);
+End;
+RMS = SquareRoot(RMS / DominantCycle);
+Num = Price - AvePrice;
+Denom = .015*RMS;
+Ratio = Num / Denom;
+MyCCI = c1*(Ratio + Ratio[1]) / 2 + c2*MyCCI[1] + c3*MyCCI[2];
+
+Plot1(MyCCI);
+Plot2(100);
+Plot6(-100);

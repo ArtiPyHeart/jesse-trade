@@ -1,0 +1,15 @@
+// TSM Normalized Risk
+// from Mike B. Siroky, "Measuring Risk with the Normalized Risk Index"
+// Technical Analysis of Stocks & Commodities, January 2018
+
+Inputs:  period(64);
+vars:		returns(0),e(2.718),TX(0),Diff(0),AbsR(0),NRI(0);
+// e = 2.718
+
+Returns = 100*logxy(e,close)/logxy(e,close[1]);
+TX = 100*logxy(e,highest(close,period)/close);
+Diff = TX - Returns;
+AbsR = absvalue(Returns);
+NRI = median(Diff,period)/(median(AbsR,period)*squareroot(period));
+
+plot1(NRI,"NRI");

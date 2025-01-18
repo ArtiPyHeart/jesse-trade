@@ -1,0 +1,91 @@
+{ TSM Kurtosis-Skew
+	Copyright 2003, 2011, 2018 P.J.Kaufman. All rights reserved.
+	
+	This program is a modified version of "PriceDist BO_FD" provided as part
+	of the Omega Research System Trading and Development Club. For information
+	on the club and other TradeStation educational services, see the
+	TradeStation website.}
+
+{ 	Notes:
+	1. Data1 is normally intraday data and data2 is daily data of the same market. 
+	2. Kurtosis can only cross below zero if this is excess kurtosis 
+
+	TradeType 1: Breakout entry, Buy if KX < 0 and S > 0
+	TradeType 2: Fade entry
+	TradeType 3: Breakout entry, KX < 0 and S > 0 or Sell if KX > 0 and S < 0
+}
+
+	inputs:	trdtype(3), kurtlen(40), skewlen(15), stopexitbars(10), stppts(0),
+				volmin(0.0), volmax(0), VolPeriod(10), longonly(true);
+	vars:		mp(0), stopprice(0), kurt(0), skewv(0), vol(0), size(1), investment(10000),
+				adate(" "), equity(0), PL(0), NAV(0), dailyreturn(0), longPL(0), shortPL(0),
+				psignal(0), returns(0);
+	
+	returns = close/close[1] - 1;
+	kurt =  kurtosis(close,kurtlen);
+	skewv = skew(close,skewlen);
+	vol = stddev(returns,VolPeriod)*squareroot(252);
+	size = investment/close;
+	
+{ Entry rules - Breakout }
+	if (trdtype = 1 or trdtype = 3) and vol > volmin and kurt crosses under 0 then begin
+{ Test  maximum volatility }
+		if vol < volmax or volmax = 0 then begin
+				if skewv > 0 then buy ("BO-Long") size contracts next bar on open
+					else if longonly = false and skewv < 0 then 
+							sell short ("BO-short") size contracts next bar on open;
+				end
+{ exit only if volatility exceeds maximum  }				
+			else if marketposition <> 0 then begin
+				if skewv > 0 then sell ("BO-XS") all contracts next bar on open
+					else if skewv < 0 then buy to cover ("BO-XL") next bar on open;
+			end;
+		end;
+		
+{ Entry rules - Fade }
+	if (trdtype = 2 or trdtype = 3) and vol > volmin and kurt crosses above 0 then begin
+		if skewv < 0 then buy ("FD-Long") size contracts next bar on open
+			else if skewv > 0 then begin
+				sell ("X3-Long") all contracts next bar on open;
+				if longonly = false then sell short ("FD-Short") size contracts next bar on open;
+				end;
+		end;
+		
+{ Stop-loss orders }		
+	if stopexitbars <> 0 then begin
+{ long exit }
+		Sell ("LLstop") all contracts next bar at lowest(low,stopexitbars) - stppts points stop;
+{ short exit }
+		Buy to cover ("HHstop") all contracts next bar at highest(high,stopexitbars) + stppts points stop;
+		end;
+
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if psignal > 0 then
+			longPL = longPL + PL
+		else if psignal < 0 then
+			shortPL = shortPL + PL;
+	dailyreturn = 0;
+	if investment <> 0 then dailyreturn = PL/investment;
+	NAV = NAV*(1 + dailyreturn);
+
+	psignal = marketposition;
+
+//	if printfile then begin
+{	adate = ELdatetostring(date);
+	if Currentbar = 1 then begin
+ 	  		print(file("c:\tradestation\TSM_Skew-Kurtosis_detail.csv"),
+					"date,open,high,low,close,skew,kurt,vol,",
+					"pos,dailyPL,openPL,longPL,shortPL,totalPL");
+  	 		print(file("c:\tradestation\TSM_Skew-Kurtosis_PL.csv"),"Date,ShortPL,LongPL,TotalPL");
+			end;
+
+ 	print(file("c:\tradestation\TSM_Skew-Kurtosis_Detail.csv"), 
+		adate, "," , open:7:4, ",", high:7:4, ",", low:7:4, ",", close:7:4, ",", 
+		skewv:5:4, ",", kurt:5:4, ",", vol:5:4, ",",	marketposition:3:0, ",", PL:8:0, ",", 
+		openpositionprofit:8:0, ",", longPL:8:0, ",", shortPL:8:0, ",", equity:8:0);
+	print(file("c:\tradestation\TSM_Skew-Kurtosis_PL.csv"), adate, "," ,shortPL:8:0, ",", 
+		longPL:8:0,",", equity:8:8);
+//		end;
+}
+		

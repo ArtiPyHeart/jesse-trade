@@ -1,0 +1,87 @@
+[LegacyColorValue = true]; 
+
+{ TSM Intraday Volatility
+   Copyright 1995-1999, 2011 P.J. Kaufman.  All rights reserved.
+
+   Produce a histrogram of frequency of average vlty by time
+   Overlay with line chart of current vlty  }
+
+   inputs:  period(10), avgvltyperiod(20), excludebar1(true);
+   array:   timebar[200](0), vltybar[2500](0), avgdailyvlty[2500](0);
+   vars:    first(true), nbar(0), ndays(0),todaybar(0), firstdate(0), vlty(0), 
+				avgvltybar(0), sum(0), ix(0), maxbars(0);
+
+{	If Currentbar = 1 then 
+			print (file("c:\TSM5\Intraday vlty.csv"), 
+				"Date,days,bar,time,pvlty,divisor,vlty,newavg");}
+				
+{ Test for first day, set up array }
+	If first and nbar = 0 then begin
+			nbar = 1;
+			ndays = 1;
+			timebar[1] = time;
+			vlty = truerange;
+			vltybar[1] = truerange;
+			if excludebar1 then
+					avgvltybar = 0
+				else
+					avgvltybar = vlty;
+			firstdate = date;
+			todaybar = 1;
+			first = false;
+{			print (file("c:\TSM5\Intraday vlty.csv"), date:8:0, ",1,", todaybar:5:0, ",", 
+					timebar[todaybar]:5:0, ",0,1,", vlty:5:4, ",", vltybar[todaybar]:5:4);}
+			End
+		Else if Date = firstdate then begin
+			nbar = nbar + 1;
+			timebar[nbar] = time;
+			vlty = truerange;
+			vltybar[nbar] = vlty;
+			avgvltybar = avgvltybar + vlty;
+			todaybar = nbar;
+			maxbars = maxlist(maxbars,nbar);
+{			print (file("c:\TSM5\Intraday vlty.csv"), date:8:0, ",1,", todaybar:5:0, ",", 
+					timebar[todaybar]:5:0, ",0,1,", vlty:5:4, ",", vltybar[todaybar]:5:4);}
+			End
+			
+{ accumulate vlty data in table in corresponding time slot }			
+	 	Else if date <> date[1] and date <> firstdate then begin
+// calculate average vlty for previous day
+			if excludebar1 then
+					avgdailyvlty[ndays] = avgvltybar/(maxbars-1)
+				else
+					avgdailyvlty[ndays] = avgvltybar/maxbars;
+			if ndays >= avgvltyperiod then begin
+				sum = 0;
+				for ix = ndays - avgvltyperiod + 1 to ndays begin
+					sum = sum + avgdailyvlty[ix];
+					end;
+				sum = sum/avgvltyperiod;
+				end;
+				
+			ndays = ndays + 1;
+			todaybar = 1;
+			vlty = truerange;
+			if excludebar1 then 
+					avgvltybar = 0
+				else
+					avgvltybar = vlty;
+{			print (file("c:\TSM5\Intraday vlty.csv"), date:8:0, ",", ndays:5:0, ",", todaybar:5:0, ",", 
+				timebar[todaybar]:5:0, ",", pvolbar:5:4, ",", divisor:5:0, ",", vlty:5:4, ",", vltybar[todaybar]:5:4);}
+			end
+		Else if Date = date[1] and date <> firstdate then begin
+			todaybar = todaybar + 1;
+			vlty = truerange;
+			avgvltybar = avgvltybar + vlty;
+{			print (file("c:\TSM5\Intraday vlty.csv"), date:8:0, ",", ndays:5:0, ",", todaybar:5:0, ",", 
+				timebar[todaybar]:5:0, ",", pvolbar:5:4, ",", divisor:5:0, ",", vlty:5:4, ",", vltybar[todaybar]:5:4);}
+		end;
+
+{ average vlty for this bar }
+	if ndays > period then begin
+		plot1(vlty,"vlty");
+		plot2(vltybar[todaybar],"avgvlty");
+		plot3(sum,"dailyvlty");
+		end;
+	
+	

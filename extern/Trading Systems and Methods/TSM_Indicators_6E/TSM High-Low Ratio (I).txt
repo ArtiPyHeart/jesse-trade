@@ -1,0 +1,16 @@
+{ TSM High-Low Ratio
+  Copyright 2018, P.J.Kaufman. All rights reserved. }
+  
+ { Volume data MKST is data2:
+ 	Volume = Volume of new highs
+ 	OpInt = Volume of new lows }
+  
+	inputs:	period(10);
+  	vars:		HLRatio(0), sum1(0), sum2(0);
+  
+	sum1 = summation(volume of data2,period);
+	sum2 = summation(openint of data2,period);
+	if sum1 + sum2 <> 0 then HLRatio = sum1/(sum1 + sum2);
+
+ 	 Plot1(HLRatio,"HLRatio");
+

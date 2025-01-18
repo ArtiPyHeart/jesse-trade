@@ -1,0 +1,5 @@
+{ PJK Spread ratio
+	data1/data2
+	Copyright 2013, P.J.Kaufman. All rights reserved. }
+
+	plot1(close of data1/close of data2,"ratio");

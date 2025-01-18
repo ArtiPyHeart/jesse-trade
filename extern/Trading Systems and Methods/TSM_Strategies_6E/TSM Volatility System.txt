@@ -1,0 +1,23 @@
+// TSM Volatility System
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+inputs:	period(20), volfactor(2.0), usefutures(false);
+vars:		ATR(0), change(0), sizeper(20), size(0), 
+			stockinvestment(10000), futuresinvestment(25000);
+
+	ATR = avgtruerange(period);
+	change = close - close[1];
+
+// size for new positions
+	if usefutures then begin
+			size = futuresinvestment/(avgtruerange(sizeper)*bigpointvalue);
+			end
+		else begin
+			size = stockinvestment/close;
+		end;
+
+	if marketposition <= 0 and change > volfactor*ATR[1] then 
+			buy size contracts next bar on open
+		else if marketposition >= 0 and change < -volfactor*ATR[1] then
+			sell short size contracts next bar on open;
+

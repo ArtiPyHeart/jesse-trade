@@ -1,0 +1,31 @@
+// TSM ATR Profit Targets
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+	inputs:	trendperiod(20), ATRperiod(20), stopfactor(2.0);
+	vars:		trend(0), ATR(0), stoploss(0), factor(0), trendhigh(0), trendlow(0);
+
+	trend = average(close,trendperiod);
+	ATR = avgtruerange(ATRperiod);
+
+// trend turns up
+	if trend >= trend[1] and trend[1] < trend[2] then begin
+			trendhigh = high;
+			stoploss = trendhigh - stopfactor*ATR;
+			end
+// continued uptrend
+		else if trend >= trend[1] then begin
+			trendhigh = maxlist(trendhigh,high);
+			stoploss = maxlist(stoploss,trendhigh - stopfactor*ATR);
+			end
+// trend turns down
+		else if trend < trend[1] and trend[1] > trend[2] then begin
+			trendlow = low;
+			stoploss = trendlow + stopfactor*ATR;
+			end
+// continued downtrend
+		else if trend < trend[1] then begin
+			trendlow = minlist(trendlow,low);
+			stoploss = minlist(stoploss,trendlow + stopfactor*ATR);
+		end;
+
+	plot1(stoploss,"TrailingStop");

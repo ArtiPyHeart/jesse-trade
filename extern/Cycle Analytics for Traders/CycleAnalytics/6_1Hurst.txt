@@ -1,0 +1,49 @@
+{
+Hurst Coefficient
+© 2013 John F. Ehlers
+}
+Inputs:
+	Length(30); {Length must be an even number}
+
+Vars:
+	a1(0),
+	b1(0),
+	c1(0),
+	c2(0),
+	c3(0),
+	count(0),
+	N1(0),
+	N2(0),
+	N3(0),
+	HH(0),
+	LL(0),
+	Dimen(0),
+	Hurst(0),
+	SmoothHurst(0);
+
+//Smooth with a Super Smoother Filter from equation 3-3
+a1 = expvalue(-1.414*3.14159 / 20);
+b1 = 2*a1*Cosine(1.414*180 / 20);
+c2 = b1;
+c3 = -a1*a1;
+c1 = 1 - c2 - c3;
+N3 = (Highest(Close, Length) - Lowest(Close, Length)) / Length;
+HH = Close;
+LL = Close;
+For count = 0 to Length / 2 - 1 begin
+	If Close[count] > HH then HH = Close[count];
+	If Close[count] < LL then LL = Close[count];
+End;
+N1 = (HH - LL) / (Length / 2);
+HH = Close[Length / 2];
+LL = Close[Length / 2];
+For count = Length / 2 to Length - 1 begin
+	If Close[count] > HH then HH = Close[count];
+	If Close[count] < LL then LL = Close[count];
+End;
+N2 = (HH - LL)/(Length / 2);
+If N1 > 0 and N2 > 0 and N3 > 0 then Dimen = .5*((Log(N1 + N2) - Log(N3)) / Log(2) + Dimen[1]);
+Hurst = 2 - Dimen;
+SmoothHurst = c1*(Hurst + Hurst[1]) / 2 + c2*SmoothHurst[1] + c3*SmoothHurst[2];
+
+Plot1(SmoothHurst);

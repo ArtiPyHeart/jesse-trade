@@ -1,0 +1,116 @@
+[LegacyColorValue = true]; 
+
+{ PJK Bollinger Squeeze
+  Copyright 2016 P J Kaufman. All rights reserved. }
+
+{ trendperiod = length of trend, nominal 20, using moneyflow
+	stdevfactor = 2.0 are Bollinger bands
+	squeezelevel = percentage of normal bands width to get "squeeze"
+	widthperiod = time period to assess volatility of squeeze
+	}
+  
+  input:	Bollingerperiod(20), stdfactor(2.0), trendperiod(20), widthperiod(126), 
+			squeezelevel(0.50), exitreentry(false), exitmavg(true), investment(10000), 
+			usefutures(true), printoption(false);
+
+   vars:	trend(0), signal(0), psignal(0), size(1), entrysize(0),  
+			squeezeOK(false), std(0), upperband(0), lowerband(0), bandwidth(0), maxwidth(0),  
+ 			minwidth(0), threshold(0), returns(0), adate(" "), equity(0), PL(0);
+	vars:	MF(0), sumP(0), sumM(0), MFratio(0), MFI(0), ix(0);
+
+// MoneyFlow for trend confirmation
+	MF = volume*(high + low + close)/3;
+	sumP = 0;
+	sumM = 0;
+	for ix = 0 to trendperiod - 1 begin
+		if MF[ix] > MF[ix+1] then sumP = sumP + MF[ix]
+			else if MF[ix] < MF[ix+1] then sumM = sumM + mf[ix];
+		end;
+	if sumM <> 0 then
+			MFratio = sumP / sumM
+		else MFratio = 0;
+	MFI = 100 - (100/(1 + MFratio));
+
+// Bollinger Band trend
+	trend = average(close,Bollingerperiod);  
+	returns = close/close[1] - 1;
+	std = stddev(close,Bollingerperiod);
+	upperband = trend + stdfactor*std;
+	lowerband = trend - stdfactor*std;
+	bandwidth = 100*(upperband - lowerband)/close;
+	maxwidth = highest(bandwidth,widthperiod);
+	minwidth = lowest(bandwidth,widthperiod);
+
+// use price for sizing
+	if usefutures then begin
+			size = investment/(avgtruerange(20)*bigpointvalue);
+			end
+		else begin
+			size = investment/close;
+		end;
+	
+// identify Bollinger squeeze
+	squeezeOK = false;
+	threshold = minwidth + squeezelevel*(maxwidth - minwidth);
+	if bandwidth < threshold then squeezeOK = true;
+
+// trend exits first
+//	if marketposition > 0 and ((exitreentry and close < upperband[1]) or
+// 				(exitmavg and close < trend)) then begin
+//			sell ("BSExitLong") all contracts next bar on open;	
+//			end
+//		else if marketposition < 0 and ((exitreentry and close > lowerband[1]) or
+//				(exitmavg and close > trend)) then begin
+//			buy to cover ("ExitShort") all contracts next bar on open;
+//		end;
+
+// mean reversion exits
+	if marketposition > 0 and (exitmavg = false or high > trend) then begin
+			sell ("MRExitLong") all contracts next bar at on open;	
+			end
+		else if marketposition < 0 and (exitmavg = false or low < trend) then begin
+			buy to cover ("<RExitShort") all contracts next bar on open;
+		end;
+
+// entries (add confirmation on volatility
+//	if marketposition <= 0 and MFI > MFI[1] and squeezeOK and 
+//				close > upperband[1] and close[1] < upperband[1] then begin
+//			buy ("NewLong") size contracts next bar on open;
+//			end
+//		else if marketposition >= 0 and MFI < MFI[1] and squeezeOK and 
+//				close < lowerband[1] and close[1] > lowerband[1] then begin
+//			sell short ("NewShort") size contracts next bar on open;
+//			entrysize = size;
+//		end;
+
+// mean reversion entries
+  	if marketposition <= 0 and MFI > MFI[1] and squeezeOK and 
+				close > upperband[1] and close[1] < upperband[1] then begin
+			sell short ("MRshort") size contracts next bar on open;
+			end
+		else if marketposition >= 0 and MFI < MFI[1] and squeezeOK and 
+				close < lowerband[1] and close[1] > lowerband[1] then begin
+			buy ("MRlong") size contracts next bar on open;
+			entrysize = size;
+		end;
+	
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+
+	psignal = marketposition;
+
+ 	adate = ELdatetostring(date);
+	if printoption then begin
+		If Currentbar = 1 then begin
+//			print(file("c:\tradestation\BollingerSqueeze_NetPL.csv"), "Date,size,PLtoday,netPL");
+			print(file("c:\tradestation\BollingerSqueeze_detail.csv"), 
+					"Date,Close,MF,MFratio,MFI,Returns,Trend,UpBand,LoBand,BandWidth,MaxWidth,",
+					"MinWidth,SqueezeOK,Pos,PLtoday,CumPL");
+			end;
+//		print(file("c:\tradestation\BollingerSqueeze_NetPL.csv"),adate, ",", entrysize:8:3, ",", PL:8:4, ",", equity:8:4);
+		print(file("c:\tradestation\BollingerSqueeze_detail.csv"), adate, ",", close:8:4, ",", 
+				MF:10:2, ",", MFratio:8:3, ",", MFI:8.4, ",", 
+				returns:8:5, ",", trend:8:4, ",", upperband:8:3, ",", lowerband:8:3, ",", 
+				bandwidth:8:4, ",", maxwidth:8:4, ",", minwidth:8:4, ",", 
+				squeezeOK, ",", currentcontracts*marketposition:8:0, ",", PL:8:4, ",", equity:8:4);
+		end;

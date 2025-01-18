@@ -1,0 +1,19 @@
+{
+Decycler
+© 2013 John F. Ehlers
+}
+Inputs:
+	Cutoff(60);
+
+Vars:
+	alpha1(0),
+	HP(0),
+	Decycle(0);
+
+//Highpass filter cyclic components whose periods are shorter than “cutoff” bars
+alpha1 = (Cosine(360 / Cutoff) + Sine (360 / Cutoff) - 1) /
+Cosine(360 / Cutoff);
+Decycle = (alpha1 / 2)*(Close + Close[1]) +
+(1- alpha1)*Decycle[1];
+
+Plot1(Decycle);

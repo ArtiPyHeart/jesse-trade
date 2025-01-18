@@ -1,0 +1,22 @@
+//	TSM Instantaneous Trendline
+// Copyright 2000, John Ehlers. All rights reserved.
+
+	Inputs: 	Price((H+L)/2), alpha(.07), RngFrac(.35), RevPct(1.015);
+	Vars: 	Smooth(0), ITrend(0), Trigger(0);
+
+	ITrend = (alpha - alpha*alpha/4)*Price + .5*alpha*alpha*Price[1]
+		- (alpha - .75*alpha*alpha)*Price[2] + 2*(1 - alpha)*ITrend[1]
+			- (1 - alpha)*(1 - alpha)*ITrend[2];
+
+// Start by weighting the center price of 3 prices
+	If currentbar < 7 then ITrend = (Price + 2*Price[1] + Price[2]) / 4;
+	Trigger = 2*Itrend - ITrend[2];
+
+//	If Trigger Crosses Over ITrend then Buy at Close - RngFrac*(High - Low) Limit;
+//	If Trigger Crosses Under ITrend then Sell Short at Close + RngFrac*(High - Low) Limit;
+
+//	If MarketPosition = 1 and Close < EntryPrice/RevPct then Sell Short Next Bar On Open;
+//	If MarketPosition = -1 and Close > RevPct*EntryPrice then Buy Next Bar on Open;
+
+	plot1(ITrend,"InstTrend");
+	plot2(trigger,"Trigger");

@@ -1,0 +1,47 @@
+[LegacyColorValue = true]; 
+
+{ TSM Golden Cross
+  Copyright 2011, 2018, P J Kaufman. All rights reserved. }
+
+{ period = length of calculaton
+  crossoption =0 using trendline, =1 use price crossing trendline
+}
+  input: longperiod(200), shortperiod(50), longonly(false), usefutures(false);
+  vars:	MAlong(0), MAshort(0), signal(0), price(0), size(0), adate(" "),
+			futuresinvestment(25000), stockinvestment(10000), investment(0),
+			totalPL(0), todayPL(0), goldencrossPL(0), NAV(100);
+
+	once begin
+		if usefutures then investment = futuresinvestment
+			else investment = stockinvestment;
+		end;
+
+	MAlong = average(close,longperiod);
+	MAshort = average(close,shortperiod);
+
+	if usefutures then begin
+			size = investment/(avgtruerange(20)*bigpointvalue);
+			end
+		else begin
+			size = investment/close;
+		end;
+	
+{ entries }	
+	If Marketposition < 1 and MAshort crosses above MAlong then begin
+			Buy size contracts next bar on open;
+			end
+		else if Marketposition > -1 and MAshort crosses below MAlong then begin
+			Sell all contracts next bar on open;
+			if longonly = false then
+				Sell short size contracts next bar on open;
+		end;
+
+	totalPL = openpositionprofit + netprofit;
+	todayPL = totalPL - totalPL[1];
+	if marketposition > 0 then goldencrossPL = goldencrossPL + todayPL;
+	NAV = NAV*(1+todayPL/investment);
+
+	adate = ELdatetostring(date);
+	print(file("c:\TradeStation\GoldenCross_PL.csv"), adate, ",", close:5:3, ",", 
+				goldencrossPL:10:0, ",", totalPL:10:0, ",", NAV:8:2); 
+	

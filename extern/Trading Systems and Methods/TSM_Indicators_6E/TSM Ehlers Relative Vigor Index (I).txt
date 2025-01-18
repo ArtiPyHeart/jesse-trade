@@ -1,0 +1,19 @@
+// TSM Ehlers Relative Vigor Index
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+	inputs:	period(10);
+	vars:		RVI(0), N(0), Dm(0), num(0), denom(0), RVIsignal(0);
+
+// numerator and denominator
+	N = ((close - open) + 2*(close[1] - open[1]) + 2*(close[2] - open[2]) + (close[3] - open[3]))/6;
+	DM = ((high - low) + 2*(high[1] - low[1]) + 2*(high[2] - low[2]) + (high[3] - low[3]))/6;
+
+	num = summation(N,period);
+	denom = summation(DM,period);
+
+	RVI = 0;
+	if denom <> 0 then RVI = num/denom;
+	RVIsignal = (RVI + 2*RVI[1] + 2*RVI[2] + RVI[3])/6;
+
+	plot1(RVI,"RVI");
+	plot2(RVIsignal,"Signal");

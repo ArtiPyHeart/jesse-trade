@@ -1,0 +1,44 @@
+// Ehlers Voss (Predictive) Filter
+// From TAS&C August 2019
+// "A Peek Into The Future"
+// Strategy by Kaufman
+
+	input: 	period(20), predict(3), exitlong(0.05), exitshort(-0.05), minentry(10);
+	vars:		order(0), F1(0), G1(0), S1(0), bandwidth(0.25), count(0),
+				sumC(0), filt(0), voss(0), investment(25000), size(0);
+
+// Phase?
+	if currentbar = 1 then begin
+		order = 3*predict;
+		F1 = cosine(360/period);
+		G1 = cosine(bandwidth*360/period);
+		S1 = 1/G1 - squareroot(1/(G1*G1) - 1);
+		end;
+
+// Position size
+	size = investment/(avgtruerange(20)*bigpointvalue);
+
+// Band limit the input data with a wide band BandPass Filter
+	filt = 0.5*(1 - S1)*(close - close[2]) + F1*(1 + S1)*filt[1] - S1*filt[2];
+	if currentbar <= 5 then filt = 0;
+
+// Compute Voss predictor
+	sumC = 0;
+	for count = 0 to order - 1 begin
+		sumC = sumC + ((count + 1)/order)*voss[order - count];
+		end;
+	voss = ((3 + order)/2)*filt - sumC;
+
+// exit
+	if marketposition > 0 and exitlong <> 0 and voss > exitlong then
+			sell all contracts next bar on open
+		else if marketposition < 0 and exitshort <> 0 and voss < exitshort then
+			buy to cover all contracts next bar on open;
+
+// "filt" is the slower and "voss" is the fastest
+	if marketposition <= 0 and voss crosses above filt and 
+				(minentry = 0 or voss < -minentry) then
+			buy size contracts next bar on open
+		else if marketposition >= 0 and voss crosses below filt and 
+				(minentry = 0 or voss > minentry) then
+			sell short size contracts next bar on open;

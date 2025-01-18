@@ -1,0 +1,25 @@
+[LegacyColorValue = true]; 
+
+{ TSM Trend Adjusted Osc : Trend-Adjusted Oscillator
+  From E. Marshall Wall, "Rolling with the Punches," Futures, July 1996.
+  Copyright 1997-1999,2018 P.J.Kaufman. All rights reserved.
+  Corrects sustained periods where the oscillator has high or low values
+  by adjusting by the current trend. "Factor" added to increase range of
+  Trend-Adjusted Osc.}
+
+	input: OscLen(20), TrendLen(10), factor(3);
+	vars:	osc(0), trend(0), centerpoint(50), TAosc(0), raw(0), smoothedstoch(0); 
+
+	if currentbar < OscLen then begin
+			osc = centerpoint;
+			TAosc = centerpoint;
+			end
+		else begin
+			if high - low <> 0 then raw = (close - low) / (high - low);
+			smoothedstoch = 100*average(raw,3);
+			osc = 100*average(raw,OscLen);
+			trend = average(osc,TrendLen);
+			TAosc = centerpoint - factor*(trend - osc);
+			end;
+	plot1 (smoothedstoch,"TSMosc");
+	plot2 (TAosc, "TSMTAosc");

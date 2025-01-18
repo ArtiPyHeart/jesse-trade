@@ -1,0 +1,72 @@
+// PJK Trend with Trailing Stop (for trend)
+// Copyright 2016, P.J.Kaufman. All rights reserved.
+
+	inputs:	period(80), stopper(20), stopfactor(2.5), trigger(2.0), usestocks(true), 
+				usefutures(true);
+	vars:		MA(0), signal(0), psignal(0), tradeentry(0), triggerOK(false), ATR(0),
+				tradehigh(0), tradelow(0), stoploss(0), size(0), wait(0), stockinvestment(10000), 
+				futuresinvestment(25000), investment(0), ATRperiod(20);
+
+// investment 
+	if usestocks then investment = stockinvestment 
+		else if usefutures then investment = futuresinvestment;
+
+	if usestocks then size = investment/close
+		else if usefutures then size = investment/(avgtruerange(ATRperiod)*bigpointvalue);
+
+// Need trading signals to apply stop. This uses a moving average only.
+	psignal = signal;
+	MA = average(close,period);
+	if MA >= MA[1] then signal = 1 else signal = -1;
+	if signal <> psignal then begin
+		tradeentry = close;
+		triggerOK = false;
+		tradehigh = close;
+		tradelow = close;
+		end;
+
+	tradehigh = maxlist(tradehigh,close);
+	tradelow = minlist(tradelow,close);
+	ATR = avgtruerange(stopper);
+
+// stop loss reaches minimum threshold to activate
+	if stopfactor <> 0 then begin
+		if triggerOK = false and ((signal > 0 and close - tradeentry >= trigger*ATR) or 
+				(signal < 0 and tradeentry - close >= trigger*ATR)) then begin
+			triggerOK = true;
+			end;
+		if triggerOK then begin
+			if marketposition > 0 then 
+					stoploss = tradehigh - stopfactor*ATR
+				else if marketposition < 0 then
+					stoploss = tradelow + stopfactor*ATR;
+			end;
+		end;
+
+// test stop exit
+	if stopfactor <> 0 then begin
+		if marketposition > 0 and close < stoploss then begin
+				sell ("XL_stop") all contracts this bar on close;
+				wait = 1;
+				end
+			else if marketposition < 0 and close > stoploss then begin
+				buy to cover ("XS_stop") all contracts this bar on close;
+				wait = -1;
+			end;
+		end;
+
+// trend exit
+	if marketposition > 0 and signal < 0 then
+			sell ("XL_trend") all contracts next bar on open
+		else if marketposition < 0 and signal > 0 then
+			buy to cover ("XS_trend") all contract next bar on open;		
+
+// entry
+	if marketposition <= 0 and wait <= 0 and signal > 0 then begin
+			buy size contracts next bar on open;
+			wait = 0;
+			end
+		else if marketposition >= 0 and wait >= 0 and signal < 0 then begin
+			sell short size contracts next bar on open;
+			wait = 0;
+		end;

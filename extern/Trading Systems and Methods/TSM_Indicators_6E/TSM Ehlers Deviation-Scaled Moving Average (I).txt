@@ -1,0 +1,39 @@
+// Ehlers Deviation-Scaled Moving Average
+// Purpose is similar to Adaptive Moving Average
+// From TASC July 2018
+
+// Seems to only be reasonable for SPY!
+
+	input:	period(40);
+	vars:	a1(0), b1(0), c1(0), c2(0), c3(0), zeros(0), filt(0), scaledfilt(0),
+			RMS(0), count(0), alpha1(0), DSMA(0);
+
+	if currentbar = 1 then begin
+// smooth with super smoother
+		a1 = expvalue(-1.414*3.14159/(0.5*period));
+		b1 = 2*a1*cosine(1.414*180/(0.5*period));
+		c2 = b1;
+		c3 = -a1*a1;
+		c1 = 1 - c2 - c3;
+		end;
+
+// Produce nominal zero mean with zeros in the transfer response
+// 	at DC and Nyquist with no spectral distortion.
+// Nominally whitens the spectrum because of 6 dB per octave rolloff
+	zeros = close - close[2];
+// supersmoother filter
+	filt = c1*(zeros + zeros[1])/2 + c2*filt[1] + c3*filt[2];
+
+// standard deviation
+	RMS = 0;
+	for count = 0 to period - 1 begin
+		RMS = RMS + filt[count]*filt[count];
+		end;
+
+// rescale filt in terms of standard deviation
+	scaledfilt = filt/RMS;
+
+	alpha1 = absvalue(scaledfilt)*5 / period;
+	DSMA = alpha1*close + (1 - alpha1)*DSMA[1];
+
+	plot1(DSMA);

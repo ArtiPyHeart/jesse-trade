@@ -1,0 +1,20 @@
+// TSM Buy and Hold
+// This gets the TS statistics
+// Copyright 2018, P.J.Kaufman. All rights reserved.
+
+	input:	investment(100000);
+	vars:		size(0), dailyreturn(0), NAV(100), adate(" ");
+
+	if currentbar = 1 then begin
+		size = investment/close;
+		buy size shares this bar on close;
+		print(file("c:\tradestation\BuyAndHoldNAVs.csv"),"Date,NAV");
+		end;
+
+	dailyreturn = close/close[1] - 1;
+	NAV = NAV*(1 + dailyreturn);
+	adate = ELdatetostring(date);
+
+	print(file("c:\tradestation\BuyAndHoldNAVs.csv"),adate, ",", NAV:5:4);
+
+	if lastbaronchart then sell all shares this bar on close;

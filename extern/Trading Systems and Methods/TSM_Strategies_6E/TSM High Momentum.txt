@@ -1,0 +1,152 @@
+{ PJK HIgh Momentum
+  Copyright 2018, P.J.Kaufman. All rights reserved. }
+{	input explanation:
+	entryrun		= number of days to signal an entry
+	exitrun		= number of days to hold until exit on close
+	trendper		= 0, then no trend filter; > 0 then moving average period used as a filter
+	longonly		= true then show only long trades
+	volfilter	= 0, then no filter; > 0 then don't take any trades when the volatility is above this level
+	printdetail	= true then print both a net PL file and a "detail" file that shows all values each day
+}
+	inputs:	longentrydays(3), shortentrydays(3), longexit(2), shortexit(2), longentryoption(0),
+				shortentryoption(0), trendper(0), volfilter(0), profitfactor(0), longonly(false), 
+				usefutures(false), printdetail(false);
+
+	vars: currentdir(0), upcount(0), downcount(0), prevupcount(0), prevdowncount(0), trend(0), 
+			size(1), equity(0), PL(0), adate(" "), prevdir(0), saveprice(0),
+			dailyPL(0), pendingclose(0), newposition(0), ATR(0), profittarget(0),
+			stockinvestment(10000), futuresinvestment(25000), returns(0), volatility(0);
+
+	returns = close/close[1] - 1;
+	newposition = 0;
+
+// calculate volatility and trend if necessary
+	if volfilter <> 0 then volatility = stddev(returns,20)*squareroot(252);
+	if trendper <> 0 then trend = average(close,trendper);
+
+// calculate position size for any new trades
+	ATR = avgtruerange(20);
+	if usefutures then 
+			size = futuresinvestment/(ATR[1]*bigpointvalue)
+		else
+			size = stockinvestment/close[1];
+
+// count runs and direction
+//	prevupcount = upcount;
+//	prevdowncount = downcount;
+//	prevdir = currentdir;
+	if close > close[1] then begin
+			if close[1] > close[2] then 
+				 	upcount = upcount + 1
+				else begin
+					currentdir = 1;
+					upcount = 1;
+					downcount = 0;
+				end;
+			end
+		else if close < close[1] then begin
+			if close[1] < close[2] then
+					downcount = downcount + 1
+				else begin
+					currentdir = -1;
+					downcount = 1;
+					upcount = 0;
+				end;
+		end;
+
+// normal exit
+	if marketposition > 0 and barssinceentry >= longexit then
+			sell ("Lexit") marketposition contracts next bar on open
+		else if marketposition < 0 and barssinceentry >= shortexit then
+			buy to cover ("Sexit") marketposition contracts next bar on open;
+
+// pending from yesterda (not entered on open)
+	if marketposition = 0 then begin
+		if pendingclose > 0 and close > close[1] then buy ("Lclose") size contracts next bar on open
+			else if pendingclose < 0 then sell size contracts next bar on open;
+		end;
+
+// profit-taking
+	if profitfactor <> 0 then begin
+		if newposition > 0 then begin
+				profittarget = entryprice + profitfactor*ATR;
+				sell ("PTlong") all contracts next bar at profittarget limit;
+				end
+			else if newposition < 0 then begin
+				profittarget = entryprice - profitfactor*ATR;
+				buy to cover ("PTshort") all contracts next bar at profittarget limit;
+				end
+			else if marketposition > 0 then begin
+				sell ("PTlongNxt") all contracts next bar at profittarget limit;
+				end
+			else if marketposition < 0 then begin
+				buy to cover ("PTshortNxt") all contracts next bar at profittarget limit;
+			end;
+		end;
+
+// place contingent entry orders here
+	pendingclose = 0;
+// LONG ENTRIES
+	if volfilter = 0 or volatility < volfilter then begin
+		if currentdir > 0 and upcount = longentrydays - 1 and (trendper = 0 or trend > trend[1]) then
+// enter either on open or close
+				if longentryoption = 0 then begin
+						if open tomorrow > close then begin
+								buy ("LonOpen0") size contracts next bar on open;
+								end
+							else if open tomorrow < close then begin
+								pendingclose = 1;
+							end;
+						end
+// enter only on open
+					else if longentryoption = 1 and open tomorrow > close then begin
+						buy ("LonOpen1") size contracts next bar on open;
+						end
+// enter only on close
+					else if longentryoption = 2 and open tomorrow < close then begin
+						pendingclose = 1;
+					end;
+				end
+// SHORT ENTRIES
+			else if currentdir < 0 and downcount = shortentrydays - 1 and (trendper = 0 or trend < trend[1]) then begin
+// enter either on open or close
+				if shortentryoption = 0 then begin
+				if open of next bar > close then begin
+						sell short ("SonOpen0") size contracts next bar on open;
+						end
+					else if open of next bar < close then begin
+						pendingclose = -1;
+					end;
+				end
+// enter only on open
+			else if shortentryoption = 1 and open of next bar > close then begin
+				sell short ("SonOpen1") size contracts next bar on open;
+				end
+// enter only on close
+			else if shortentryoption = 2 and open of next bar < close then begin
+				pendingclose = -1;
+			end;
+		end;		
+
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	adate = ELdatetostring(date);
+
+	if printdetail then begin
+		if Currentbar = 1 then begin
+   	 	print(file("c:\tradestation\High_Momentum_detail.csv"),"date,open,high,low,close,trend,",
+							"currentdir,upcount,downcount,pending,pos,entry,openPL,dailyPL,totalPL");
+    		print(file("c:\tradestation\High_Momentum_PL.csv"),"Date,TotalPL");
+			end;
+
+   	print(file("c:\tradestation\High_Momentum_detail.csv"), adate, "," ,open:7:4, ",", high:7:4, ",",  
+			low:7:4, ",",close:7:4, ",", trend:3:0, ",", currentdir:5:0, ",", upcount:5:0, ",",downcount:5:0, ",", 
+			pendingclose:5:0, ",", marketposition:3:0, ",", entryprice:6:2, ",", openpositionprofit:8:0, ",", 
+			dailyPL:8:0, ",", equity:8:0);
+ 	  	print(file("c:\tradestation\High_Momentum_PL.csv"), adate, "," ,equity:8:0);
+		end;
+
+
+
+
+

@@ -1,0 +1,167 @@
+[LegacyColorValue = true]; 
+
+{ PJK Trends : Trend systems
+  Copyright 2012 P J Kaufman. All rights reserved. 
+	2016 add length  of trade file }
+
+{ period = length of calculaton
+  crossoption =0 using trendline, =1 use price crossing trendline 
+  entryoption = 0 buy/sell on current close
+  						 = 1 buy/sell on next open
+  						 = 2 buy/sell next close 
+  longonly			 true then only long positions
+}
+  input: usemovingaverage(true), usebreakout(false), useslope(false), useexponential(false), period(80), 
+			entryoption(0), crossoption(0), longonly(false), usestocks(true), usefutures(false),
+			variablesize(true), reinvest(false), futuresinvestment(25000), stockinvestment(10000),
+			printfiles(false);
+  vars:	signal(0), price(0), size(1), investment(1000), slope(0), ATRper(20), smooth(1.0),
+  			atrange(0), MA(0), adate(" "), equity(0), PL(0), PLlong(0), PLshort(0), exposure(0),
+			expsmooth(0), tradeentry(0), tradeentrybar(0), tradeprice(0);
+  			
+  	If Currentbar = 1 then begin
+		if usestocks then begin
+				investment = stockinvestment;
+				if variablesize = false then size = 100;
+				end
+			else begin
+				investment = futuresinvestment;
+				if variablesize = false then size = 1;
+			end; 
+		if useexponential then smooth = 2/(period + 1);
+		end;
+
+	if variablesize then begin
+		if usefutures then begin
+			atrange = avgtruerange(ATRper);
+			if atrange = 0 then 
+					size = 1
+				else
+					size = investment/(atrange*bigpointvalue);
+			end;
+		if usestocks then begin
+			size = investment/close[1];
+			end;
+		end;
+
+	if usemovingaverage then begin
+			MA = average(close of data2,period);
+			if crossoption = 0 then begin
+					if MA > MA[1] then signal = 1
+						else if MA < MA[1] then signal = -1;
+					end
+				else if crossoption = 1 then begin
+					if close of data2 >= MA then signal = 1
+						else signal = -1;
+				end;
+			end
+		else if usebreakout then begin
+			if high of data2 > highest(high[1] of data2,period) then signal = 1
+				else if low of data2 < lowest(low[1] of data2,period) then signal = -1;
+			end
+		else if useslope then begin
+			slope = linearregslope(close of data2,period);
+			if slope > 0 then signal = 1
+				else if slope < 0 then signal = -1;
+			end
+		else if useexponential then begin
+			if currentbar = 1 then 
+					expsmooth = close of data2
+				else begin
+					expsmooth = expsmooth + smooth*(close of data2 - expsmooth);
+				end;
+			if expsmooth > expsmooth[1] then signal = 1
+				else if expsmooth < expsmooth[1] then signal = -1;
+		end;
+	
+{ entry and entry options, always reverse position }		
+  	If entryoption = 0 then begin
+  			if signal = 1 and marketposition <> 1 then begin
+ 				if usemovingaverage then Buy ("BMA") size contracts this bar on close
+					else if usebreakout then Buy ("BBO") size contracts this bar on close
+					else if useslope then buy ("BLRS") size contracts this bar on close
+					else if useexponential then buy ("BEXP") size contracts this bar on close;
+	  				adate = ELdatetostring(tradeentry);
+					print(file("c:\tradestation\TrendData2_trade_length.csv"), adate, ",", 
+							currentbar - tradeentrybar:5:0, ",", size*(close - tradeprice):8:2);
+					tradeentry = date;
+					tradeentrybar = currentbar;
+					tradeprice = close;
+					end
+  			else if signal = -1 and marketposition <> -1 then begin
+  				if longonly then begin
+						if usemovingaverage then sell ("XMA") all contracts this bar on close
+							else if usebreakout then sell ("XBO") all contracts this bar on close
+							else if useslope then sell ("XLRS") all contracts this bar on close
+							else if useexponential then sell ("XEXP") all contracts this bar on close;
+	  					adate = ELdatetostring(tradeentry);
+						print(file("c:\tradestation\TrendData2_trade_length.csv"), adate, ",", 
+							currentbar - tradeentrybar:5:0, ",", size*(close - tradeprice):8:2);
+						tradeentry = date;
+						tradeentrybar = currentbar;
+						tradeprice = close;
+						end
+  					else begin
+						if usemovingaverage then sell short ("SMA") size contracts this bar on close
+							else if usebreakout then sell short ("SBO") size contracts this bar on close
+							else if useslope then sell short ("SLRS") size contracts this bar on close
+							else if useexponential then sell short ("SEXP") size contracts this bar on close;
+	  					adate = ELdatetostring(tradeentry);
+						print(file("c:\tradestation\TrendData2_trade_length.csv"), adate, ",", 
+							currentbar - tradeentrybar:5:0, ",", size*(close - tradeprice):8:2);
+						tradeentry = date;
+						tradeentrybar = currentbar;
+						tradeprice = close;
+					end;
+  				end;
+  			end
+  		else if entryoption = 1 then begin
+  			If signal = 1 and marketposition <> 1 then buy size contracts this bar on close
+  			Else if signal = -1 and marketposition <> -1 then begin
+  				if longonly then sell all contracts this bar on close
+  					else sell short size contracts this bar on close;
+  				end;
+  			end
+  		else if entryoption = 2 then begin
+  			If signal[1] = 1 and marketposition <> 1 then buy size contracts this bar on close
+  				Else if signal[1] = -1 and marketposition <> -1 then begin
+  					if longonly then sell all contracts this bar on close
+  						else sell short size contracts this bar on close;
+  				end;
+  		end;
+  	
+	if lastbaronchart then
+		if marketposition > 0 then sell all contracts this bar on close
+			else if marketposition < 0 then buy to cover all contracts this bar on close;
+
+ 	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	if marketposition > 0 then
+			PLlong = PLlong + PL
+		else if marketposition < 0 then
+			PLshort = PLshort + PL;
+
+	if reinvest then investment = stockinvestment + equity;
+
+  	If printfiles and date <> date[1] then begin
+	  	adate = ELdatetostring(date);
+		if currentbar = 1 then begin
+			print(file("c:\tradestation\TrendData2_trade_length.csv"), "Enter,Days,PL");
+			end;
+//		if usemovingaverage then begin
+				If Currentbar = 1 then print(file("c:\tradestation\TrendData2_PL.csv"), 
+								"Date,size,netPL,PLlong,PLshort,PLtoday,Equity");
+  				print(file("c:\tradestation\TrendData2_PL.csv"),adate, ",", size:8:3, ",", equity:8:4, ",", PLlong:8:4, ",",
+								PLshort:8:4, ",", PL:8:4, ",", investment:10:0);
+//				end
+//			else if usebreakout then begin
+//				If Currentbar = 1 then print(file("c:\tradestation\BO_PL.csv"), "Date,size,netPL,PLlong,PLshort,PLtoday");
+//  				print(file("c:\tradestation\BO_PL.csv"),adate, ",", size:8:3, ",", equity:8:4, ",", PLlong:8:4, ",",
+//								PLshort:8:4, ",", PL:8:4);
+//				end
+//			else if useslope then begin
+//				If Currentbar = 1 then print(file("c:\tradestation\LRS_PL.csv"), "Date,size,netPL,PLlong,PLshort,PLtoday");
+//  				print(file("c:\tradestation\LRS_PL.csv"),adate, ",", size:8:3, ",", equity:8:4, ",", PLlong:8:4, ",",
+//								PLshort:8:4, ",", PL:8:4);
+//			end;
+		end;

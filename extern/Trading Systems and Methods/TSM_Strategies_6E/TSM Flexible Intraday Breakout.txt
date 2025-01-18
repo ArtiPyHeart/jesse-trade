@@ -1,0 +1,271 @@
+[LegacyColorValue = true]; 
+
+{ TSM Flexible Intraday Breakout
+  Copyright 2011-2014,2017,2018 P.J.Kaufman. All rights reserved.  }
+// This version from futures only
+  
+{ BOoption 	1=used fixed point range breakout
+				2=use volatiity breakout  }
+
+	inputs: 	tradetrend(true), tradeMR(false), fromopen(true), fromprevclose(false), 
+				breakoutfactor(.25), MRfactor(1.5), starttime(0), lasttradebeforeclose(60), lasttime(0),
+				holdovernight(false), 
+				precedebyinsideday(false), compressiondays(0), dailyATRper(20), usetrend(60),  
+				PTperiod(0), PTfactor(2.0), costperside(8), longonly(false), usefutures(true), 
+				printoption(false);
+
+	vars:		topen(0), vol(0), breakoutlevel(0), thigh(0), tlow(0), phigh(0), plow(0),
+				pphigh(0), pplow(0), insideday(false), barstoday(0),
+				equity(0), PL(0), adate(" "), ix(0), ndays(0),
+				trenddir(0), compression(false), PLtodate(0), tradecost(0), totalcost(0),
+				newsize(1), psignal(0), PLtoday(0), PLlong(0), PLshort(0), totalshares(0),
+				totallongshares(0), totalshortshares(0), persharelong(0), pershareshort(0),
+				pershare(0), pcurrcontracts(0), factor(1), ATR(0), waitfornewsignal(false),
+				firstbar(false), avgfirstbar(o), breakoutup(0), breakoutdown(0),
+				MRbuy(0), MRsell(0), lasttradetime(0), investment(0), stockinvestment(10000),
+				futuresinvestment(25000);
+
+	arrays:	trange[5000](0), saveclose[5000](0), dailyATR[5000](0), trend[5000](0);
+
+	if currentbar = 1 then begin
+		lasttradetime = calctime(sess1endtime,-lasttradebeforeclose);
+		if lasttime <> 0 then lasttradetime = calctime(lasttime,-lasttradebeforeclose);
+		if usefutures then investment = futuresinvestment else investment = stockinvestment;
+		end;
+
+{ if profit-taking }
+	if marketposition = 0 and psignal <> 0 then waitfornewsignal = true;	
+
+{ new day }
+	if date <> date[1] then begin
+		ndays = ndays + 1;
+		trange[ndays] = thigh - tlow;
+		saveclose[ndays] = close[1];
+		barstoday = 0;
+		pphigh = phigh;
+		pplow = plow;
+		phigh = thigh;
+		plow = tlow;
+		if phigh < pphigh and plow > pplow then
+			insideday = true else insideday = false;
+		topen = open;
+		thigh = high;
+		tlow = low;
+// daily trading range
+		vol = 0;
+		if dailyATRper < ndays and dailyATRper <> 0 then begin
+			for ix = ndays - dailyATRper + 1 to ndays begin
+				vol = vol + trange[ix];
+				end;
+			vol = vol / dailyATRper;
+			dailyATR[ndays] = vol;
+// size for new trades
+			if usefutures then 
+					newsize = investment/(dailyATR[ndays]*bigpointvalue)
+				else
+					newsize = investment/close;
+
+			if fromopen then begin
+					breakoutup = topen + breakoutfactor*dailyATR[ndays];
+					breakoutdown = topen - breakoutfactor*dailyATR[ndays];
+					MRsell = topen + MRfactor*dailyATR[ndays];
+					MRbuy = topen - MRfactor*dailyATR[ndays];
+					end
+				else if fromprevclose then begin
+					breakoutup = saveclose[ndays] + breakoutfactor*dailyATR[ndays];
+					breakoutdown = saveclose[ndays] - breakoutfactor*dailyATR[ndays];
+					MRsell = saveclose[ndays] + MRfactor*dailyATR[ndays];
+					MRbuy = saveclose[ndays] - MRfactor*dailyATR[ndays];
+				end;
+			end;
+
+// compression based on daily data
+		if compressiondays <> 0 and ndays > compressiondays then begin
+			compression = true;
+			for ix = ndays - compressiondays to ndays - 1 begin
+				if trange[ndays] > trange[ix] then compression = false;
+				end;
+			end;
+
+// if missed exiting at end of day
+		if holdovernight = false and marketposition <> 0 and time = sess1starttime then begin
+				if marketposition > 0 then sell ("XLopen") all contracts this bar on close
+					else buy to cover ("XSopen") all contracts this bar on close;
+				tradecost = tradecost + currentcontracts*costperside;
+				totalcost = totalcost - tradecost;
+			end;
+
+{		firstbarrange[ndays] = high - low;
+		firstbar = false;
+		if firstbarper > 0 and ndays > firstbarper + 1 then begin
+			avgfirstbar = 0;
+			for ix = ndays - firstbarper to ndays - 1 begin		{don't use today}
+				avgfirstbar = avgfirstbar + firstbarrange[ix];
+				end;
+			avgfirstbar = avgfirstbar/firstbarper;
+			if firstbarrange[ndays] >  avgfirstbar then firstbar = true;
+			end; }
+
+// use daily trend
+		if usetrend <> 0 and usetrend < ndays then begin
+			trend[ndays] = 0;
+			for ix = 0 to usetrend-1 begin
+				trend[ndays] = trend[ndays] + saveclose[ix];
+				end;
+			trend[ndays] = trend[ndays]/usetrend;
+			if trend[ndays] > trend[ndays-1] then trenddir = 1
+				else if trend[ndays] < trend[ndays-1] then trenddir = -1;
+			end;
+
+		waitfornewsignal = false;
+		end;
+{================= end of daily processing ===========================}
+		
+{ save high and low for today }
+	thigh  = maxlist(thigh,high);
+	tlow = minlist(tlow,low);
+	tradecost = 0;
+
+	barstoday = barstoday + 1;
+{	if barstoday = openingbars then begin
+		fixhigh = thigh;
+		fixlow = tlow;
+		end; }
+
+{ bar volatility }
+{	if volper > 0 then begin
+		ATR = avgtruerange(volper);
+		vol = 100*ATR/close;
+		end; }
+
+//{ profit-taking
+	if PTperiod > 0 and PTfactor > 0 then begin
+//		ATR = avgtruerange(PTperiod);
+		if marketposition > 0 then sell ("PTlong") all contracts next bar at entryprice + PTfactor*dailyATR[ndays] limit;
+		if marketposition < 0 then buy to cover ("PTshort") all contracts next bar at entryprice - PTfactor*dailyATR[ndays] limit;
+		end;
+
+// exit if trend changes
+	if usetrend <> 0 then begin
+		if marketposition	> 0 and trenddir < 0 then
+				sell ("XLtrend") all contracts next bar on open
+			else if marketposition < 0 and trenddir > 0 then
+				buy to cover ("XStrend") all contracts next bar on open;
+		end;
+
+// exit if basic signal in opposite direction
+	if marketposition > 0 then sell ("XL") all contracts next bar at breakoutdown stop
+		else if marketposition < 0 then buy to cover ("XS") all contracts next bar at breakoutup stop;
+
+// NEW POSITIONS
+// trend direction
+	if tradetrend and (starttime = 0 or time >= starttime) and time < lasttradetime then begin
+		if waitfornewsignal = false and (precedebyinsideday = false or insideday) and 
+				(compressiondays = 0 or compression) then begin
+// if short or no position
+			if marketposition <= 0 and (usetrend = 0 or trenddir > 0)then 
+					buy ("BOup") newsize contracts next bar at breakoutup stop
+// if long or no position
+				else if longonly = false and marketposition >= 0 and (usetrend = 0 or trenddir < 0) then 
+					sell short ("BOdown") newsize contracts next bar at breakoutdown stop;
+			end;
+		end;
+// mean reversion
+	if tradeMR and (starttime = 0 or time >= starttime) and time < lasttradetime then begin
+		if waitfornewsignal = false and (precedebyinsideday = false or insideday) and 
+				(compressiondays = 0 or compression) then begin
+// if short or no position
+			if marketposition <= 0 and (usetrend = 0 or trenddir > 0)then 
+					buy ("MRbuy") newsize contracts next bar at MRbuy limit
+// if long or no position
+				else if marketposition >= 0 and (usetrend = 0 or trenddir < 0) then 
+					sell short ("MRsell") newsize contracts next bar at MRsell limit;
+			end;
+		end;
+		
+	if holdovernight = false and marketposition <> 0 and (time >= sess1endtime or time >= lasttime) then begin
+		if marketposition > 0 then sell ("XLEOD") all contracts this bar on close
+				else buy to cover ("XSEOD") all contracts this bar on close;
+		tradecost = tradecost + currentcontracts*costperside;
+		totalcost = totalcost - tradecost;
+		end;
+	
+  	equity = netprofit + openpositionprofit;
+	PL = equity - equity[1];
+	PLtoday = equity - equity[1];
+
+{ long and short PL }
+	if marketposition > 0 then begin
+			PLlong = PLlong + PLtoday;
+			if marketposition <> psignal then begin
+				PLlong = PLlong - currentcontracts*costperside;
+				end;
+			end
+		else if marketposition < 0 then begin
+			PLshort = PLshort + PLtoday;
+			if marketposition <> psignal then begin
+				PLshort = PLshort + currentcontracts*costperside;
+				end;
+		end;
+
+{ shares }
+	if currentcontracts <> pcurrcontracts then begin
+		if marketposition > 0 then begin
+				totallongshares = totallongshares + currentcontracts;
+				totalshares = totalshares + currentcontracts;
+				end
+			else begin
+				totalshortshares = totalshortshares + currentcontracts;
+				totalshares = totalshares + currentcontracts;
+			end;
+		end;
+
+if marketposition <> psignal then begin
+		factor = 1;
+		if holdovernight then factor = 2;
+		tradecost = tradecost + factor*currentcontracts*costperside;
+		end;
+	totalcost = totalcost - tradecost;
+
+	psignal = marketposition;
+	pcurrcontracts = currentcontracts;
+
+	if printoption then begin
+		once begin
+ 	   	print(file("c:\tradestation\TSM_Flexible_Intraday_Breakout_detail.csv"),"date,time,open,high,low,close,",
+						"thigh,tlow,BOup,BOdown,MRsell,MRbuy,trend,size,possize,pos,entry,todayPL,openPL,",
+						"cost,totcost,PLlong,PLshort,todayPL,netPL,Lshares,Sshares"); 
+	    	print(file("c:\tradestation\TSM_Flexible_Intraday_Breakout_PL.csv"),"Date,PLlong,PLshort,TotalPL");
+			end;
+		end;
+
+	if printoption and dailyATRper <= ndays then begin
+		adate = ELdatetostring(date);
+   	print(file("c:\tradestation\TSM_Flexible_Intraday_Breakout_detail.csv"), adate, "," ,time:4:0, ",", 
+			open:7:4, ",", high:7:4, ",", low:7:4, ",", close:7:4, ",", thigh:7:4, ",", tlow:7:4, ",", 
+			breakoutup:7:4, ",", breakoutdown:7:4, ",", MRsell:7:4, ",", MRbuy:7:4, ",", 
+			trenddir:7:4, ",", newsize:8:0, ",", currentcontracts:8:0, ",", 
+			marketposition:3:0, ",", entryprice:6:4, ",", PLtoday:8:0, ",", openpositionprofit:8:0, ",", 
+			tradecost:6:2, ",", totalcost:6:2, ",", PLlong:8:0, ",", PLshort:8:0, ",", equity:8:0, ",", 
+			equity+totalcost:10:0, ",",totallongshares:10:0, ",", totalshortshares:10:0);
+
+   	if date <> date[1] then print(file("c:\tradestation\TSM_Flexible_Intraday_Breakout_PL.csv"), 
+				adate, "," , PLlong:8:0, ",", PLshort:8:0, ",", equity:8:0);
+		end;
+
+	if lastbaronchart then begin
+   	print(file("c:\tradestation\TSM_Flexible_Intraday_Breakout_detail.csv"), " ");
+   	print(file("c:\tradestation\TSM_Flexible_Intraday_Breakout_detail.csv"), ",Long,Short,All");
+   	print(file("c:\tradestation\TSM_Flexible_Intraday_Breakout_detail.csv"), "Shares,", 
+					totallongshares:10:0, ",", totalshortshares:10:0, ",", totalshares:10:0);
+		persharelong = 0;
+		pershareshort = 0;
+		pershare = 0;
+		if totallongshares <> 0 then persharelong = PLlong/totallongshares;
+		if totalshortshares <> 0 then pershareshort = PLshort/totalshortshares;
+		if totalshares <> 0 then pershare = (equity+totalcost)/totalshares;
+   	print(file("c:\tradestation\intraday\TSM_Flexible_Intraday_Breakout_detail.csv"), "PerShare,", 
+					persharelong:10:4, ",", pershareshort:10:4, ",", pershare:10:4);
+		end;
+		
+		
