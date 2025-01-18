@@ -2,7 +2,13 @@ import numpy as np
 from jesse import helpers, indicators
 
 
-def _trailing_stop_label(candles, n_bar=15, min_r=0, k=1):
+def _trailing_stop_label(candles, n_bar=15, min_r=0.00025, k=1.5):
+    """
+    candles: np.ndarray, jesse生成的k线
+    n_bar: int, 计算trailing stop的bar数
+    min_r: float, 最小回报率，至少要高过交易所的手续费磨损
+    k: float, natr的倍数回报率
+    """
     LABELING_INDEX = 0
     SKIP_INDEX = 0
     LABEL = 0
