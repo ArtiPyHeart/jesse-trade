@@ -1,5 +1,6 @@
+import jesse.indicators as ta
 import numpy as np
-from jesse import helpers, indicators
+from jesse import helpers
 
 
 def _trailing_stop_label(candles, n_bar=15, min_r=0.00025, k=1.5, vol_break_only=False):
@@ -17,8 +18,8 @@ def _trailing_stop_label(candles, n_bar=15, min_r=0.00025, k=1.5, vol_break_only
     bar_duration = np.zeros(candles.shape[0], dtype=np.int64)
 
     close = helpers.get_candle_source(candles, "close")
-    natr = indicators.natr(candles, sequential=True) * k / 100
-    vol, vol_ma = indicators.volume(candles, sequential=True)
+    natr = ta.natr(candles, sequential=True) * k / 100
+    vol, vol_ma = ta.volume(candles, sequential=True)
     for idx, (p, r) in enumerate(zip(close, natr)):
         if np.isnan(r) or candles.shape[0] - idx < n_bar or idx < LABELING_INDEX:
             continue
@@ -65,7 +66,7 @@ class TrailingStopLabel:
 
     @property
     def vol_ratio(self):
-        vol, vol_ma = indicators.volume(self._candles, sequential=True)
+        vol, vol_ma = ta.volume(self._candles, sequential=True)
         return vol / vol_ma
 
     @property
