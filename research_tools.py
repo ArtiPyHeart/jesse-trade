@@ -1,6 +1,8 @@
 import jesse.indicators as ta
 import numpy as np
+import plotly.graph_objects as go
 from jesse import helpers
+from plotly.subplots import make_subplots
 
 
 def _trailing_stop_label(candles, n_bar=15, min_r=0.00025, k=1.5, vol_break_only=False):
@@ -80,3 +82,64 @@ class TrailingStopLabel:
     @property
     def bar_duration(self):
         return self._bar_duration
+
+    @property
+    def return_of_label(self):
+        close = helpers.get_candle_source(self._candles, "close")
+        HOLD_RETURN = close[-1] - close[0]
+        PROFIT = 0
+        START_PRICE = 0
+        END_PRICE = 0
+        for idx, (c, l) in enumerate(zip(close, self._labels)):
+            if idx == 0:
+                continue
+            else:
+                # 开多
+                if l == 1 and self._labels[idx - 1] != 1:
+                    START_PRICE = c
+                # 开空
+                elif l == -1 and self._labels[idx - 1] != -1:
+                    START_PRICE = c
+                # 平仓
+                elif l != self._labels[idx - 1] and self._labels[idx - 1] != 0:
+                    END_PRICE = c
+                    PROFIT += END_PRICE - START_PRICE
+                    START_PRICE = 0
+                    END_PRICE = 0
+        return PROFIT / HOLD_RETURN
+
+
+def plot(candles, lines: dict[str, np.ndarray]):
+    time = helpers.get_candle_source(candles, "timestamp")
+    o = helpers.get_candle_source(candles, "open")
+    h = helpers.get_candle_source(candles, "high")
+    l = helpers.get_candle_source(candles, "low")
+    c = helpers.get_candle_source(candles, "close")
+    v = helpers.get_candle_source(candles, "volume")
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Candlestick(x=time, open=o, high=h, low=l, close=c, name="Candlestick")
+    )
+    for k, v in lines.items():
+        fig.add_trace(go.Scatter(x=time, y=v, name=k, mode="lines"))
+    fig.show()
+
+
+def subplot(candles, lines: dict[str, np.ndarray]):
+    time = helpers.get_candle_source(candles, "timestamp")
+    o = helpers.get_candle_source(candles, "open")
+    h = helpers.get_candle_source(candles, "high")
+    l = helpers.get_candle_source(candles, "low")
+    c = helpers.get_candle_source(candles, "close")
+    v = helpers.get_candle_source(candles, "volume")
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05)
+    fig.add_trace(
+        go.Candlestick(x=time, open=o, high=h, low=l, close=c, name="Candlestick"),
+        row=1,
+        col=1,
+    )
+    for k, v in lines.items():
+        fig.add_trace(go.Scatter(x=time, y=v, name=k, mode="lines"), row=2, col=1)
+    fig.show()
