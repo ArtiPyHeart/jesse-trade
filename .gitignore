@@ -324,3 +324,14 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+.idea/.gitignore
+.idea/git_toolbox_blame.xml
+.idea/git_toolbox_prj.xml
+.idea/jesse-trade.iml
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/inspectionProfiles/Project_Default.xml
+storage/logs/etc.txt
+storage/temp/cache_database.pickle

@@ -2,7 +2,6 @@ from typing import Union
 
 import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
-from jesse.indicators import supersmoother
 from numba import njit
 
 
@@ -79,9 +78,6 @@ def hurst_coefficient(
     """
     candles = slice_candles(candles, sequential)
     source = get_candle_source(candles, source_type=source_type)
-    source = supersmoother(
-        source, period=14, sequential=True
-    )  # Always get sequential for internal calculation
 
     # Calculate using numba optimized function
     dimen, hurst, smooth_hurst = _hurst_calculator(source, period)
