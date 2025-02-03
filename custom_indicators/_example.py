@@ -7,9 +7,10 @@ def _indicator_name(
 ):
     candles = slice_candles(candles, sequential)
     src = get_candle_source(candles, source_type)
+    another_src = get_candle_source(candles, "high")
 
     # 根据sequential参数决定返回值，可以返回单个值或多个值，True返回序列，False返回最后一个值
     if sequential:
-        return src
+        return src, another_src
     else:
-        return src[-1]
+        return src[-1], another_src[-1]
