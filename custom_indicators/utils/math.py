@@ -6,27 +6,39 @@ from numba import njit
 
 @njit
 def sin_radians(degrees: float) -> float:
-    return math.sin(math.radians(degrees))
+    res = math.sin(math.radians(degrees))
+    return res
 
 
 @njit
 def cos_radians(degrees: float) -> float:
-    return math.cos(math.radians(degrees))
+    res = math.cos(math.radians(degrees))
+    return res
 
 
 @njit
 def tan_radians(degrees: float) -> float:
-    return math.tan(math.radians(degrees))
+    res = math.tan(math.radians(degrees))
+    return res
 
 
 @njit
 def dt(array: np.ndarray) -> np.ndarray:
-    return np.diff(array, prepend=np.nan, axis=0)
+    # 创建结果数组，与输入数组大小相同
+    res = np.empty_like(array)
+    # 第一个元素设为nan
+    res[0] = np.nan
+    # 计算差分
+    res[1:] = np.diff(array)
+    return res
 
 
 @njit
 def ddt(array: np.ndarray) -> np.ndarray:
-    return np.diff(dt(array), prepend=np.nan, axis=0)
+    res = np.empty_like(array)
+    res[0] = np.nan
+    res[1:] = np.diff(dt(array))
+    return res
 
 
 @njit

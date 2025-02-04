@@ -2,7 +2,7 @@ import jesse.indicators as ta
 import numpy as np
 from jesse import helpers
 
-from custom_indicators import td_sequential, hurst_coefficient
+from custom_indicators import hurst_coefficient, roofing_filter, td_sequential
 from custom_indicators.utils.math import ddt, dt, lag
 
 
@@ -120,7 +120,24 @@ def feature_matrix(candles: np.array, sequential: bool = False):
     all_names.extend(names)
 
     # hurst
-    names = []
+    names = [
+        "hurst_coef_fast",
+        "hurst_coef_fast_lag1",
+        "hurst_coef_fast_lag2",
+        "hurst_coef_fast_lag3",
+        "hurst_coef_fast_lag4",
+        "hurst_coef_fast_lag5",
+        "hurst_coef_fast_dt",
+        "hurst_coef_fast_ddt",
+        "hurst_coef_slow",
+        "hurst_coef_slow_lag1",
+        "hurst_coef_slow_lag2",
+        "hurst_coef_slow_lag3",
+        "hurst_coef_slow_lag4",
+        "hurst_coef_slow_lag5",
+        "hurst_coef_slow_dt",
+        "hurst_coef_slow_ddt",
+    ]
     hurst_coef_fast = hurst_coefficient(candles, period=30, sequential=True)
     hurst_coef_fast_lag1 = lag(hurst_coef_fast, 1)
     hurst_coef_fast_lag2 = lag(hurst_coef_fast, 2)
@@ -135,22 +152,88 @@ def feature_matrix(candles: np.array, sequential: bool = False):
     hurst_coef_slow_lag3 = lag(hurst_coef_slow, 3)
     hurst_coef_slow_lag4 = lag(hurst_coef_slow, 4)
     hurst_coef_slow_lag5 = lag(hurst_coef_slow, 5)
+    hurst_coef_slow_lag5 = lag(hurst_coef_slow, 5)
     hurst_coef_slow_dt = dt(hurst_coef_slow)
     hurst_coef_slow_ddt = ddt(hurst_coef_slow)
-    
-
-    final_fe = np.concatenate(
+    final_fe.extend(
         [
-            i.reshape(-1, 1)
-            for i in [
-                td_buy,
-                td_sell,
-            ]
-        ],
-        axis=1,
+            hurst_coef_fast.reshape(-1, 1),
+            hurst_coef_fast_lag1.reshape(-1, 1),
+            hurst_coef_fast_lag2.reshape(-1, 1),
+            hurst_coef_fast_lag3.reshape(-1, 1),
+            hurst_coef_fast_lag4.reshape(-1, 1),
+            hurst_coef_fast_lag5.reshape(-1, 1),
+            hurst_coef_fast_dt.reshape(-1, 1),
+            hurst_coef_fast_ddt.reshape(-1, 1),
+            hurst_coef_slow.reshape(-1, 1),
+            hurst_coef_slow_lag1.reshape(-1, 1),
+            hurst_coef_slow_lag2.reshape(-1, 1),
+            hurst_coef_slow_lag3.reshape(-1, 1),
+            hurst_coef_slow_lag4.reshape(-1, 1),
+            hurst_coef_slow_lag5.reshape(-1, 1),
+            hurst_coef_slow_dt.reshape(-1, 1),
+            hurst_coef_slow_ddt.reshape(-1, 1),
+        ]
     )
+    all_names.extend(names)
 
+    # roofing filter
+    names = [
+        "roofing_filter",
+        "roofing_filter_lag1",
+        "roofing_filter_lag2",
+        "roofing_filter_lag3",
+        "roofing_filter_lag4",
+        "roofing_filter_lag5",
+        "roofing_filter_dt",
+        "roofing_filter_ddt",
+    ]
+    rf = roofing_filter(candles, sequential=True)
+    rf_lag1 = lag(rf, 1)
+    rf_lag2 = lag(rf, 2)
+    rf_lag3 = lag(rf, 3)
+    rf_lag4 = lag(rf, 4)
+    rf_lag5 = lag(rf, 5)
+    rf_dt = dt(rf)
+    rf_ddt = ddt(rf)
+    final_fe.extend(
+        [
+            rf.reshape(-1, 1),
+            rf_lag1.reshape(-1, 1),
+            rf_lag2.reshape(-1, 1),
+            rf_lag3.reshape(-1, 1),
+            rf_lag4.reshape(-1, 1),
+            rf_lag5.reshape(-1, 1),
+            rf_dt.reshape(-1, 1),
+            rf_ddt.reshape(-1, 1),
+        ]
+    )
+    all_names.extend(names)
+
+    final_fe = np.concatenate(final_fe, axis=1)
     if sequential:
         return final_fe
     else:
         return final_fe[-1, :].reshape(1, -1)
+
+
+if __name__ == "__main__":
+    from jesse import research
+
+    warmup_1m, trading_1m = research.get_candles(
+        "Binance Perpetual Futures",
+        "BTC-USDT",
+        "1m",
+        helpers.date_to_timestamp("2024-06-01"),
+        helpers.date_to_timestamp("2024-12-31"),
+        warmup_candles_num=0,
+        caching=False,
+        is_for_jesse=False,
+    )
+
+    fe_seq = feature_matrix(trading_1m, sequential=True)
+    assert fe_seq.shape[0] == trading_1m.shape[0]
+
+    fe_last = feature_matrix(trading_1m, sequential=False)
+    assert fe_last.shape[0] == 1
+    assert fe_last.shape[1] == fe_seq.shape[1]

@@ -64,7 +64,7 @@ def roofing_filter(
     hp_period: int = 80,
     lp_period: int = 40,
     source_type: str = "close",
-    zero_mean: bool = False,
+    zero_mean: bool = True,
     sequential: bool = False,
 ) -> Union[float, np.ndarray]:
     """
