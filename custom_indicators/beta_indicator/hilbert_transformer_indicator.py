@@ -1,4 +1,4 @@
-from math import exp, fabs
+from math import exp, fabs, pi
 
 import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
@@ -101,7 +101,7 @@ def hilbert_transformer_indicator(
     # ------------------------
     # 第二步：Super Smoother
     # ------------------------
-    a1 = exp(-1.414 * 3.14159 / lp_period)
+    a1 = exp(-1.414 * pi / lp_period)
     # 使用 radians 转换角度：1.414*180/lp_period（度）转换为弧度
     b1 = 2.0 * a1 * cos_radians(1.414 * 180.0 / lp_period)
     c2 = b1
@@ -111,7 +111,7 @@ def hilbert_transformer_indicator(
     # ------------------------
     # 第三步：Imag 部分所需的参数（不同周期）
     # ------------------------
-    a1_im = exp(-1.414 * 3.14159 / 10.0)
+    a1_im = exp(-1.414 * pi / 10.0)
     # 同样转换角度：1.414*180/10（度）转换为弧度
     b1_im = 2.0 * a1_im * cos_radians(1.414 * 180.0 / 10.0)
     c2_im = b1_im
