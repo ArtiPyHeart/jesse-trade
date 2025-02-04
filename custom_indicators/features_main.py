@@ -1,53 +1,8 @@
 import jesse.indicators as ta
 import numpy as np
 from jesse import helpers
-from numba import jit
 
 from custom_indicators.td_sequential import td_sequential
-
-
-@jit(nopython=True)
-def _dt(array):
-    return np.diff(array, prepend=np.nan)
-
-
-@jit(nopython=True)
-def _std(array, n=20):
-    # 使用cumsum方法创建rolling window
-    ret = np.full_like(array, np.nan)
-
-    # 计算移动窗口的标准差
-    for i in range(n - 1, len(array)):
-        ret[i] = np.std(array[i - n + 1 : i + 1], ddof=1)
-    return ret
-
-
-@jit(nopython=True)
-def _skew(array, n=20):
-    ret = np.full_like(array, np.nan)
-
-    for i in range(n - 1, len(array)):
-        window = array[i - n + 1 : i + 1]
-        # 计算中心矩
-        m3 = np.mean((window - np.mean(window)) ** 3)
-        std = np.std(window, ddof=1)
-        # 偏度计算公式
-        ret[i] = m3 / (std**3) if std != 0 else 0
-    return ret
-
-
-@jit(nopython=True)
-def _kurtosis(array, n=20):
-    ret = np.full_like(array, np.nan)
-
-    for i in range(n - 1, len(array)):
-        window = array[i - n + 1 : i + 1]
-        # 计算中心矩
-        m4 = np.mean((window - np.mean(window)) ** 4)
-        var = np.var(window, ddof=1)
-        # 峰度计算公式
-        ret[i] = (m4 / var**2) - 3 if var != 0 else 0
-    return ret
 
 
 def feature_matrix(candles: np.array, sequential: bool = False):
