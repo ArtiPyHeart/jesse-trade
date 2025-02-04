@@ -4,6 +4,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import cos_radians, sin_radians
+
 
 @njit
 def _calc_comb_spectrum(
@@ -25,10 +27,8 @@ def _calc_comb_spectrum(
     dominant_cycle = np.zeros(length)
 
     alpha1_hp = (
-        math.cos(math.radians(0.707 * 360 / 48))
-        + math.sin(math.radians(0.707 * 360 / 48))
-        - 1.0
-    ) / math.cos(math.radians(0.707 * 360 / 48))
+        cos_radians(0.707 * 360 / 48) + sin_radians(0.707 * 360 / 48) - 1.0
+    ) / cos_radians(0.707 * 360 / 48)
 
     # 超级平滑滤波 (Super Smoother) 参数
     a1 = math.exp(-1.414 * math.pi / 10.0)
@@ -69,8 +69,8 @@ def _calc_comb_spectrum(
                     BP[n, m] = BP[n, m - 1]
 
                 comp = float(n) if spectral_dilation_compensation else 1.0
-                beta1 = math.cos(math.radians(360.0 / n))
-                gamma1 = 1.0 / math.cos(math.radians(360.0 * bandwidth / n))
+                beta1 = cos_radians(360.0 / n)
+                gamma1 = 1.0 / cos_radians(360.0 * bandwidth / n)
                 alpha1 = gamma1 - math.sqrt(gamma1 * gamma1 - 1.0)
 
                 if i >= 2:
