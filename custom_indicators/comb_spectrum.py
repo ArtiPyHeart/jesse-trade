@@ -117,7 +117,7 @@ def _calc_comb_spectrum(
     return dominant_cycle, pwr_list
 
 
-def comb_sepctrum(
+def comb_spectrum(
     candles: np.ndarray,
     source_type: str = "close",
     sequential: bool = False,

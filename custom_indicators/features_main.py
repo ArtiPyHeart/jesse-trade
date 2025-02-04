@@ -6,12 +6,12 @@ from numba import jit
 from custom_indicators.td_sequential import td_sequential
 
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True)
 def _dt(array):
     return np.diff(array, prepend=np.nan)
 
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True)
 def _std(array, n=20):
     # 使用cumsum方法创建rolling window
     ret = np.full_like(array, np.nan)
@@ -22,7 +22,7 @@ def _std(array, n=20):
     return ret
 
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True)
 def _skew(array, n=20):
     ret = np.full_like(array, np.nan)
 
@@ -36,7 +36,7 @@ def _skew(array, n=20):
     return ret
 
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True)
 def _kurtosis(array, n=20):
     ret = np.full_like(array, np.nan)
 
