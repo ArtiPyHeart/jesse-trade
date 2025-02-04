@@ -2,6 +2,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _highpass_filter(src: np.ndarray, alpha1: float) -> np.ndarray:
@@ -93,8 +95,8 @@ def _calculate_power_spectrum(corr: np.ndarray, lag_max: int) -> np.ndarray:
         # 计算余弦正弦部分
         cp, sp = 0.0, 0.0
         for N in range(3, lag_max + 1):
-            cp += corr[N] * np.cos(np.deg2rad(360 * N / Period))
-            sp += corr[N] * np.sin(np.deg2rad(360 * N / Period))
+            cp += corr[N] * deg_cos(360 * N / Period)
+            sp += corr[N] * deg_sin(360 * N / Period)
         cosine_part[Period] = cp
         sine_part[Period] = sp
         sqsum[Period] = cp * cp + sp * sp
@@ -157,8 +159,8 @@ def _adaptive_bandpass_filter(
     lead_signal = np.zeros_like(filt)
 
     # 带通滤波参数
-    beta1 = np.cos(np.deg2rad(360.0 / (0.9 * dominant_cycle)))
-    gamma1 = 1.0 / np.cos(np.deg2rad(360.0 * bandwidth / (0.9 * dominant_cycle)))
+    beta1 = deg_cos(360.0 / (0.9 * dominant_cycle))
+    gamma1 = 1.0 / deg_cos(360.0 * bandwidth / (0.9 * dominant_cycle))
     alpha2 = gamma1 - np.sqrt(gamma1**2 - 1.0)
 
     for i in range(length):
@@ -229,18 +231,16 @@ def adaptive_bandpass(
 
     # 1) 高通滤波参数 & 执行
     #    例中 alpha1 来自原公式: alpha1 = (cos(0.707*360/48)+sin(0.707*360/48)-1)/cos(0.707*360/48)
-    alpha1 = (
-        np.cos(np.deg2rad(0.707 * 360 / 48.0))
-        + np.sin(np.deg2rad(0.707 * 360 / 48.0))
-        - 1
-    ) / np.cos(np.deg2rad(0.707 * 360 / 48.0))
+    alpha1 = (deg_cos(0.707 * 360 / 48.0) + deg_sin(0.707 * 360 / 48.0) - 1) / deg_cos(
+        0.707 * 360 / 48.0
+    )
 
     hp = _highpass_filter(src, alpha1)
 
     # 2) 超平滑滤波
     #    a1 = exp(-1.414*π / 10)；b1, c1, c2, c3依公式计算
     a1 = np.exp(-1.414 * np.pi / 10.0)
-    b1 = 2.0 * a1 * np.cos(np.deg2rad(1.414 * 180 / 10.0))
+    b1 = 2.0 * a1 * deg_cos(1.414 * 180 / 10.0)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1.0 - c2 - c3

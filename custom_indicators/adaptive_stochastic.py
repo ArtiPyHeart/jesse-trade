@@ -2,6 +2,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _calc_loops(
@@ -82,8 +84,8 @@ def _calc_loops(
     SqSum = np.zeros(max_lag + 1)
     for Period in range(10, max_lag + 1):
         for N in range(3, max_lag + 1):
-            CosinePart[Period] += Corr[N] * np.cos(2 * np.pi * N / Period)
-            SinePart[Period] += Corr[N] * np.sin(2 * np.pi * N / Period)
+            CosinePart[Period] += Corr[N] * deg_cos(360 * N / Period)
+            SinePart[Period] += Corr[N] * deg_sin(360 * N / Period)
         SqSum[Period] = CosinePart[Period] ** 2 + SinePart[Period] ** 2
 
     R = np.zeros(max_lag + 1)
@@ -176,11 +178,11 @@ def adaptive_stochastic(
 
     # 计算高通滤波系数与超平滑滤波系数
     alpha1 = (
-        np.cos(0.707 * 2 * np.pi / 48.0) + np.sin(0.707 * 2 * np.pi / 48.0) - 1
-    ) / np.cos(0.707 * 2 * np.pi / 48.0)
+        deg_cos(0.707 * 360.0 / 48.0) + deg_sin(0.707 * 360.0 / 48.0) - 1
+    ) / deg_cos(0.707 * 360.0 / 48.0)
 
     a1 = np.exp(-1.414 * np.pi / 10)
-    b1 = 2 * a1 * np.cos(1.414 * np.pi / 10)
+    b1 = 2 * a1 * deg_cos(1.414 * 180.0 / 10)
     c2, c3 = b1, -a1 * a1
     c1 = 1 - c2 - c3
 

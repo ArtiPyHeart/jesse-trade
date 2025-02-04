@@ -5,20 +5,20 @@ from numba import njit
 
 
 @njit
-def sin_radians(degrees: float) -> float:
-    res = math.sin(math.radians(degrees))
+def deg_sin(degrees: float) -> float:
+    res = np.sin(np.deg2rad(degrees))
     return res
 
 
 @njit
-def cos_radians(degrees: float) -> float:
-    res = math.cos(math.radians(degrees))
+def deg_cos(degrees: float) -> float:
+    res = np.cos(np.deg2rad(degrees))
     return res
 
 
 @njit
-def tan_radians(degrees: float) -> float:
-    res = math.tan(math.radians(degrees))
+def deg_tan(degrees: float) -> float:
+    res = np.tan(np.deg2rad(degrees))
     return res
 
 
@@ -72,9 +72,9 @@ def skew(array: np.ndarray, n: int = 20) -> np.ndarray:
         window = array[i - n + 1 : i + 1]
         # 计算中心矩
         m3 = np.mean((window - np.mean(window)) ** 3)
-        std = np.std(window, ddof=1)
+        _std = np.std(window, ddof=1)
         # 偏度计算公式
-        ret[i] = m3 / (std**3) if std != 0 else 0
+        ret[i] = m3 / (_std**3) if std != 0 else 0
     return ret
 
 

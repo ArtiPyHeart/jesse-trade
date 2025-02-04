@@ -2,6 +2,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _calc_dft(window, L, p_min, p_max, spectral_dilation_compensation):
@@ -12,10 +14,10 @@ def _calc_dft(window, L, p_min, p_max, spectral_dilation_compensation):
         cosine_sum = 0.0
         sine_sum = 0.0
         for N in range(L):
-            # 角度转换：2*pi*N/p 等于 np.deg2rad(360 * N/p)
-            angle_rad = 2 * np.pi * N / p
-            cosine_sum += window[N] * np.cos(angle_rad)
-            sine_sum += window[N] * np.sin(angle_rad)
+            # 使用角度制，确保与 EasyLanguage 中 Cosine(360*N/p) 一致
+            angle_deg = 360.0 * N / p
+            cosine_sum += window[N] * deg_cos(angle_deg)
+            sine_sum += window[N] * deg_sin(angle_deg)
         cosine_sum /= Comp
         sine_sum /= Comp
         raw_pwr[p - p_min] = cosine_sum**2 + sine_sum**2
@@ -65,15 +67,15 @@ def dft(
     # spectrum 数组的 shape 为 (length, 39)，每列对应一个周期的归一化功率
     spectrum = np.full((length, num_periods), np.nan)
 
-    # 计算高通滤波器参数（注意使用角度制，需要转换为弧度）
-    angle = 0.707 * 360 / L
-    angle_rad = np.deg2rad(angle)
-    alpha1 = (np.cos(angle_rad) + np.sin(angle_rad) - 1) / np.cos(angle_rad)
+    # 使用角度制计算高通滤波器参数，不再通过弧度转换
+    alpha1 = (deg_cos(0.707 * 360 / L) + deg_sin(0.707 * 360 / L) - 1) / deg_cos(
+        0.707 * 360 / L
+    )
 
     # 超级平滑滤波器参数
     a1 = np.exp(-1.414 * np.pi / 10)
     angle2 = 1.414 * 180 / 10
-    b1 = 2 * a1 * np.cos(np.deg2rad(angle2))
+    b1 = 2 * a1 * deg_cos(angle2)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

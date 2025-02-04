@@ -4,6 +4,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _roofing_filter(
@@ -21,10 +23,9 @@ def _roofing_filter(
     :param zero_mean: bool - 是否为零均值滤波
     :return: np.ndarray
     """
-    # 修正高通滤波器参数计算（使用度数转换）
+    # 修正高通滤波器参数计算（使用度数为单位的三角函数计算）
     angle = 360 / hp_period
-    rad = np.deg2rad(angle)
-    alpha1 = (np.cos(rad) + np.sin(rad) - 1) / np.cos(rad)
+    alpha1 = (deg_cos(angle) + deg_sin(angle) - 1) / deg_cos(angle)
 
     hp = np.zeros_like(source)
     filt = np.zeros_like(source)
@@ -40,7 +41,7 @@ def _roofing_filter(
     # 计算超级平滑器参数
     rad2 = 1.414 * np.pi / lp_period
     a1 = np.exp(-rad2)
-    b1 = 2 * a1 * np.cos(1.414 * np.pi / lp_period)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / lp_period)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

@@ -2,13 +2,14 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import jit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @jit(nopython=True)
 def _compute_hp(close, n, hplength):
     HP = np.zeros(n)
-    angle = 0.707 * 360 / hplength
-    angle_rad = np.radians(angle)
-    alpha1 = (np.cos(angle_rad) + np.sin(angle_rad) - 1) / np.cos(angle_rad)
+    angle = 0.707 * 360 / hplength  # 角度制
+    alpha1 = (deg_cos(angle) + deg_sin(angle) - 1) / deg_cos(angle)
 
     for i in range(2, n):
         HP[i] = (
@@ -22,7 +23,7 @@ def _compute_hp(close, n, hplength):
 @jit(nopython=True)
 def _compute_filt(HP, n, lplength):
     a1 = np.exp(-1.414 * np.pi / lplength)
-    b1 = 2 * a1 * np.cos(np.radians(1.414 * 180 / lplength))
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / lplength)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

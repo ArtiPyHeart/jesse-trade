@@ -6,14 +6,14 @@ from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
 from custom_indicators.roofing_filter import _roofing_filter
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
 def _compute_stochastic(source, length):
     # 计算高通滤波器参数
     angle = 0.707 * 360 / 48  # 将角度计算为度数，符合原始代码（0.707*360/48）
-    alpha1 = (cos_radians(angle) + sin_radians(angle) - 1) / cos_radians(angle)
+    alpha1 = (deg_cos(angle) + deg_sin(angle) - 1) / deg_cos(angle)
 
     # 初始化数组
     hp = np.zeros_like(source)
@@ -30,7 +30,7 @@ def _compute_stochastic(source, length):
 
     # Super Smoother Filter参数
     a1 = math.exp(-1.414 * math.pi / 10)
-    b1 = 2 * a1 * cos_radians(1.414 * 180 / 10)  # 1.414*180/10，角度制，与原始代码一致
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / 10)  # 1.414*180/10，角度制，与原始代码一致
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

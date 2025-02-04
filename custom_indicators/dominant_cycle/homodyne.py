@@ -4,7 +4,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -99,11 +99,11 @@ def homodyne(
         return np.zeros(n) if sequential else 0
 
     # 计算常量，用于Highpass滤波器和Super Smoother Filter
-    alpha1 = (
-        cos_radians(0.707 * 360 / 48) + sin_radians(0.707 * 360 / 48) - 1
-    ) / cos_radians(0.707 * 360 / 48)
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
     a1 = math.exp(-1.414 * math.pi / lp_period)
-    b1 = 2 * a1 * cos_radians(1.414 * 180 / lp_period)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / lp_period)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

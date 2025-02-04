@@ -4,7 +4,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -137,8 +137,8 @@ def phase_accumulation(
     eps = 1e-8
 
     ##### 1. 高通滤波器部分 #####
-    alpha1 = (cos_radians(0.707 * 360 / 48) + sin_radians(0.707 * 360 / 48) - 1) / (
-        cos_radians(0.707 * 360 / 48) + eps
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / (
+        deg_cos(0.707 * 360 / 48) + eps
     )
     hp_factor = (1 - alpha1 / 2) ** 2
     hp_coef2 = 2 * (1 - alpha1)
@@ -146,14 +146,14 @@ def phase_accumulation(
 
     ##### 2. 超级平滑滤波器（用于 Filt）的系数 #####
     a1 = math.exp(-1.414 * math.pi / LPPeriod)
-    b1 = 2 * a1 * cos_radians(1.414 * 180 / LPPeriod)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / LPPeriod)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3
 
     ##### 3. 主导周期平滑的系数 #####
     a1_dom = math.exp(-1.414 * math.pi / 250)
-    b1_dom = 2 * a1_dom * cos_radians(1.414 * 180 / 250)
+    b1_dom = 2 * a1_dom * deg_cos(1.414 * 180 / 250)
     c2_dom = b1_dom
     c3_dom = -a1_dom * a1_dom
     c1_dom = 1 - c2_dom - c3_dom

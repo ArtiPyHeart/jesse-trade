@@ -4,6 +4,8 @@ import numpy as np
 import numpy.typing as npt
 from jesse.helpers import get_candle_source, slice_candles
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 def ehlers_early_onset_trend(
     candles: npt.NDArray,
@@ -35,13 +37,13 @@ def ehlers_early_onset_trend(
     quotient = np.zeros_like(source)
 
     # 高通滤波器参数
-    alpha1 = (
-        np.cos(0.707 * 2 * np.pi / 100) + np.sin(0.707 * 2 * np.pi / 100) - 1
-    ) / np.cos(0.707 * 2 * np.pi / 100)
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
 
     # SuperSmoother Filter参数
     a1 = np.exp(-1.414 * np.pi / lp_period)
-    b1 = 2 * a1 * np.cos(1.414 * np.pi / lp_period)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / lp_period)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

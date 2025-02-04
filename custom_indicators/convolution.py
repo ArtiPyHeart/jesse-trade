@@ -2,6 +2,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 # 新增：先定义子函数，用于进行Corr/Slope/Convolution的计算
 @njit
@@ -71,9 +73,8 @@ def ehlers_convolution(
     # -------------------
     # 1. High Pass Filter (HP)
     # -------------------
-    alpha1_num = (1.414 * 360.0) / long_period  # 原逻辑以度数为单位，需要换算成弧度
-    alpha1_rad = alpha1_num * np.pi / 180.0
-    alpha1 = (np.cos(alpha1_rad) + np.sin(alpha1_rad) - 1.0) / np.cos(alpha1_rad)
+    angle = (1.414 * 360.0) / long_period  # 原逻辑角度值，直接以度为单位计算
+    alpha1 = (deg_cos(angle) + deg_sin(angle) - 1.0) / deg_cos(angle)
 
     HP = np.zeros(length)
     # 初始化前两根，简单赋值
@@ -89,7 +90,7 @@ def ehlers_convolution(
     # 2. Super Smoother Filter (Filt)
     # -------------------
     a1 = np.exp(-1.414 * np.pi / short_period)
-    b1 = 2.0 * a1 * np.cos((1.414 * 180.0 / short_period) * np.pi / 180.0)
+    b1 = 2.0 * a1 * deg_cos(1.414 * 180.0 / short_period)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

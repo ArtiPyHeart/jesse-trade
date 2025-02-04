@@ -2,6 +2,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _compute_hp(src: np.ndarray, alpha1: float) -> np.ndarray:
@@ -81,9 +83,8 @@ def _compute_power(Corr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray
             cosine_acc = 0.0
             sine_acc = 0.0
             for n in range(3, max_lag + 1):
-                rad = np.deg2rad(360 * n / period)
-                c_val = np.cos(rad)
-                s_val = np.sin(rad)
+                c_val = deg_cos(360 * n / period)
+                s_val = deg_sin(360 * n / period)
                 cosine_acc += Corr[i, n] * c_val
                 sine_acc += Corr[i, n] * s_val
             CosinePart[i, period] = cosine_acc
@@ -242,16 +243,16 @@ def adaptive_rsi(
         return rsi_dummy if sequential else rsi_dummy[-1]
 
     # Highpass滤波系数
-    alpha1 = (
-        np.cos(np.deg2rad(0.707 * 360 / 48)) + np.sin(np.deg2rad(0.707 * 360 / 48)) - 1
-    ) / np.cos(np.deg2rad(0.707 * 360 / 48))
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
 
     # 1. 计算HP
     HP = _compute_hp(src, alpha1)
 
     # 2. 超级平滑器
     a1 = np.exp(-1.414 * np.pi / 10)
-    b1 = 2 * a1 * np.cos(np.deg2rad(1.414 * 180 / 10))
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / 10)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

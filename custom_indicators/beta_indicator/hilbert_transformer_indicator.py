@@ -4,7 +4,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -96,14 +96,14 @@ def hilbert_transformer_indicator(
     # ------------------------
     angle = 0.707 * 360.0 / 48.0  # 计算角度（度）
     # 将角度转换为弧度再传入 cos 和 sin
-    alpha1 = (cos_radians(angle) + sin_radians(angle) - 1.0) / cos_radians(angle)
+    alpha1 = (deg_cos(angle) + deg_sin(angle) - 1.0) / deg_cos(angle)
 
     # ------------------------
     # 第二步：Super Smoother
     # ------------------------
     a1 = exp(-1.414 * pi / lp_period)
     # 使用 radians 转换角度：1.414*180/lp_period（度）转换为弧度
-    b1 = 2.0 * a1 * cos_radians(1.414 * 180.0 / lp_period)
+    b1 = 2.0 * a1 * deg_cos(1.414 * 180.0 / lp_period)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1.0 - c2 - c3
@@ -113,7 +113,7 @@ def hilbert_transformer_indicator(
     # ------------------------
     a1_im = exp(-1.414 * pi / 10.0)
     # 同样转换角度：1.414*180/10（度）转换为弧度
-    b1_im = 2.0 * a1_im * cos_radians(1.414 * 180.0 / 10.0)
+    b1_im = 2.0 * a1_im * deg_cos(1.414 * 180.0 / 10.0)
     c2_im = b1_im
     c3_im = -a1_im * a1_im
     c1_im = 1.0 - c2_im - c3_im

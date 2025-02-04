@@ -4,7 +4,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -107,16 +107,16 @@ def swamicharts_rsi(
 
     # ===== 计算 HP 相关参数 =====
     # alpha1 = (cos(0.707*360/48) + sin(0.707*360/48) - 1) / cos(0.707*360/48)
-    alpha1 = (
-        cos_radians(0.707 * 360 / 48) + sin_radians(0.707 * 360 / 48) - 1
-    ) / cos_radians(0.707 * 360 / 48)
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
     factor = (1 - alpha1 / 2) ** 2  # 平方计算
 
     # ===== 计算 Super Smoother 参数 =====
     # a1 = exp(-1.414*pi/10)
     a1 = math.exp(-1.414 * math.pi / 10)
     # b1 = 2 * a1 * cos(1.414*180/10)
-    b1 = 2 * a1 * cos_radians(1.414 * 180 / 10)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / 10)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

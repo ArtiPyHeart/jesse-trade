@@ -4,7 +4,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -116,13 +116,11 @@ def dual_differentiator(
     # 预先计算常数
     # alpha1 = (Cosine(0.707*360/48) + Sine(0.707*360/48) - 1) / Cosine(0.707*360/48)
     alpha_val = 0.707 * 360.0 / 48.0
-    alpha1 = (cos_radians(alpha_val) + sin_radians(alpha_val) - 1) / cos_radians(
-        alpha_val
-    )
+    alpha1 = (deg_cos(alpha_val) + deg_sin(alpha_val) - 1) / deg_cos(alpha_val)
 
     # 超级平滑滤波器参数（公式中的 a1, b1, c1, c2, c3）
     a1 = math.exp(-1.414 * math.pi / LPPeriod)
-    b1 = 2 * a1 * cos_radians(1.414 * 180 / LPPeriod)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / LPPeriod)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

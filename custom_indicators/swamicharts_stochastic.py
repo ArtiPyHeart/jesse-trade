@@ -4,7 +4,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -86,9 +86,9 @@ def swamicharts_stochastic(
     # 1. 计算高通滤波 HP
     # -------------------------------
     # 根据原始代码计算alpha1
-    alpha1 = (
-        cos_radians(0.707 * 360 / 48) + sin_radians(0.707 * 360 / 48) - 1
-    ) / cos_radians(0.707 * 360 / 48)
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
 
     HP = np.full(n, 0.0)
     # 初始值：t=0, t=1直接设为0
@@ -109,7 +109,7 @@ def swamicharts_stochastic(
     # -------------------------------
     # 计算Super Smoother系数
     a1 = np.exp(-1.414 * np.pi / 10)
-    b1 = 2 * a1 * cos_radians(1.414 * 180 / 10)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / 10)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

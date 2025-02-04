@@ -8,6 +8,7 @@ from .autocorrelation_periodogram import autocorrelation_periodogram
 from .autocorrelation_reversals import autocorrelation_reversals
 from .comb_spectrum import comb_spectrum
 from .convolution import ehlers_convolution
+from .decycler_oscillator import decycler_oscillator
 from .dft import dft
 from .ehlers_early_onset_trend import ehlers_early_onset_trend
 from .evenbetter_sinewave import evenbetter_sinewave
@@ -30,8 +31,9 @@ __all__ = [
     "autocorrelation_periodogram",
     "autocorrelation_reversals",
     "comb_spectrum",
-    "ehlers_convolution",
+    "decycler_oscillator",
     "dft",
+    "ehlers_convolution",
     "ehlers_early_onset_trend",
     "evenbetter_sinewave",
     "hurst_coefficient",

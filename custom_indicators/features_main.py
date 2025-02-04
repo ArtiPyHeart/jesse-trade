@@ -2,7 +2,13 @@ import jesse.indicators as ta
 import numpy as np
 from jesse import helpers
 
-from custom_indicators import hurst_coefficient, roofing_filter, td_sequential
+from custom_indicators import (
+    hurst_coefficient,
+    mod_rsi,
+    roofing_filter,
+    td_sequential,
+    mod_stochastic,
+)
 from custom_indicators.utils.math import ddt, dt, lag
 
 
@@ -206,6 +212,71 @@ def feature_matrix(candles: np.array, sequential: bool = False):
             rf_lag5.reshape(-1, 1),
             rf_dt.reshape(-1, 1),
             rf_ddt.reshape(-1, 1),
+        ]
+    )
+    all_names.extend(names)
+
+    # modified stochastic
+    names = [
+        "mod_stochastic",
+        "mod_stochastic_lag1",
+        "mod_stochastic_lag2",
+        "mod_stochastic_lag3",
+        "mod_stochastic_lag4",
+        "mod_stochastic_lag5",
+        "mod_stochastic_dt",
+        "mod_stochastic_ddt",
+    ]
+    mod_stochastic_ = mod_stochastic(candles, roofing_filter=True, sequential=True)
+    mod_stochastic_lag1 = lag(mod_stochastic_, 1)
+    mod_stochastic_lag2 = lag(mod_stochastic_, 2)
+    mod_stochastic_lag3 = lag(mod_stochastic_, 3)
+    mod_stochastic_lag4 = lag(mod_stochastic_, 4)
+    mod_stochastic_lag5 = lag(mod_stochastic_, 5)
+    mod_stochastic_dt = dt(mod_stochastic_)
+    mod_stochastic_ddt = ddt(mod_stochastic_)
+    final_fe.extend(
+        [
+            mod_stochastic_.reshape(-1, 1),
+            mod_stochastic_lag1.reshape(-1, 1),
+            mod_stochastic_lag2.reshape(-1, 1),
+            mod_stochastic_lag3.reshape(-1, 1),
+            mod_stochastic_lag4.reshape(-1, 1),
+            mod_stochastic_lag5.reshape(-1, 1),
+            mod_stochastic_dt.reshape(-1, 1),
+            mod_stochastic_ddt.reshape(-1, 1),
+        ]
+    )
+
+    # modified rsi
+    names = [
+        "mod_rsi",
+        "mod_rsi_lag1",
+        "mod_rsi_lag2",
+        "mod_rsi_lag3",
+        "mod_rsi_lag4",
+        "mod_rsi_lag5",
+        "mod_rsi_dt",
+        "mod_rsi_ddt",
+    ]
+    mod_rsi_ = mod_rsi(candles, sequential=True)
+    mod_rsi_lag1 = lag(mod_rsi_, 1)
+    mod_rsi_lag2 = lag(mod_rsi_, 2)
+    mod_rsi_lag3 = lag(mod_rsi_, 3)
+    mod_rsi_lag4 = lag(mod_rsi_, 4)
+    mod_rsi_lag5 = lag(mod_rsi_, 5)
+    mod_rsi_dt = dt(mod_rsi_)
+    mod_rsi_ddt = ddt(mod_rsi_)
+    final_fe.extend(
+        [
+            mod_rsi_.reshape(-1, 1),
+            mod_rsi_lag1.reshape(-1, 1),
+            mod_rsi_lag2.reshape(-1, 1),
+            mod_rsi_lag3.reshape(-1, 1),
+            mod_rsi_lag4.reshape(-1, 1),
+            mod_rsi_lag5.reshape(-1, 1),
+            mod_rsi_dt.reshape(-1, 1),
+            mod_rsi_ddt.reshape(-1, 1),
         ]
     )
     all_names.extend(names)

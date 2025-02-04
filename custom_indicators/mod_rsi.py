@@ -4,12 +4,14 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _high_pass_filter(source: np.ndarray) -> np.ndarray:
-    alpha1 = (
-        np.cos(0.707 * 2 * np.pi / 48) + np.sin(0.707 * 2 * np.pi / 48) - 1
-    ) / np.cos(0.707 * 2 * np.pi / 48)
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
     hp = np.zeros_like(source)
     for i in range(2, len(source)):
         hp[i] = (
@@ -25,7 +27,7 @@ def _high_pass_filter(source: np.ndarray) -> np.ndarray:
 @njit
 def _super_smoother(hp: np.ndarray, length: int) -> np.ndarray:
     a1 = np.exp(-1.414 * np.pi / length)
-    b1 = 2 * a1 * np.cos(1.414 * np.pi / length)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / length)
     c1 = 1 - b1 + a1 * a1
     c2 = b1
     c3 = -a1 * a1
@@ -43,7 +45,7 @@ def _calculate_mod_rsi(filt: np.ndarray, length: int) -> np.ndarray:
     rsi = np.zeros_like(filt)
 
     a1 = np.exp(-1.414 * np.pi / length)
-    b1 = 2 * a1 * np.cos(1.414 * np.pi / length)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / length)
     c1 = 1 - b1 + a1 * a1
     c2 = b1
     c3 = -a1 * a1

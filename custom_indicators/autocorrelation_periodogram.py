@@ -4,6 +4,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _calc_corr(filt, L, avg_length):
@@ -47,9 +49,8 @@ def _calc_periodogram(corr):
         cp = 0.0
         sp_val = 0.0
         for n in range(3, 49):
-            angle = 370 * n / period * math.pi / 180.0
-            cp += corr[n] * math.cos(angle)
-            sp_val += corr[n] * math.sin(angle)
+            cp += corr[n] * deg_cos(370 * n / period)
+            sp_val += corr[n] * deg_sin(370 * n / period)
         cosine_part[period] = cp
         sine_part[period] = sp_val
         sq_sum[period] = cp * cp + sp_val * sp_val
@@ -110,13 +111,13 @@ def autocorrelation_periodogram(
     filt = np.zeros(length)
 
     # 高通滤波器参数
-    alpha1 = (
-        np.cos(0.707 * 2 * np.pi / 48) + np.sin(0.707 * 2 * np.pi / 48) - 1
-    ) / np.cos(0.707 * 2 * np.pi / 48)
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
 
     # Super Smoother滤波器参数
     a1 = np.exp(-1.414 * np.pi / 10)
-    b1 = 2 * a1 * np.cos(1.414 * np.pi / 10)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / 10)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

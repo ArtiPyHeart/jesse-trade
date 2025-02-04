@@ -4,6 +4,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos
+
 
 @njit
 def _hurst_calculator(source: np.ndarray, period: int) -> tuple:
@@ -17,7 +19,7 @@ def _hurst_calculator(source: np.ndarray, period: int) -> tuple:
 
     # Super Smoother Filter coefficients
     a1 = np.exp(-1.414 * np.pi / 20)
-    b1 = 2 * a1 * np.cos(1.414 * np.pi / 20)
+    b1 = 2 * a1 * deg_cos(1.414 * 180 / 20)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1 - c2 - c3

@@ -4,7 +4,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -51,11 +51,11 @@ def evenbetter_sinewave(
     length = len(src)
 
     # 计算 alpha1 (高通滤波器系数)，确保使用角度计算保持与原始代码一致性
-    alpha1 = (1 - sin_radians(360.0 / duration)) / cos_radians(360.0 / duration)
+    alpha1 = (1 - deg_sin(360.0 / duration)) / deg_cos(360.0 / duration)
 
     # 超级平滑滤波器系数
     a1 = math.exp(-1.414 * math.pi / 10)
-    b1 = 2 * a1 * cos_radians(1.414 * 180.0 / 10)
+    b1 = 2 * a1 * deg_cos(1.414 * 180.0 / 10)
     c2 = b1
     c3 = -(a1**2)
     c1 = 1 - c2 - c3

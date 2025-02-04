@@ -1,6 +1,10 @@
+import math
+
 import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
+
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 @njit
@@ -94,13 +98,16 @@ def autocorrelation(
     candles = slice_candles(candles, sequential)
     src = get_candle_source(candles, source_type)
 
-    # 计算滤波系数
-    alpha1 = (
-        np.cos(0.707 * 2 * np.pi / 48) + np.sin(0.707 * 2 * np.pi / 48) - 1
-    ) / np.cos(0.707 * 2 * np.pi / 48)
-
-    a1 = np.exp(-1.414 * np.pi / 10)
-    b1 = 2.0 * a1 * np.cos(1.414 * np.pi / 10)
+    # 修改：使用 EasyLanguage 角度制计算方式
+    # 原 EasyLanguage 代码:
+    #   alpha1 = (Cosine(.707*360 / 48) + Sine(.707*360 / 48) - 1) / Cosine(.707*360 / 48);
+    #   a1 = expvalue(-1.414*3.14159 / 10);
+    #   b1 = 2*a1*Cosine(1.414*180 / 10);
+    alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
+        0.707 * 360 / 48
+    )
+    a1 = np.exp(-1.414 * math.pi / 10)
+    b1 = 2.0 * a1 * deg_cos(1.414 * 180 / 10)
 
     # 应用滤波器
     Filt = _apply_filters(src, alpha1, a1, b1)
@@ -110,6 +117,6 @@ def autocorrelation(
     Corr_all = _calculate_all_correlations(Filt, max_lag, avg_length)
 
     if sequential:
-        return Corr_all
+        return Corr_all[:, 2:]
     else:
-        return Corr_all[-1]
+        return Corr_all[-1, 2:]

@@ -1,7 +1,7 @@
 import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 
-from custom_indicators.utils.math import cos_radians, sin_radians
+from custom_indicators.utils.math import deg_cos, deg_sin
 
 
 def decycler_oscillator(
@@ -41,8 +41,8 @@ def decycler_oscillator(
     # 计算角度并转换为alpha值
     angle1 = 0.707 * 360 / HPPeriod1
     angle2 = 0.707 * 360 / HPPeriod2
-    a1 = (cos_radians(angle1) + sin_radians(angle1) - 1) / cos_radians(angle1)
-    a2 = (cos_radians(angle2) + sin_radians(angle2) - 1) / cos_radians(angle2)
+    a1 = (deg_cos(angle1) + deg_sin(angle1) - 1) / deg_cos(angle1)
+    a2 = (deg_cos(angle2) + deg_sin(angle2) - 1) / deg_cos(angle2)
 
     # 初始化高通滤波数组
     HP1 = np.full(n, np.nan)

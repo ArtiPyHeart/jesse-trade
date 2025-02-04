@@ -2,6 +2,8 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
+from custom_indicators.utils.math import deg_cos, deg_sin
+
 
 @njit
 def _calculate_adaptive_cci_numba(
@@ -48,8 +50,8 @@ def _calculate_adaptive_cci_numba(
             sin_acc = 0.0
             for n in range(3, max_lag + 1):
                 val = corr_array[i, n]
-                cos_acc += val * np.cos(2 * np.pi * n / period)
-                sin_acc += val * np.sin(2 * np.pi * n / period)
+                cos_acc += val * deg_cos(360.0 * n / period)
+                sin_acc += val * deg_sin(360.0 * n / period)
             cosine_part[i, period] = cos_acc
             sine_part[i, period] = sin_acc
             sq_sum[i, period] = cos_acc * cos_acc + sin_acc * sin_acc
@@ -147,10 +149,10 @@ def adaptive_cci(
     # ------------------------------
     # Step 1: 高通滤波 (Highpass Filter)
     # ------------------------------
-    # alpha1 参考 Ehlers 原始公式，以 48周期为基准
+    # 使用 deg_cos 与 deg_sin 计算角度制的三角函数
     alpha1 = (
-        np.cos(0.707 * 2 * np.pi / 48.0) + np.sin(0.707 * 2 * np.pi / 48.0) - 1.0
-    ) / np.cos(0.707 * 2 * np.pi / 48.0)
+        deg_cos(0.707 * 360.0 / 48.0) + deg_sin(0.707 * 360.0 / 48.0) - 1.0
+    ) / deg_cos(0.707 * 360.0 / 48.0)
 
     hp = np.zeros(length)
     hp[0:2] = src[0:2]  # 初始化前2个值
@@ -165,9 +167,9 @@ def adaptive_cci(
     # ------------------------------
     # Step 2: 超级平滑滤波 (Super Smoother)
     # ------------------------------
-    # a1 对应给出的公式, 周期稍作调整 (默认10)
     a1 = np.exp(-1.414 * np.pi / 10.0)
-    b1 = 2.0 * a1 * np.cos(1.414 * np.pi / 10.0)
+    # 修改：使用 deg_cos 实现角度计算
+    b1 = 2.0 * a1 * deg_cos(1.414 * 180.0 / 10.0)
     c2 = b1
     c3 = -a1 * a1
     c1 = 1.0 - c2 - c3
