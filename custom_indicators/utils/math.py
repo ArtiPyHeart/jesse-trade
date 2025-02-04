@@ -21,12 +21,12 @@ def tan_radians(degrees: float) -> float:
 
 @njit
 def dt(array: np.ndarray) -> np.ndarray:
-    return np.diff(array, prepend=np.nan)
+    return np.diff(array, prepend=np.nan, axis=0)
 
 
 @njit
 def ddt(array: np.ndarray) -> np.ndarray:
-    return np.diff(dt(array), prepend=np.nan)
+    return np.diff(dt(array), prepend=np.nan, axis=0)
 
 
 @njit
