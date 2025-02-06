@@ -5,6 +5,7 @@ import numpy as np
 from jesse import helpers
 
 from custom_indicators import (
+    accumulated_swing_index,
     adaptive_bandpass,
     adaptive_cci,
     adaptive_stochastic,
@@ -12,6 +13,7 @@ from custom_indicators import (
     autocorrelation_periodogram,
     comb_spectrum,
     ehlers_convolution,
+    ehlers_early_onset_trend,
     evenbetter_sinewave,
     hurst_coefficient,
     roofing_filter,
@@ -32,6 +34,43 @@ def feature_matrix(candles: np.array, sequential: bool = False):
     candles = helpers.slice_candles(candles, sequential)
     all_names = []
     final_fe = []
+
+    # accumulated swing index
+    names = [
+        "acc_swing_index",
+        "acc_swing_index_lag1",
+        "acc_swing_index_lag2",
+        "acc_swing_index_dt",
+        "acc_swing_index_ddt",
+    ]
+    acc_swing_index = accumulated_swing_index(candles, sequential=True)
+    acc_swing_index_lag1 = lag(acc_swing_index, 1)
+    acc_swing_index_lag2 = lag(acc_swing_index, 2)
+    acc_swing_index_dt = dt(acc_swing_index)
+    acc_swing_index_ddt = ddt(acc_swing_index)
+    final_fe.extend(
+        [
+            acc_swing_index.reshape(-1, 1),
+            acc_swing_index_lag1.reshape(-1, 1),
+            acc_swing_index_lag2.reshape(-1, 1),
+            acc_swing_index_dt.reshape(-1, 1),
+            acc_swing_index_ddt.reshape(-1, 1),
+        ]
+    )
+    all_names.extend(names)
+
+    # ehlers early onset trend
+    names = [
+        "ehlers_early_onset_trend_ddt",
+    ]
+    ehlers_early_onset_trend_ = ehlers_early_onset_trend(candles, sequential=True)
+    ehlers_early_onset_trend_ddt = ddt(ehlers_early_onset_trend_)
+    final_fe.extend(
+        [
+            ehlers_early_onset_trend_ddt.reshape(-1, 1),
+        ]
+    )
+    all_names.extend(names)
 
     # bandpass & highpass
     names = [

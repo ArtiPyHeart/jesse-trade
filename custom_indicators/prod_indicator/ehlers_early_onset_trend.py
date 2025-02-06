@@ -3,8 +3,41 @@ from typing import Union
 import numpy as np
 import numpy.typing as npt
 from jesse.helpers import get_candle_source, slice_candles
+from numba import njit  # 新增 numba 导入
 
 from custom_indicators.utils.math import deg_cos, deg_sin
+
+
+# 新增 numba 加速的计算子函数
+@njit(cache=True)
+def _compute_ehlers_numba(source, alpha1, c1, c2, c3, k):
+    n = len(source)
+    hp = np.zeros(n)
+    filt = np.zeros(n)
+    peak = np.zeros(n)
+    quotient = np.zeros(n)
+    # 预先计算常量，避免重复计算
+    alpha_factor = (1 - alpha1 / 2) * (1 - alpha1 / 2)
+    one_minus_alpha = 1 - alpha1
+
+    for i in range(2, n):
+        # 高通滤波器
+        hp[i] = (
+            alpha_factor * (source[i] - 2 * source[i - 1] + source[i - 2])
+            + 2 * one_minus_alpha * hp[i - 1]
+            - one_minus_alpha * one_minus_alpha * hp[i - 2]
+        )
+        # SuperSmoother Filter
+        filt[i] = c1 * (hp[i] + hp[i - 1]) / 2 + c2 * filt[i - 1] + c3 * filt[i - 2]
+        # 快速攻击-慢速衰减算法更新 peak
+        peak[i] = 0.991 * peak[i - 1]
+        if abs(filt[i]) > peak[i]:
+            peak[i] = abs(filt[i])
+        # 归一化 roofing filter
+        if peak[i] != 0:
+            x = filt[i] / peak[i]
+            quotient[i] = (x + k) / (k * x + 1)
+    return quotient
 
 
 def ehlers_early_onset_trend(
@@ -31,11 +64,6 @@ def ehlers_early_onset_trend(
     candles = slice_candles(candles, sequential)
     source = get_candle_source(candles, source_type=source_type)
 
-    hp = np.zeros_like(source)
-    filt = np.zeros_like(source)
-    peak = np.zeros_like(source)
-    quotient = np.zeros_like(source)
-
     # 高通滤波器参数
     alpha1 = (deg_cos(0.707 * 360 / 48) + deg_sin(0.707 * 360 / 48) - 1) / deg_cos(
         0.707 * 360 / 48
@@ -48,28 +76,8 @@ def ehlers_early_onset_trend(
     c3 = -a1 * a1
     c1 = 1 - c2 - c3
 
-    for i in range(2, len(source)):
-        # 高通滤波器
-        hp[i] = (
-            (1 - alpha1 / 2)
-            * (1 - alpha1 / 2)
-            * (source[i] - 2 * source[i - 1] + source[i - 2])
-            + 2 * (1 - alpha1) * hp[i - 1]
-            - (1 - alpha1) * (1 - alpha1) * hp[i - 2]
-        )
-
-        # SuperSmoother Filter
-        filt[i] = c1 * (hp[i] + hp[i - 1]) / 2 + c2 * filt[i - 1] + c3 * filt[i - 2]
-
-        # 快速攻击-慢速衰减算法
-        peak[i] = 0.991 * peak[i - 1]
-        if abs(filt[i]) > peak[i]:
-            peak[i] = abs(filt[i])
-
-        # 归一化roofing filter
-        if peak[i] != 0:
-            x = filt[i] / peak[i]
-            quotient[i] = (x + k) / (k * x + 1)
+    # 调用 numba 加速的子函数进行循环计算
+    quotient = _compute_ehlers_numba(source, alpha1, c1, c2, c3, k)
 
     if sequential:
         return quotient

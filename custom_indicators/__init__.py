@@ -1,21 +1,21 @@
-from custom_indicators.prod_indicator.autocorrelation_reversals import (
-    autocorrelation_reversals,
-)
-from custom_indicators.prod_indicator.autocorrelation_periodogram import (
-    autocorrelation_periodogram,
-)
-from custom_indicators.prod_indicator.autocorrelation import autocorrelation
-from custom_indicators.prod_indicator.adaptive_stochastic import adaptive_stochastic
-from custom_indicators.prod_indicator.adaptive_rsi import adaptive_rsi
-from custom_indicators.prod_indicator.adaptive_bandpass import adaptive_bandpass
-from custom_indicators.prod_indicator.adaptive_cci import adaptive_cci
 from custom_indicators.prod_indicator.accumulated_swing_index import (
     accumulated_swing_index,
 )
+from custom_indicators.prod_indicator.adaptive_bandpass import adaptive_bandpass
+from custom_indicators.prod_indicator.adaptive_cci import adaptive_cci
+from custom_indicators.prod_indicator.adaptive_rsi import adaptive_rsi
+from custom_indicators.prod_indicator.adaptive_stochastic import adaptive_stochastic
+from custom_indicators.prod_indicator.autocorrelation import autocorrelation
+from custom_indicators.prod_indicator.autocorrelation_periodogram import (
+    autocorrelation_periodogram,
+)
+from custom_indicators.prod_indicator.autocorrelation_reversals import (
+    autocorrelation_reversals,
+)
 from custom_indicators.prod_indicator.comb_spectrum import comb_spectrum
+from custom_indicators.prod_indicator.convolution import ehlers_convolution
 from custom_indicators.prod_indicator.decycler_oscillator import decycler_oscillator
 from custom_indicators.prod_indicator.dft import dft
-from custom_indicators.prod_indicator.convolution import ehlers_convolution
 from custom_indicators.prod_indicator.ehlers_early_onset_trend import (
     ehlers_early_onset_trend,
 )
