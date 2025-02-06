@@ -1,3 +1,5 @@
+from typing import Union
+
 import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
@@ -121,7 +123,7 @@ def _calculate_adaptive_cci_numba(
 
 def adaptive_cci(
     candles: np.ndarray, source_type: str = "close", sequential: bool = False
-) -> np.ndarray:
+) -> float | np.ndarray:
     """
     自适应CCI (Adaptive CCI) 指标实现基于 Ehlers 方法:
     1. 高通滤波去除短周期噪声

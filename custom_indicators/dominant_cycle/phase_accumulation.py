@@ -65,11 +65,11 @@ def _phase_accumulation_loop(
             phase = 0.0
 
         # 根据不同象限修正相位
-        if Real_arr[i] < 0 and Imag[i] > 0:
+        if Real_arr[i] < 0 < Imag[i]:
             phase = 180 - phase
         elif Real_arr[i] < 0 and Imag[i] < 0:
             phase = 180 + phase
-        elif Real_arr[i] > 0 and Imag[i] < 0:
+        elif Real_arr[i] > 0 > Imag[i]:
             phase = 360 - phase
         Phase[i] = phase
 

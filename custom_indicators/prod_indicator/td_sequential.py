@@ -102,7 +102,7 @@ def _td_countdown(
             # 脚本里若出现 sellSet == 9，就会把 buy_count = 14 强制结束
             if np.abs(sc_prev - 9) < 1e-8:  # 对方9出现, 强制中断
                 buy_count[i] = 14
-            elif bc_prev > 0 and bc_prev < 13:
+            elif 0 < bc_prev < 13:
                 if is_buy_cond:
                     buy_count[i] = bc_prev + 1
                 else:
@@ -120,7 +120,7 @@ def _td_countdown(
         else:
             if np.abs(bc_prev - 9) < 1e-8:  # 对方9出现, 强制中断
                 sell_count[i] = 14
-            elif sc_prev > 0 and sc_prev < 13:
+            elif 0 < sc_prev < 13:
                 if is_sell_cond:
                     sell_count[i] = sc_prev + 1
                 else:

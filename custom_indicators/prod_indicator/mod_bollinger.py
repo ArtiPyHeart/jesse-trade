@@ -3,7 +3,7 @@ import numpy.typing as npt
 from jesse.helpers import get_candle_source, slice_candles
 
 
-def bollinger_modified(
+def mod_bollinger(
     candles: npt.NDArray, period: int = 20, factor: float = 2.5, sequential=False
 ):
     """

@@ -174,8 +174,6 @@ def adaptive_stochastic(
     if len(src) < 3:
         return np.array([np.nan]) if sequential else np.nan
 
-    length = len(src)
-
     # 计算高通滤波系数与超平滑滤波系数
     alpha1 = (
         deg_cos(0.707 * 360.0 / 48.0) + deg_sin(0.707 * 360.0 / 48.0) - 1

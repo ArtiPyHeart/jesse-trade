@@ -68,9 +68,7 @@ def _compute_reversal(r, hplength, avglength):
             r_prev = r[1:]  # 向前移动一个位置的序列
             corr_prev = _compute_correlation(r_prev, M, lag)
 
-        if (corr_curr > 0.5 and corr_prev < 0.5) or (
-            corr_curr < 0.5 and corr_prev > 0.5
-        ):
+        if (corr_curr > 0.5 > corr_prev) or (corr_curr < 0.5 < corr_prev):
             sum_deltas += 1
 
     return 1 if sum_deltas > 24 else 0
