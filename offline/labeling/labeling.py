@@ -493,7 +493,9 @@ class TripleBarrierLabeler:
         num_hours: int = 0,
         num_minutes: int = 0,
         num_seconds: int = 0,
+        verbose: bool = True,
     ):
+        self._verbose = verbose
         self._candles = candles
         self._close = helpers.get_candle_source(self._candles, "close")
         self._timestamp = candles[:, 0]
@@ -538,6 +540,7 @@ class TripleBarrierLabeler:
             target_ret,
             max(1, cpu_count() - 1),
             vertical_barrier_times=self._vertical_barriers,
+            verbose=self._verbose,
         )
         side_labels = _get_bins(events, self._close_series)
         return side_labels
@@ -558,6 +561,7 @@ class TripleBarrierLabeler:
             max(1, cpu_count() - 1),
             vertical_barrier_times=self._vertical_barriers,
             side_prediction=side_labels["bin"],
+            verbose=self._verbose,
         )
         meta_labels = _get_bins(side_events, self._close_series)
         return meta_labels
