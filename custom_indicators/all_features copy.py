@@ -19,11 +19,6 @@ from custom_indicators import (
     roofing_filter,
     swamicharts_rsi,
     swamicharts_stochastic,
-    adaptive_rsi,
-    autocorrelation_reversals,
-    dft,
-    mod_rsi,
-    mod_stochastic,
 )
 from custom_indicators.dominant_cycle import (
     dual_differentiator,
@@ -172,58 +167,58 @@ def feature_matrix(candles: np.array, sequential: bool = False):
     all_names.extend(names)
 
     # modified stochastic
-    names = [
-        "mod_stochastic",
-        "mod_stochastic_lag1",
-        "mod_stochastic_lag2",
-        "mod_stochastic_lag3",
-        "mod_stochastic_dt",
-        "mod_stochastic_ddt",
-    ]
-    mod_stochastic_ = mod_stochastic(candles, roofing_filter=True, sequential=True)
-    mod_stochastic_lag1 = lag(mod_stochastic_, 1)
-    mod_stochastic_lag2 = lag(mod_stochastic_, 2)
-    mod_stochastic_lag3 = lag(mod_stochastic_, 3)
-    mod_stochastic_dt = dt(mod_stochastic_)
-    mod_stochastic_ddt = ddt(mod_stochastic_)
-    final_fe.extend(
-        [
-            mod_stochastic_.reshape(-1, 1),
-            mod_stochastic_lag1.reshape(-1, 1),
-            mod_stochastic_lag2.reshape(-1, 1),
-            mod_stochastic_lag3.reshape(-1, 1),
-            mod_stochastic_dt.reshape(-1, 1),
-            mod_stochastic_ddt.reshape(-1, 1),
-        ]
-    )
-    all_names.extend(names)
+    # names = [
+    #     "mod_stochastic",
+    #     "mod_stochastic_lag1",
+    #     "mod_stochastic_lag2",
+    #     "mod_stochastic_lag3",
+    #     "mod_stochastic_dt",
+    #     "mod_stochastic_ddt",
+    # ]
+    # mod_stochastic_ = mod_stochastic(candles, roofing_filter=True, sequential=True)
+    # mod_stochastic_lag1 = lag(mod_stochastic_, 1)
+    # mod_stochastic_lag2 = lag(mod_stochastic_, 2)
+    # mod_stochastic_lag3 = lag(mod_stochastic_, 3)
+    # mod_stochastic_dt = dt(mod_stochastic_)
+    # mod_stochastic_ddt = ddt(mod_stochastic_)
+    # final_fe.extend(
+    #     [
+    #         mod_stochastic_.reshape(-1, 1),
+    #         mod_stochastic_lag1.reshape(-1, 1),
+    #         mod_stochastic_lag2.reshape(-1, 1),
+    #         mod_stochastic_lag3.reshape(-1, 1),
+    #         mod_stochastic_dt.reshape(-1, 1),
+    #         mod_stochastic_ddt.reshape(-1, 1),
+    #     ]
+    # )
+    # all_names.extend(names)
 
     # modified rsi
-    names = [
-        "mod_rsi",
-        "mod_rsi_lag1",
-        "mod_rsi_lag2",
-        "mod_rsi_lag3",
-        "mod_rsi_dt",
-        "mod_rsi_ddt",
-    ]
-    mod_rsi_ = mod_rsi(candles, sequential=True)
-    mod_rsi_lag1 = lag(mod_rsi_, 1)
-    mod_rsi_lag2 = lag(mod_rsi_, 2)
-    mod_rsi_lag3 = lag(mod_rsi_, 3)
-    mod_rsi_dt = dt(mod_rsi_)
-    mod_rsi_ddt = ddt(mod_rsi_)
-    final_fe.extend(
-        [
-            mod_rsi_.reshape(-1, 1),
-            mod_rsi_lag1.reshape(-1, 1),
-            mod_rsi_lag2.reshape(-1, 1),
-            mod_rsi_lag3.reshape(-1, 1),
-            mod_rsi_dt.reshape(-1, 1),
-            mod_rsi_ddt.reshape(-1, 1),
-        ]
-    )
-    all_names.extend(names)
+    # names = [
+    #     "mod_rsi",
+    #     "mod_rsi_lag1",
+    #     "mod_rsi_lag2",
+    #     "mod_rsi_lag3",
+    #     "mod_rsi_dt",
+    #     "mod_rsi_ddt",
+    # ]
+    # mod_rsi_ = mod_rsi(candles, sequential=True)
+    # mod_rsi_lag1 = lag(mod_rsi_, 1)
+    # mod_rsi_lag2 = lag(mod_rsi_, 2)
+    # mod_rsi_lag3 = lag(mod_rsi_, 3)
+    # mod_rsi_dt = dt(mod_rsi_)
+    # mod_rsi_ddt = ddt(mod_rsi_)
+    # final_fe.extend(
+    #     [
+    #         mod_rsi_.reshape(-1, 1),
+    #         mod_rsi_lag1.reshape(-1, 1),
+    #         mod_rsi_lag2.reshape(-1, 1),
+    #         mod_rsi_lag3.reshape(-1, 1),
+    #         mod_rsi_dt.reshape(-1, 1),
+    #         mod_rsi_ddt.reshape(-1, 1),
+    #     ]
+    # )
+    # all_names.extend(names)
 
     # autocorrelation
     auto_corr = autocorrelation(candles, sequential=True)
@@ -239,43 +234,43 @@ def feature_matrix(candles: np.array, sequential: bool = False):
     all_names.extend(names)
 
     # autocorrelation reversals
-    names = ["acr"]
-    acr = autocorrelation_reversals(candles, sequential=True)
-    final_fe.extend(
-        [
-            acr.reshape(-1, 1),
-        ]
-    )
-    all_names.extend(names)
+    # names = ["acr"]
+    # acr = autocorrelation_reversals(candles, sequential=True)
+    # final_fe.extend(
+    #     [
+    #         acr.reshape(-1, 1),
+    #     ]
+    # )
+    # all_names.extend(names)
 
     # dft
-    names = [
-        "dft_dom_cycle",
-        "dft_dom_cycle_lag1",
-        "dft_dom_cycle_lag2",
-        "dft_dom_cycle_lag3",
-        "dft_dom_cycle_dt",
-        "dft_dom_cycle_ddt",
-    ]
-    dft_dom_cycle, spectrum = dft(candles, sequential=True)
-    dft_dom_cycle_lag1 = lag(dft_dom_cycle, 1)
-    dft_dom_cycle_lag2 = lag(dft_dom_cycle, 2)
-    dft_dom_cycle_lag3 = lag(dft_dom_cycle, 3)
-    dft_dom_cycle_dt = dt(dft_dom_cycle)
-    dft_dom_cycle_ddt = ddt(dft_dom_cycle)
-    names.extend([f"dft_spectrum_{i}" for i in range(spectrum.shape[1])])  # 有效
-    final_fe.extend(
-        [
-            dft_dom_cycle.reshape(-1, 1),
-            dft_dom_cycle_lag1.reshape(-1, 1),
-            dft_dom_cycle_lag2.reshape(-1, 1),
-            dft_dom_cycle_lag3.reshape(-1, 1),
-            dft_dom_cycle_dt.reshape(-1, 1),
-            dft_dom_cycle_ddt.reshape(-1, 1),
-        ]
-    )
-    final_fe.append(spectrum)
-    all_names.extend(names)
+    # names = [
+    #     "dft_dom_cycle",
+    #     "dft_dom_cycle_lag1",
+    #     "dft_dom_cycle_lag2",
+    #     "dft_dom_cycle_lag3",
+    #     "dft_dom_cycle_dt",
+    #     "dft_dom_cycle_ddt",
+    # ]
+    # dft_dom_cycle, spectrum = dft(candles, sequential=True)
+    # dft_dom_cycle_lag1 = lag(dft_dom_cycle, 1)
+    # dft_dom_cycle_lag2 = lag(dft_dom_cycle, 2)
+    # dft_dom_cycle_lag3 = lag(dft_dom_cycle, 3)
+    # dft_dom_cycle_dt = dt(dft_dom_cycle)
+    # dft_dom_cycle_ddt = ddt(dft_dom_cycle)
+    # names.extend([f"dft_spectrum_{i}" for i in range(spectrum.shape[1])])  # 有效
+    # final_fe.extend(
+    #     [
+    #         dft_dom_cycle.reshape(-1, 1),
+    #         dft_dom_cycle_lag1.reshape(-1, 1),
+    #         dft_dom_cycle_lag2.reshape(-1, 1),
+    #         dft_dom_cycle_lag3.reshape(-1, 1),
+    #         dft_dom_cycle_dt.reshape(-1, 1),
+    #         dft_dom_cycle_ddt.reshape(-1, 1),
+    #     ]
+    # )
+    # final_fe.append(spectrum)
+    # all_names.extend(names)
 
     # comb spectrum
     names = [
@@ -298,31 +293,31 @@ def feature_matrix(candles: np.array, sequential: bool = False):
     all_names.extend(names)
 
     # adaptive rsi
-    names = [
-        "adaptive_rsi",
-        "adaptive_rsi_lag1",
-        "adaptive_rsi_lag2",
-        "adaptive_rsi_lag3",
-        "adaptive_rsi_dt",
-        "adaptive_rsi_ddt",
-    ]
-    adaptive_rsi_ = adaptive_rsi(candles, sequential=True)
-    adaptive_rsi_lag1 = lag(adaptive_rsi_, 1)
-    adaptive_rsi_lag2 = lag(adaptive_rsi_, 2)
-    adaptive_rsi_lag3 = lag(adaptive_rsi_, 3)
-    adaptive_rsi_dt = dt(adaptive_rsi_)
-    adaptive_rsi_ddt = ddt(adaptive_rsi_)
-    final_fe.extend(
-        [
-            adaptive_rsi_.reshape(-1, 1),
-            adaptive_rsi_lag1.reshape(-1, 1),
-            adaptive_rsi_lag2.reshape(-1, 1),
-            adaptive_rsi_lag3.reshape(-1, 1),
-            adaptive_rsi_dt.reshape(-1, 1),
-            adaptive_rsi_ddt.reshape(-1, 1),
-        ]
-    )
-    all_names.extend(names)
+    # names = [
+    #     "adaptive_rsi",
+    #     "adaptive_rsi_lag1",
+    #     "adaptive_rsi_lag2",
+    #     "adaptive_rsi_lag3",
+    #     "adaptive_rsi_dt",
+    #     "adaptive_rsi_ddt",
+    # ]
+    # adaptive_rsi_ = adaptive_rsi(candles, sequential=True)
+    # adaptive_rsi_lag1 = lag(adaptive_rsi_, 1)
+    # adaptive_rsi_lag2 = lag(adaptive_rsi_, 2)
+    # adaptive_rsi_lag3 = lag(adaptive_rsi_, 3)
+    # adaptive_rsi_dt = dt(adaptive_rsi_)
+    # adaptive_rsi_ddt = ddt(adaptive_rsi_)
+    # final_fe.extend(
+    #     [
+    #         adaptive_rsi_.reshape(-1, 1),
+    #         adaptive_rsi_lag1.reshape(-1, 1),
+    #         adaptive_rsi_lag2.reshape(-1, 1),
+    #         adaptive_rsi_lag3.reshape(-1, 1),
+    #         adaptive_rsi_dt.reshape(-1, 1),
+    #         adaptive_rsi_ddt.reshape(-1, 1),
+    #     ]
+    # )
+    # all_names.extend(names)
 
     # adaptive stochastic
     names = [

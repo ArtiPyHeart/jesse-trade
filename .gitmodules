@@ -1,0 +1,3 @@
+[submodule "extern/mlfinlab"]
+	path = extern/mlfinlab
+	url = https://github.com/quantopian/mlfinlab.git
