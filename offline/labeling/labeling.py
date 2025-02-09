@@ -571,13 +571,19 @@ def get_candle_series(candles, source="close"):
     return pd.Series(src, index=timestamp_index, name=source)
 
 
-def expand_labels(labels, candles, source="close"):
+def expand_labels(labels, candles, source="close", fill=0):
     candle_df = get_candle_series(candles, source).to_frame()
     candle_df = candle_df.join(labels)
-    if "bin" in candle_df.columns:
-        candle_df["bin"] = candle_df["bin"].fillna(0)
-    if "side" in candle_df.columns:
-        candle_df["side"] = candle_df["side"].fillna(0)
+    if isinstance(fill, bool) and fill:
+        if "bin" in candle_df.columns:
+            candle_df["bin"] = candle_df["bin"].ffill().fillna(0)
+        if "side" in candle_df.columns:
+            candle_df["side"] = candle_df["side"].ffill().fillna(0)
+    elif not isinstance(fill, bool):
+        if "bin" in candle_df.columns:
+            candle_df["bin"] = candle_df["bin"].fillna(fill)
+        if "side" in candle_df.columns:
+            candle_df["side"] = candle_df["side"].fillna(fill)
     return candle_df
 
 
@@ -592,7 +598,7 @@ def return_of_label(expanded_labels, source="close"):
     PROFIT = 0
     START_PRICE = 0
     for idx, (c, l) in enumerate(zip(close, labels)):
-        if np.isnan(l) or idx == 0 or np.isnan(labels[idx - 1]):
+        if idx == 0:
             continue
         else:
             l = int(l)
