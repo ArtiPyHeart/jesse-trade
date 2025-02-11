@@ -9,8 +9,8 @@ import pandas as pd
 from jesse import helpers
 from numba import njit
 
-from offline.utils.multiprocess import mp_pandas_obj
-from offline.utils.volatility import _get_daily_vol
+from custom_indicators.utils.multiprocess import mp_pandas_obj
+from custom_indicators.utils.volatility import _get_daily_vol
 
 
 # 新增的加速函数（可选）
