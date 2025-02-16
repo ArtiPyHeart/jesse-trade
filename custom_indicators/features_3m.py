@@ -10,7 +10,6 @@ from custom_indicators import (
     adaptive_stochastic,
     autocorrelation,
     autocorrelation_periodogram,
-    autocorrelation_reversals,
     comb_spectrum,
     dft,
     ehlers_convolution,
@@ -31,7 +30,7 @@ from custom_indicators.dominant_cycle import (
 from custom_indicators.utils.math import ddt, dt, lag
 
 
-def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.array]:
+def features_3m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.ndarray]:
     candles = helpers.slice_candles(candles, sequential)
     res_fe = {}
 
@@ -54,21 +53,13 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     for i in range(pwr.shape[1]):
         res_fe[f"acp_pwr_{i}"] = pwr[:, i]
 
-    # autocorrelation reversals
-    acr = autocorrelation_reversals(candles, sequential=True)
-    res_fe["acr"] = acr
-
     # adaptive bandpass
     adaptive_bp, adaptive_bp_lead, _ = adaptive_bandpass(candles, sequential=True)
     res_fe["adaptive_bp"] = adaptive_bp
     res_fe["adaptive_bp_dt"] = dt(adaptive_bp)
-    res_fe["adaptive_bp_ddt"] = ddt(adaptive_bp)
     res_fe["adaptive_bp_lag1"] = lag(adaptive_bp, 1)
     res_fe["adaptive_bp_lag2"] = lag(adaptive_bp, 2)
-    res_fe["adaptive_bp_lag3"] = lag(adaptive_bp, 3)
     res_fe["adaptive_bp_lead"] = adaptive_bp_lead
-    res_fe["adaptive_bp_lead_dt"] = dt(adaptive_bp_lead)
-    res_fe["adaptive_bp_lead_ddt"] = ddt(adaptive_bp_lead)
     res_fe["adaptive_bp_lead_lag1"] = lag(adaptive_bp_lead, 1)
     res_fe["adaptive_bp_lead_lag2"] = lag(adaptive_bp_lead, 2)
     res_fe["adaptive_bp_lead_lag3"] = lag(adaptive_bp_lead, 3)
@@ -86,7 +77,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     adaptive_rsi_ = adaptive_rsi(candles, sequential=True)
     res_fe["adaptive_rsi"] = adaptive_rsi_
     res_fe["adaptive_rsi_dt"] = dt(adaptive_rsi_)
-    res_fe["adaptive_rsi_ddt"] = ddt(adaptive_rsi_)
     res_fe["adaptive_rsi_lag1"] = lag(adaptive_rsi_, 1)
     res_fe["adaptive_rsi_lag2"] = lag(adaptive_rsi_, 2)
     res_fe["adaptive_rsi_lag3"] = lag(adaptive_rsi_, 3)
@@ -95,7 +85,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     adaptive_stochastic_ = adaptive_stochastic(candles, sequential=True)
     res_fe["adaptive_stochastic"] = adaptive_stochastic_
     res_fe["adaptive_stochastic_dt"] = dt(adaptive_stochastic_)
-    res_fe["adaptive_stochastic_ddt"] = ddt(adaptive_stochastic_)
     res_fe["adaptive_stochastic_lag1"] = lag(adaptive_stochastic_, 1)
     res_fe["adaptive_stochastic_lag2"] = lag(adaptive_stochastic_, 2)
     res_fe["adaptive_stochastic_lag3"] = lag(adaptive_stochastic_, 3)
@@ -118,11 +107,10 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     # comb spectrum
     comb_spectrum_dom_cycle, pwr = comb_spectrum(candles, sequential=True)
     res_fe["comb_spectrum_dom_cycle"] = comb_spectrum_dom_cycle
-    res_fe["comb_spectrum_dom_cycle_dt"] = dt(comb_spectrum_dom_cycle)
-    res_fe["comb_spectrum_dom_cycle_ddt"] = ddt(comb_spectrum_dom_cycle)
     res_fe["comb_spectrum_dom_cycle_lag1"] = lag(comb_spectrum_dom_cycle, 1)
     res_fe["comb_spectrum_dom_cycle_lag2"] = lag(comb_spectrum_dom_cycle, 2)
     res_fe["comb_spectrum_dom_cycle_lag3"] = lag(comb_spectrum_dom_cycle, 3)
+    res_fe["comb_spectrum_dom_cycle_dt"] = dt(comb_spectrum_dom_cycle)
     for i in range(pwr.shape[1]):
         res_fe[f"comb_spectrum_pwr_{i}"] = pwr[:, i]
 
@@ -135,18 +123,16 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     dft_dom_cycle, spectrum = dft(candles, sequential=True)
     res_fe["dft_dom_cycle"] = dft_dom_cycle
     res_fe["dft_dom_cycle_dt"] = dt(dft_dom_cycle)
-    res_fe["dft_dom_cycle_ddt"] = ddt(dft_dom_cycle)
     res_fe["dft_dom_cycle_lag1"] = lag(dft_dom_cycle, 1)
     res_fe["dft_dom_cycle_lag2"] = lag(dft_dom_cycle, 2)
     res_fe["dft_dom_cycle_lag3"] = lag(dft_dom_cycle, 3)
     for i in range(spectrum.shape[1]):
         res_fe[f"dft_spectrum_{i}"] = spectrum[:, i]
 
-    # dual differentiator
+        # dual differentiator
     dual_diff = dual_differentiator(candles, sequential=True)
     res_fe["dual_diff"] = dual_diff
     res_fe["dual_diff_dt"] = dt(dual_diff)
-    res_fe["dual_diff_ddt"] = ddt(dual_diff)
     res_fe["dual_diff_lag1"] = lag(dual_diff, 1)
     res_fe["dual_diff_lag2"] = lag(dual_diff, 2)
     res_fe["dual_diff_lag3"] = lag(dual_diff, 3)
@@ -176,7 +162,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     homodyne_ = homodyne(candles, sequential=True)
     res_fe["homodyne"] = homodyne_
     res_fe["homodyne_dt"] = dt(homodyne_)
-    res_fe["homodyne_ddt"] = ddt(homodyne_)
     res_fe["homodyne_lag1"] = lag(homodyne_, 1)
     res_fe["homodyne_lag2"] = lag(homodyne_, 2)
     res_fe["homodyne_lag3"] = lag(homodyne_, 3)
@@ -187,8 +172,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     res_fe["hurst_coef_fast"] = hurst_coef_fast
     res_fe["hurst_coef_fast_dt"] = dt(hurst_coef_fast)
     res_fe["hurst_coef_fast_ddt"] = ddt(hurst_coef_fast)
-    res_fe["hurst_coef_fast_lag1"] = lag(hurst_coef_fast, 1)
-    res_fe["hurst_coef_fast_lag2"] = lag(hurst_coef_fast, 2)
     res_fe["hurst_coef_fast_lag3"] = lag(hurst_coef_fast, 3)
     res_fe["hurst_coef_slow"] = hurst_coef_slow
     res_fe["hurst_coef_slow_dt"] = dt(hurst_coef_slow)
@@ -201,7 +184,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     mod_rsi_ = mod_rsi(candles, sequential=True)
     res_fe["mod_rsi"] = mod_rsi_
     res_fe["mod_rsi_dt"] = dt(mod_rsi_)
-    res_fe["mod_rsi_ddt"] = ddt(mod_rsi_)
     res_fe["mod_rsi_lag1"] = lag(mod_rsi_, 1)
     res_fe["mod_rsi_lag2"] = lag(mod_rsi_, 2)
     res_fe["mod_rsi_lag3"] = lag(mod_rsi_, 3)
@@ -213,7 +195,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     res_fe["mod_stochastic_ddt"] = ddt(mod_stochastic_)
     res_fe["mod_stochastic_lag1"] = lag(mod_stochastic_, 1)
     res_fe["mod_stochastic_lag2"] = lag(mod_stochastic_, 2)
-    res_fe["mod_stochastic_lag3"] = lag(mod_stochastic_, 3)
 
     # phase accumulation
     phase_accumulation_ = phase_accumulation(candles, sequential=True)
@@ -244,30 +225,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"swamicharts_stochastic_{i}"] = swamicharts_stochastic_[:, i]
 
     if sequential:
-        return res_fe
+        return {f"3m_{k}": v for k, v in res_fe.items()}
     else:
-        return {k: v[-1:] for k, v in res_fe.items()}
-
-
-if __name__ == "__main__":
-    from jesse import research
-
-    warmup_1m, trading_1m = research.get_candles(
-        "Binance Perpetual Futures",
-        "BTC-USDT",
-        "1m",
-        helpers.date_to_timestamp("2024-12-01"),
-        helpers.date_to_timestamp("2024-12-31"),
-        warmup_candles_num=0,
-        caching=False,
-        is_for_jesse=False,
-    )
-
-    fe = feature_bundle(trading_1m, sequential=True)
-    for k, v in fe.items():
-        assert len(v) == len(
-            trading_1m
-        ), f"{k} has length {len(v)} but candles has length {len(trading_1m)}"
-    fe_last = feature_bundle(trading_1m, sequential=False)
-    for k, v in fe_last.items():
-        assert len(v) == 1, f"{k} has length {len(v)} not 1"
+        return {f"3m_{k}": v[-1:] for k, v in res_fe.items()}

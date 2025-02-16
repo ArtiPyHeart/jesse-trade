@@ -31,7 +31,9 @@ from custom_indicators.dominant_cycle import (
 from custom_indicators.utils.math import ddt, dt, lag
 
 
-def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.array]:
+def features_15m(
+    candles: np.ndarray, sequential: bool = False
+) -> dict[str, np.ndarray]:
     candles = helpers.slice_candles(candles, sequential)
     res_fe = {}
 
@@ -64,14 +66,8 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     res_fe["adaptive_bp_dt"] = dt(adaptive_bp)
     res_fe["adaptive_bp_ddt"] = ddt(adaptive_bp)
     res_fe["adaptive_bp_lag1"] = lag(adaptive_bp, 1)
-    res_fe["adaptive_bp_lag2"] = lag(adaptive_bp, 2)
-    res_fe["adaptive_bp_lag3"] = lag(adaptive_bp, 3)
-    res_fe["adaptive_bp_lead"] = adaptive_bp_lead
     res_fe["adaptive_bp_lead_dt"] = dt(adaptive_bp_lead)
     res_fe["adaptive_bp_lead_ddt"] = ddt(adaptive_bp_lead)
-    res_fe["adaptive_bp_lead_lag1"] = lag(adaptive_bp_lead, 1)
-    res_fe["adaptive_bp_lead_lag2"] = lag(adaptive_bp_lead, 2)
-    res_fe["adaptive_bp_lead_lag3"] = lag(adaptive_bp_lead, 3)
 
     # adaptive cci
     adaptive_cci_ = adaptive_cci(candles, sequential=True)
@@ -112,14 +108,10 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     res_fe["highpass_bp_dt"] = dt(bandpass_tuple.trigger)
     res_fe["highpass_bp_ddt"] = ddt(bandpass_tuple.trigger)
     res_fe["highpass_bp_lag1"] = lag(bandpass_tuple.trigger, 1)
-    res_fe["highpass_bp_lag2"] = lag(bandpass_tuple.trigger, 2)
-    res_fe["highpass_bp_lag3"] = lag(bandpass_tuple.trigger, 3)
 
     # comb spectrum
     comb_spectrum_dom_cycle, pwr = comb_spectrum(candles, sequential=True)
     res_fe["comb_spectrum_dom_cycle"] = comb_spectrum_dom_cycle
-    res_fe["comb_spectrum_dom_cycle_dt"] = dt(comb_spectrum_dom_cycle)
-    res_fe["comb_spectrum_dom_cycle_ddt"] = ddt(comb_spectrum_dom_cycle)
     res_fe["comb_spectrum_dom_cycle_lag1"] = lag(comb_spectrum_dom_cycle, 1)
     res_fe["comb_spectrum_dom_cycle_lag2"] = lag(comb_spectrum_dom_cycle, 2)
     res_fe["comb_spectrum_dom_cycle_lag3"] = lag(comb_spectrum_dom_cycle, 3)
@@ -135,7 +127,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     dft_dom_cycle, spectrum = dft(candles, sequential=True)
     res_fe["dft_dom_cycle"] = dft_dom_cycle
     res_fe["dft_dom_cycle_dt"] = dt(dft_dom_cycle)
-    res_fe["dft_dom_cycle_ddt"] = ddt(dft_dom_cycle)
     res_fe["dft_dom_cycle_lag1"] = lag(dft_dom_cycle, 1)
     res_fe["dft_dom_cycle_lag2"] = lag(dft_dom_cycle, 2)
     res_fe["dft_dom_cycle_lag3"] = lag(dft_dom_cycle, 3)
@@ -210,7 +201,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     mod_stochastic_ = mod_stochastic(candles, roofing_filter=True, sequential=True)
     res_fe["mod_stochastic"] = mod_stochastic_
     res_fe["mod_stochastic_dt"] = dt(mod_stochastic_)
-    res_fe["mod_stochastic_ddt"] = ddt(mod_stochastic_)
     res_fe["mod_stochastic_lag1"] = lag(mod_stochastic_, 1)
     res_fe["mod_stochastic_lag2"] = lag(mod_stochastic_, 2)
     res_fe["mod_stochastic_lag3"] = lag(mod_stochastic_, 3)
@@ -244,30 +234,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"swamicharts_stochastic_{i}"] = swamicharts_stochastic_[:, i]
 
     if sequential:
-        return res_fe
+        return {f"15m_{k}": v for k, v in res_fe.items()}
     else:
-        return {k: v[-1:] for k, v in res_fe.items()}
-
-
-if __name__ == "__main__":
-    from jesse import research
-
-    warmup_1m, trading_1m = research.get_candles(
-        "Binance Perpetual Futures",
-        "BTC-USDT",
-        "1m",
-        helpers.date_to_timestamp("2024-12-01"),
-        helpers.date_to_timestamp("2024-12-31"),
-        warmup_candles_num=0,
-        caching=False,
-        is_for_jesse=False,
-    )
-
-    fe = feature_bundle(trading_1m, sequential=True)
-    for k, v in fe.items():
-        assert len(v) == len(
-            trading_1m
-        ), f"{k} has length {len(v)} but candles has length {len(trading_1m)}"
-    fe_last = feature_bundle(trading_1m, sequential=False)
-    for k, v in fe_last.items():
-        assert len(v) == 1, f"{k} has length {len(v)} not 1"
+        return {f"15m_{k}": v[-1:] for k, v in res_fe.items()}
