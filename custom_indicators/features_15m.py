@@ -31,7 +31,7 @@ from custom_indicators.dominant_cycle import (
 from custom_indicators.utils.math import ddt, dt, lag
 
 
-def features_15m(
+def get_features_15m(
     candles: np.ndarray, sequential: bool = False
 ) -> dict[str, np.ndarray]:
     candles = helpers.slice_candles(candles, sequential)
@@ -66,6 +66,7 @@ def features_15m(
     res_fe["adaptive_bp_dt"] = dt(adaptive_bp)
     res_fe["adaptive_bp_ddt"] = ddt(adaptive_bp)
     res_fe["adaptive_bp_lag1"] = lag(adaptive_bp, 1)
+    res_fe["adaptive_bp_lag2"] = lag(adaptive_bp, 2)
     res_fe["adaptive_bp_lead_dt"] = dt(adaptive_bp_lead)
     res_fe["adaptive_bp_lead_ddt"] = ddt(adaptive_bp_lead)
 
@@ -108,6 +109,7 @@ def features_15m(
     res_fe["highpass_bp_dt"] = dt(bandpass_tuple.trigger)
     res_fe["highpass_bp_ddt"] = ddt(bandpass_tuple.trigger)
     res_fe["highpass_bp_lag1"] = lag(bandpass_tuple.trigger, 1)
+    res_fe["highpass_bp_lag2"] = lag(bandpass_tuple.trigger, 2)
 
     # comb spectrum
     comb_spectrum_dom_cycle, pwr = comb_spectrum(candles, sequential=True)
@@ -201,6 +203,7 @@ def features_15m(
     mod_stochastic_ = mod_stochastic(candles, roofing_filter=True, sequential=True)
     res_fe["mod_stochastic"] = mod_stochastic_
     res_fe["mod_stochastic_dt"] = dt(mod_stochastic_)
+    res_fe["mod_stochastic_ddt"] = ddt(mod_stochastic_)
     res_fe["mod_stochastic_lag1"] = lag(mod_stochastic_, 1)
     res_fe["mod_stochastic_lag2"] = lag(mod_stochastic_, 2)
     res_fe["mod_stochastic_lag3"] = lag(mod_stochastic_, 3)

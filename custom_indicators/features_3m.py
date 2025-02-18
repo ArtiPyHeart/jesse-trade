@@ -30,7 +30,9 @@ from custom_indicators.dominant_cycle import (
 from custom_indicators.utils.math import ddt, dt, lag
 
 
-def features_3m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.ndarray]:
+def get_features_3m(
+    candles: np.ndarray, sequential: bool = False
+) -> dict[str, np.ndarray]:
     candles = helpers.slice_candles(candles, sequential)
     res_fe = {}
 
@@ -172,7 +174,7 @@ def features_3m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.n
     res_fe["hurst_coef_fast"] = hurst_coef_fast
     res_fe["hurst_coef_fast_dt"] = dt(hurst_coef_fast)
     res_fe["hurst_coef_fast_ddt"] = ddt(hurst_coef_fast)
-    res_fe["hurst_coef_fast_lag3"] = lag(hurst_coef_fast, 3)
+    res_fe["hurst_coef_fast_lag1"] = lag(hurst_coef_fast, 1)
     res_fe["hurst_coef_slow"] = hurst_coef_slow
     res_fe["hurst_coef_slow_dt"] = dt(hurst_coef_slow)
     res_fe["hurst_coef_slow_ddt"] = ddt(hurst_coef_slow)
@@ -194,7 +196,6 @@ def features_3m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.n
     res_fe["mod_stochastic_dt"] = dt(mod_stochastic_)
     res_fe["mod_stochastic_ddt"] = ddt(mod_stochastic_)
     res_fe["mod_stochastic_lag1"] = lag(mod_stochastic_, 1)
-    res_fe["mod_stochastic_lag2"] = lag(mod_stochastic_, 2)
 
     # phase accumulation
     phase_accumulation_ = phase_accumulation(candles, sequential=True)

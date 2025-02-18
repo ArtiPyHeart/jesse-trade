@@ -19,6 +19,7 @@ from custom_indicators import (
     roofing_filter,
     swamicharts_rsi,
     swamicharts_stochastic,
+    adaptive_bandpass,
 )
 from custom_indicators.dominant_cycle import (
     dual_differentiator,
@@ -28,7 +29,9 @@ from custom_indicators.dominant_cycle import (
 from custom_indicators.utils.math import ddt, dt, lag
 
 
-def features_1m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.ndarray]:
+def get_features_1m(
+    candles: np.ndarray, sequential: bool = False
+) -> dict[str, np.ndarray]:
     candles = helpers.slice_candles(candles, sequential)
     res_fe = {}
 
@@ -51,32 +54,40 @@ def features_1m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.n
     for i in range(pwr.shape[1]):
         res_fe[f"acp_pwr_{i}"] = pwr[:, i]
 
+    # adaptive bandpass
+    adaptive_bp, adaptive_bp_lead, _ = adaptive_bandpass(candles, sequential=True)
+    res_fe["adaptive_bp"] = adaptive_bp
+    res_fe["adaptive_bp_dt"] = dt(adaptive_bp)
+    res_fe["adaptive_bp_lead"] = adaptive_bp_lead
+
     # adaptive cci
     adaptive_cci_ = adaptive_cci(candles, sequential=True)
     res_fe["adaptive_cci"] = adaptive_cci_
+    res_fe["adaptive_cci_ddt"] = ddt(adaptive_cci_)
     res_fe["adaptive_cci_lag1"] = lag(adaptive_cci_, 1)
     res_fe["adaptive_cci_lag2"] = lag(adaptive_cci_, 2)
     res_fe["adaptive_cci_lag3"] = lag(adaptive_cci_, 3)
 
     # adaptive rsi
     adaptive_rsi_ = adaptive_rsi(candles, sequential=True)
-    res_fe["adaptive_rsi"] = adaptive_rsi_
-    res_fe["adaptive_rsi_lag3"] = lag(adaptive_rsi_, 3)
+    res_fe["adaptive_rsi_ddt"] = ddt(adaptive_rsi_)
+    res_fe["adaptive_rsi_lag2"] = lag(adaptive_rsi_, 2)
 
     # adaptive stochastic
     adaptive_stochastic_ = adaptive_stochastic(candles, sequential=True)
     res_fe["adaptive_stochastic"] = adaptive_stochastic_
     res_fe["adaptive_stochastic_lag1"] = lag(adaptive_stochastic_, 1)
-    res_fe["adaptive_stochastic_lag2"] = lag(adaptive_stochastic_, 2)
-    res_fe["adaptive_stochastic_lag3"] = lag(adaptive_stochastic_, 3)
 
     # bandpass & highpass
     bandpass_tuple = ta.bandpass(candles, sequential=True)
     res_fe["bandpass"] = bandpass_tuple.bp_normalized
+    res_fe["bandpass_dt"] = dt(bandpass_tuple.bp_normalized)
     res_fe["bandpass_ddt"] = ddt(bandpass_tuple.bp_normalized)
     res_fe["bandpass_lag1"] = lag(bandpass_tuple.bp_normalized, 1)
     res_fe["bandpass_lag2"] = lag(bandpass_tuple.bp_normalized, 2)
     res_fe["bandpass_lag3"] = lag(bandpass_tuple.bp_normalized, 3)
+    res_fe["highpass_bp_dt"] = dt(bandpass_tuple.trigger)
+    res_fe["highpass_bp_ddt"] = ddt(bandpass_tuple.trigger)
 
     # comb spectrum
     comb_spectrum_dom_cycle, pwr = comb_spectrum(candles, sequential=True)
@@ -130,10 +141,13 @@ def features_1m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.n
     hurst_coef_fast = hurst_coefficient(candles, period=30, sequential=True)
     hurst_coef_slow = hurst_coefficient(candles, period=200, sequential=True)
     res_fe["hurst_coef_fast"] = hurst_coef_fast
+    res_fe["hurst_coef_fast_dt"] = dt(hurst_coef_fast)
     res_fe["hurst_coef_fast_lag1"] = lag(hurst_coef_fast, 1)
     res_fe["hurst_coef_fast_lag2"] = lag(hurst_coef_fast, 2)
     res_fe["hurst_coef_fast_lag3"] = lag(hurst_coef_fast, 3)
     res_fe["hurst_coef_slow"] = hurst_coef_slow
+    res_fe["hurst_coef_slow_dt"] = dt(hurst_coef_slow)
+    res_fe["hurst_coef_slow_ddt"] = ddt(hurst_coef_slow)
     res_fe["hurst_coef_slow_lag1"] = lag(hurst_coef_slow, 1)
     res_fe["hurst_coef_slow_lag2"] = lag(hurst_coef_slow, 2)
     res_fe["hurst_coef_slow_lag3"] = lag(hurst_coef_slow, 3)
@@ -141,13 +155,13 @@ def features_1m(candles: np.ndarray, sequential: bool = False) -> dict[str, np.n
     # modified rsi
     mod_rsi_ = mod_rsi(candles, sequential=True)
     res_fe["mod_rsi"] = mod_rsi_
+    res_fe["mod_rsi_ddt"] = ddt(mod_rsi_)
     res_fe["mod_rsi_lag1"] = lag(mod_rsi_, 1)
     res_fe["mod_rsi_lag2"] = lag(mod_rsi_, 2)
     res_fe["mod_rsi_lag3"] = lag(mod_rsi_, 3)
 
     # modified stochastic
     mod_stochastic_ = mod_stochastic(candles, roofing_filter=True, sequential=True)
-    res_fe["mod_stochastic"] = mod_stochastic_
     res_fe["mod_stochastic_dt"] = dt(mod_stochastic_)
     res_fe["mod_stochastic_lag1"] = lag(mod_stochastic_, 1)
     res_fe["mod_stochastic_lag2"] = lag(mod_stochastic_, 2)
