@@ -335,3 +335,4 @@ cython_debug/
 .idea/inspectionProfiles/Project_Default.xml
 storage/logs/etc.txt
 storage/temp/cache_database.pickle
+*.parquet
