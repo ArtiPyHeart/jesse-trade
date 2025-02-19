@@ -580,16 +580,10 @@ def get_candle_series(candles, source="close"):
 def expand_labels(labels, candles, source="close", fill=0):
     candle_df = get_candle_series(candles, source).to_frame()
     candle_df = candle_df.join(labels)
-    if isinstance(fill, bool) and fill:
-        if "bin" in candle_df.columns:
-            candle_df["bin"] = candle_df["bin"].ffill().fillna(0)
-        if "side" in candle_df.columns:
-            candle_df["side"] = candle_df["side"].ffill().fillna(0)
-    elif not isinstance(fill, bool):
-        if "bin" in candle_df.columns:
-            candle_df["bin"] = candle_df["bin"].fillna(fill)
-        if "side" in candle_df.columns:
-            candle_df["side"] = candle_df["side"].fillna(fill)
+    if "bin" in candle_df.columns:
+        candle_df["bin"] = candle_df["bin"].fillna(fill)
+    if "side" in candle_df.columns:
+        candle_df["side"] = candle_df["side"].fillna(fill)
     return candle_df
 
 
