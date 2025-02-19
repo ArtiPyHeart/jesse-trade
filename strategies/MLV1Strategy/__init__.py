@@ -26,9 +26,9 @@ class MLV1Strategy(Strategy):
     @property
     @cached
     def ml_predict(self):
-        candle_1m = self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
-        candle_3m = self.get_candles("Binance Perpetual Futures", "BTC-USDT", "3m")
-        candle_15m = self.get_candles("Binance Perpetual Futures", "BTC-USDT", "15m")
+        candle_1m = self.get_candles(self.exchange, "BTC-USDT", "1m")
+        candle_3m = self.get_candles(self.exchange, "BTC-USDT", "3m")
+        candle_15m = self.get_candles(self.exchange, "BTC-USDT", "15m")
         f_1m = get_features_1m(candle_1m)
         f_3m = get_features_3m(candle_3m)
         f_15m = get_features_15m(candle_15m)

@@ -560,7 +560,9 @@ class TripleBarrierLabeler:
             target_ret,
             max(1, cpu_count() - 1),
             vertical_barrier_times=self._vertical_barriers,
-            side_prediction=side_labels["bin"],
+            side_prediction=side_labels[
+                "pred"
+            ],  # 使用预测的标签，而非side_label打出的标签
             verbose=self._verbose,
         )
         meta_labels = _get_bins(side_events, self._close_series)
