@@ -589,11 +589,7 @@ def expand_labels(labels, candles, source="close", fill=0):
 
 def return_of_label(expanded_labels, source="close"):
     close = expanded_labels[source]
-    labels = (
-        expanded_labels["side"]
-        if "side" in expanded_labels.columns
-        else expanded_labels["bin"]
-    )
+    labels = expanded_labels["bin"]
     HOLD_RETURN = close[-1] - close[0]
     PROFIT = 0
     START_PRICE = 0
