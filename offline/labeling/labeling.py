@@ -577,12 +577,16 @@ def get_candle_series(candles, source="close"):
     return pd.Series(src, index=timestamp_index, name=source)
 
 
-def expand_labels(labels, candles, source="close", fill=0):
+def expand_labels(labels, candles, source="close", fill=0, ffill=False):
     candle_df = get_candle_series(candles, source).to_frame()
     candle_df = candle_df.join(labels)
     if "bin" in candle_df.columns:
+        if ffill:
+            candle_df["bin"] = candle_df["bin"].ffill()
         candle_df["bin"] = candle_df["bin"].fillna(fill)
     if "side" in candle_df.columns:
+        if ffill:
+            candle_df["side"] = candle_df["side"].ffill()
         candle_df["side"] = candle_df["side"].fillna(fill)
     return candle_df
 
