@@ -10,7 +10,7 @@ from jesse import helpers
 from numba import njit
 
 from custom_indicators.utils.multiprocess import mp_pandas_obj
-from custom_indicators.utils.volatility import _get_daily_vol
+from custom_indicators.utils.volatility import get_yang_zhang_vol
 
 
 # 新增的加速函数（可选）
@@ -488,43 +488,55 @@ class TripleBarrierLabeler:
     def __init__(
         self,
         candles: np.ndarray,
-        min_ret: float = 0.00025,
         num_days: int = 0,
         num_hours: int = 0,
         num_minutes: int = 0,
         num_seconds: int = 0,
+        z_score: int = 2,
         verbose: bool = True,
     ):
         self._verbose = verbose
         self._candles = candles
+        self._open = helpers.get_candle_source(self._candles, "open")
+        self._high = helpers.get_candle_source(self._candles, "high")
+        self._low = helpers.get_candle_source(self._candles, "low")
         self._close = helpers.get_candle_source(self._candles, "close")
         self._timestamp = candles[:, 0]
 
         self._index = pd.DatetimeIndex(
             [helpers.timestamp_to_time(i) for i in self._timestamp]
         )
+        self._open_series = pd.Series(self._open, index=self._index)
+        self._high_series = pd.Series(self._high, index=self._index)
+        self._low_series = pd.Series(self._low, index=self._index)
         self._close_series = pd.Series(self._close, index=self._index)
 
-        self._cusum_res, self._daily_vol, self._vertical_barriers = self._prepare(
-            min_ret, num_days, num_hours, num_minutes, num_seconds
+        self._vol_res, self._volatility_series, self._vertical_barriers = self._prepare(
+            num_days, num_hours, num_minutes, num_seconds, z_score=z_score
         )
 
-    def _prepare(self, min_ret, num_days, num_hours, num_minutes, num_seconds):
-        cusum_res = _cusum_filter(self._close_series, min_ret)
-        daily_vol = _get_daily_vol(self._close_series)
+    def _prepare(self, num_days, num_hours, num_minutes, num_seconds, z_score=2):
+        vol_res = z_score_filter(self._close_series, 20, 20, z_score=z_score)
+        volatility_series = get_yang_zhang_vol(
+            self._open_series,
+            self._high_series,
+            self._low_series,
+            self._close_series,
+            window=20,
+        )
 
         if num_days == 0 and num_hours == 0 and num_minutes == 0 and num_seconds == 0:
             vertical_barriers = False
         else:
             vertical_barriers = _add_vertical_barrier(
-                cusum_res,
+                vol_res,
                 self._close_series,
                 num_days=num_days,
                 num_hours=num_hours,
                 num_minutes=num_minutes,
                 num_seconds=num_seconds,
             )
-        return cusum_res, daily_vol, vertical_barriers
+        return vol_res, volatility_series, vertical_barriers
 
     def side_labels(
         self,
@@ -534,11 +546,11 @@ class TripleBarrierLabeler:
     ):
         events = _get_events(
             self._close_series,
-            self._cusum_res,
+            self._vol_res,
             [pt, sl],
-            self._daily_vol,
+            self._volatility_series,
             target_ret,
-            max(1, cpu_count() - 1),
+            max(1, cpu_count()),
             vertical_barrier_times=self._vertical_barriers,
             verbose=self._verbose,
         )
@@ -554,11 +566,11 @@ class TripleBarrierLabeler:
     ):
         side_events = _get_events(
             self._close_series,
-            self._cusum_res,
+            self._vol_res,
             [pt, sl],
-            self._daily_vol,
+            self._volatility_series,
             target_ret,
-            max(1, cpu_count() - 1),
+            max(1, cpu_count()),
             vertical_barrier_times=self._vertical_barriers,
             side_prediction=side_labels[
                 "pred"
@@ -569,16 +581,22 @@ class TripleBarrierLabeler:
         return meta_labels
 
 
-def get_candle_series(candles, source="close"):
+def get_candle_df(candles) -> pd.DataFrame:
     timestamp_index = pd.DatetimeIndex(
         [helpers.timestamp_to_time(i) for i in candles[:, 0]]
     )
-    src = helpers.get_candle_source(candles, source)
-    return pd.Series(src, index=timestamp_index, name=source)
+    o = helpers.get_candle_source(candles, "open")
+    h = helpers.get_candle_source(candles, "high")
+    l = helpers.get_candle_source(candles, "low")
+    c = helpers.get_candle_source(candles, "close")
+    v = helpers.get_candle_source(candles, "volume")
+    return pd.DataFrame(
+        {"open": o, "high": h, "low": l, "close": c, "volume": v}, index=timestamp_index
+    )
 
 
-def expand_labels(labels, candles, source="close", fill=0, ffill=False):
-    candle_df = get_candle_series(candles, source).to_frame()
+def expand_labels(labels, candles, fill=0, ffill=False):
+    candle_df = get_candle_df(candles)
     candle_df = candle_df.join(labels)
     if "bin" in candle_df.columns:
         if ffill:
@@ -591,9 +609,11 @@ def expand_labels(labels, candles, source="close", fill=0, ffill=False):
     return candle_df
 
 
-def return_of_label(expanded_labels, source="close"):
-    close = expanded_labels[source]
-    labels = expanded_labels["bin"]
+def return_of_label(
+    expanded_labels: pd.DataFrame, source="close", fees=0.0005, meta_label=False
+):
+    close = expanded_labels[source].tolist()
+    labels = expanded_labels["bin"].tolist()
     HOLD_RETURN = close[-1] - close[0]
     PROFIT = 0
     START_PRICE = 0
@@ -611,14 +631,21 @@ def return_of_label(expanded_labels, source="close"):
                 START_PRICE = c
 
             # 平仓
-            if l != last_l:
-                if last_l == 1:
-                    PROFIT += c - START_PRICE
-                elif last_l == -1:
-                    PROFIT += START_PRICE - c
+            if meta_label:
+                if l != last_l:
+                    if last_l == 0:
+                        START_PRICE = c
+                    if last_l == 1:
+                        PROFIT += abs(c - START_PRICE) - abs(c - START_PRICE) * fees
+            else:
+                if l != last_l:
+                    if last_l == 1:
+                        PROFIT += c - START_PRICE - abs(c - START_PRICE) * fees
+                    elif last_l == -1:
+                        PROFIT += START_PRICE - c - abs(c - START_PRICE) * fees
 
-                if last_l == 0:
-                    START_PRICE = c
+                    if last_l == 0:
+                        START_PRICE = c
     return PROFIT / HOLD_RETURN
 
 
