@@ -90,7 +90,7 @@ def _cusum_filter(raw_time_series, threshold, time_stamps=True):
 
 
 def z_score_filter(
-    raw_time_series, mean_window, std_window, z_score=3, time_stamps=True
+    raw_time_series, mean_window=20, std_window=20, z_score=3, time_stamps=True
 ):
     """
     Filter which implements z_score filter
