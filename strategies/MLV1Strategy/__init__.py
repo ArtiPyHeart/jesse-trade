@@ -1,5 +1,6 @@
+from pydoc import Helper
 import pandas as pd
-from jesse import utils
+from jesse import utils, helpers
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import feature_bundle
@@ -9,6 +10,13 @@ from custom_indicators.utils.bet_sizing import (
     power_mapping,
     discretize_position,
 )
+from custom_indicators.utils.filters import z_score_filter_np
+
+SHORT_TERM = "3m"
+MID_TERM = "15m"
+LONG_TERM = "1h"
+
+Z_SCORE_FILTER_THRESHOLD = 1.2
 
 
 class MLV1Strategy(Strategy):
@@ -19,27 +27,41 @@ class MLV1Strategy(Strategy):
         self.side_model = get_side_model(self.is_livetrading)
 
     @property
+    def candles_short(self):
+        return self.get_candles(self.exchange, "BTC-USDT", SHORT_TERM)
+
+    @property
+    def candles_mid(self):
+        return self.get_candles(self.exchange, "BTC-USDT", MID_TERM)
+
+    @property
+    def candles_long(self):
+        return self.get_candles(self.exchange, "BTC-USDT", LONG_TERM)
+
+    @property
     @cached
     def ml_predict(self):
-        candle_3m = self.get_candles(self.exchange, "BTC-USDT", "3m")
-        candle_15m = self.get_candles(self.exchange, "BTC-USDT", "15m")
-        candle_1h = self.get_candles(self.exchange, "BTC-USDT", "1h")
-        f_3m = {f"3m_{k}": v for k, v in feature_bundle(candle_3m).items()}
-        f_15m = {f"15m_{k}": v for k, v in feature_bundle(candle_15m).items()}
-        f_1h = {f"1h_{k}": v for k, v in feature_bundle(candle_1h).items()}
-        all_features = pd.DataFrame({**f_3m, **f_15m, **f_1h})
+        f_short = {
+            f"{SHORT_TERM}_{k}": v
+            for k, v in feature_bundle(self.candles_short).items()
+        }
+        f_mid = {
+            f"{MID_TERM}_{k}": v for k, v in feature_bundle(self.candles_mid).items()
+        }
+        f_long = {
+            f"{LONG_TERM}_{k}": v for k, v in feature_bundle(self.candles_long).items()
+        }
+        all_features = pd.DataFrame({**f_short, **f_mid, **f_long})
         side_pred = self.side_model.predict(all_features[SIDE_ALL])[0]
         all_features["model_side_res"] = side_pred
         meta_pred = self.meta_model.predict(all_features[META_ALL])[0]
         if meta_pred <= 0.5:
             return 0, meta_pred
         else:
-            if side_pred > 0.6:
+            if side_pred > 0.5:
                 return 1, meta_pred
-            elif side_pred <= 0.4:
+            elif side_pred <= 0.5:
                 return -1, meta_pred
-            else:
-                return 0, meta_pred
 
     @property
     def discrete_position_threshold(self):
@@ -130,6 +152,16 @@ class MLV1Strategy(Strategy):
     def should_cancel_entry(self) -> bool:
         # Only for limit orders，当提交的限价单没有成交时，是否在下一个candle取消
         return True
+
+    def z_score_filter(self):
+        src = helpers.get_candle_source(self.candles_mid, "close")
+        z_score = int(z_score_filter_np(src, z_score=Z_SCORE_FILTER_THRESHOLD)[-1])
+        return z_score == 1
+
+    def filters(self) -> list:
+        return [
+            self.z_score_filter,
+        ]
 
     def go_long(self):
         # 打开多仓
