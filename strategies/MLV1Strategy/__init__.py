@@ -4,13 +4,13 @@ from jesse import utils, helpers
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import feature_bundle
-from custom_indicators.selection import SIDE_ALL, META_ALL
+from custom_indicators.config import SIDE_ALL, META_ALL
 from custom_indicators.model import get_meta_model, get_side_model
-from custom_indicators.utils.bet_sizing import (
+from custom_indicators.toolbox.bet_sizing import (
     power_mapping,
     discretize_position,
 )
-from custom_indicators.utils.filters import z_score_filter_np
+from custom_indicators.toolbox.filters import z_score_filter_np
 
 SHORT_TERM = "3m"
 MID_TERM = "15m"
