@@ -55,23 +55,23 @@ class FeatureCalculator:
         # 每次load后，缓存清空
         self.cache = {}
 
-    def calculate(self, features: list[str]):
+    def get(self, features: list[str]):
         res_fe = {}
-        for fe in features:
-            if fe in self.cache:
-                res_fe[fe] = self.cache[fe]
+        for feat in features:
+            if feat in self.cache:
+                res_fe[feat] = self.cache[feat]
             else:
                 # 通过字符串形式调用类中的函数
-                if hasattr(self, fe):
-                    getattr(self, fe)()
-                    res_fe[fe] = self.cache[fe]
+                if hasattr(self, feat):
+                    getattr(self, feat)()
+                    res_fe[feat] = self.cache[feat]
                 else:
                     # 更复杂的特征名称解析
                     # 按步骤拆解特征名称
                     try:
                         # 初始化参数
                         kwargs = {}
-                        feature_parts = fe.split("_")
+                        feature_parts = feat.split("_")
                         remain_parts = feature_parts.copy()
 
                         # 步骤1: 匹配方法(dt,ddt)和lag
@@ -101,19 +101,19 @@ class FeatureCalculator:
                         if hasattr(self, base_name):
                             # 调用方法并传入解析出的参数
                             getattr(self, base_name)(**kwargs)
-                            if fe in self.cache:
-                                res_fe[fe] = self.cache[fe]
+                            if feat in self.cache:
+                                res_fe[feat] = self.cache[feat]
                             else:
                                 # 特征计算方法没有正确设置缓存
                                 raise ValueError(
-                                    f"特征计算方法 '{base_name}' 未正确设置缓存值 '{fe}'"
+                                    f"特征计算方法 '{base_name}' 未正确设置缓存值 '{feat}'"
                                 )
                         else:
                             raise ValueError(
-                                f"特征 '{fe}' 的基础计算方法 '{base_name}' 在 FeatureCalculator 类中未定义"
+                                f"特征 '{feat}' 的基础计算方法 '{base_name}' 在 FeatureCalculator 类中未定义"
                             )
                     except Exception as e:
-                        raise ValueError(f"特征 '{fe}' 解析失败: {str(e)}")
+                        raise ValueError(f"特征 '{feat}' 解析失败: {str(e)}")
         if self.sequential:
             return res_fe
         else:
