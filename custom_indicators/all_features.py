@@ -1,3 +1,5 @@
+import re
+
 import jesse.indicators as ta
 import numpy as np
 from jesse import helpers
@@ -34,28 +36,184 @@ from custom_indicators.utils.math import ddt, dt, lag
 LAG_MAX = 40
 
 
-def jesse_features(candles: np.array, sequential: bool = False) -> dict[str, np.array]:
-    candles = helpers.slice_candles(candles, sequential)
-    res_fe = {}
+class FeatureCalculator:
+    """
+    实例化后用于计算所有特征的类
+    1. 每次load后需初始化所有状态；
+    2. 计算时，首先从cache中获取，若不存在，则通过字符串形式调用类中的函数；
+    3. 若特征名称中包含数字，则需要通过匹配的方式对应特征名称和参数，并调用对应的函数。
+    """
 
-    res_fe["atr"] = ta.atr(candles, sequential=sequential)
-    boll_upper, boll_middle, boll_lower = ta.bollinger_bands(
-        candles, sequential=sequential
-    )
-    res_fe["boll_upper"] = boll_upper / candles[:, 2]
-    res_fe["boll_middle"] = boll_middle / candles[:, 2]
-    res_fe["boll_lower"] = boll_lower / candles[:, 2]
-    res_fe["boll_width"] = ta.bollinger_bands_width(candles, sequential=sequential)
-    res_fe["cc"] = ta.cc(candles, sequential=sequential)
-    res_fe["cci"] = ta.cci(candles, sequential=sequential)
-    res_fe["cfo"] = ta.cfo(candles, sequential=sequential)
-    cksp_ = ta.cksp(candles, sequential=sequential)
-    res_fe["cksp_long"] = cksp_.long / candles[:, 2]
-    res_fe["cksp_short"] = cksp_.short / candles[:, 2]
-    res_fe["chande"] = ta.chande(candles, sequential=sequential)
-    res_fe["sar"] = ta.sar(candles, sequential=sequential)
+    def __init__(self):
+        self.candles = None
+        self.sequential = False
+        self.cache = {}
 
-    return res_fe
+    def load(self, candles: np.array, sequential: bool = False):
+        self.candles = helpers.slice_candles(candles, sequential)
+        self.sequential = sequential
+        # 每次load后，缓存清空
+        self.cache = {}
+
+    def calculate(self, features: list[str]):
+        res_fe = {}
+        for fe in features:
+            if fe in self.cache:
+                res_fe[fe] = self.cache[fe]
+            else:
+                # 通过字符串形式调用类中的函数
+                if hasattr(self, fe):
+                    getattr(self, fe)()
+                    res_fe[fe] = self.cache[fe]
+                else:
+                    # 更复杂的特征名称解析
+                    # 尝试匹配基本特征名_index_方法_lag格式
+                    # 例如: ac_15, bandpass_dt, adaptive_bp_dt_lag3, swamicharts_rsi_5, acc_swing_index_dt_lag5
+                    pattern = (
+                        r"^((?:[a-zA-Z]+_?)+)(?:_(\d+))?(?:_(dt|ddt))?(?:_lag(\d+))?$"
+                    )
+                    m = re.match(pattern, fe)
+
+                    if m:
+                        base_name = m.group(
+                            1
+                        )  # 基本特征名，如 "ac", "bandpass", "adaptive_bp"
+                        index = m.group(2)  # 可能的索引，如 "ac_15" 中的 "15"
+                        method = m.group(3)  # 可能的方法，如 "dt" 或 "ddt"
+                        lag_value = m.group(4)  # 可能的延迟值，如 "lag3" 中的 "3"
+
+                        # 准备kwargs
+                        kwargs = {}
+                        if index:
+                            kwargs["index"] = int(index)
+                        if method:
+                            kwargs[method] = True
+                        if lag_value:
+                            kwargs["lag"] = int(lag_value)
+
+                        # 检查是否有对应的特征计算方法
+                        if hasattr(self, base_name):
+                            # 调用方法并传入解析出的参数
+                            getattr(self, base_name)(**kwargs)
+                            if fe in self.cache:
+                                res_fe[fe] = self.cache[fe]
+                            else:
+                                # 特征计算方法没有正确设置缓存
+                                raise ValueError(
+                                    f"特征计算方法 '{base_name}' 未正确设置缓存值 '{fe}'"
+                                )
+                        else:
+                            raise ValueError(
+                                f"特征 '{fe}' 的基础计算方法 '{base_name}' 在 FeatureCalculator 类中未定义"
+                            )
+                    else:
+                        raise ValueError(f"特征 '{fe}' 格式不符合要求，无法解析")
+        if self.sequential:
+            return res_fe
+        else:
+            return {k: v[-1:] for k, v in res_fe.items()}
+
+    def _process_transformations(self, base_key: str, base_value: np.array, **kwargs):
+        """处理特征的变换操作：dt, ddt, lag等"""
+        feature_name = base_key
+        feature_value = base_value
+        # 如果需要dt变换
+        if kwargs.get("dt"):
+            feature_name = f"{feature_name}_dt"
+            if not self.cache.get(feature_name):
+                dt_value = dt(feature_value)
+                self.cache[feature_name] = dt_value
+            else:
+                dt_value = self.cache[feature_name]
+
+            feature_value = dt_value
+
+        # 如果需要ddt变换
+        if kwargs.get("ddt"):
+            feature_name = f"{feature_name}_ddt"
+            if not self.cache.get(feature_name):
+                ddt_value = ddt(feature_value)
+                self.cache[feature_name] = ddt_value
+            else:
+                ddt_value = self.cache[feature_name]
+
+            feature_value = ddt_value
+
+        # 如果需要lag变换
+        if "lag" in kwargs:
+            lag_value = kwargs["lag"]
+            feature_name = f"{feature_name}_lag{lag_value}"
+            if not self.cache.get(feature_name):
+                lag_value = lag(feature_value, lag_value)
+                self.cache[feature_name] = lag_value
+            else:
+                lag_value = self.cache[feature_name]
+
+            feature_value = lag_value
+
+    def ac_(self, **kwargs):
+        index = kwargs["index"]
+        if not self.cache.get(f"ac_{index}"):
+            # 如果找不到任意一个ac_index，则计算所有ac_index
+            auto_corr = autocorrelation(self.candles, sequential=True)
+            for i in range(auto_corr.shape[1]):
+                self.cache[f"ac_{i}"] = auto_corr[:, i]
+
+    def acc_swing_index(self, **kwargs):
+        if not self.cache.get("acc_swing_index"):
+            self.cache["acc_swing_index"] = accumulated_swing_index(
+                self.candles, sequential=True
+            )
+        self._process_transformations(
+            "acc_swing_index", self.cache["acc_swing_index"], **kwargs
+        )
+
+    def acp_pwr_(self, **kwargs):
+        index = kwargs["index"]
+        if not self.cache.get(f"acp_pwr_{index}"):
+            acp_dom_cycle, pwr = autocorrelation_periodogram(
+                self.candles, sequential=True
+            )
+            for i in range(pwr.shape[1]):
+                self.cache[f"acp_pwr_{i}"] = pwr[:, i]
+
+    def acr(self, **kwargs):
+        if not self.cache.get("acr"):
+            acr = autocorrelation_reversals(self.candles, sequential=True)
+            self.cache["acr"] = acr
+
+    def adaptive_bp(self, **kwargs):
+        if not self.cache.get("adaptive_bp") or not self.cache.get("adaptive_bp_lead"):
+            adaptive_bp, adaptive_bp_lead, _ = adaptive_bandpass(
+                self.candles, sequential=True
+            )
+            self.cache["adaptive_bp"] = adaptive_bp
+            self.cache["adaptive_bp_lead"] = adaptive_bp_lead
+
+        self._process_transformations(
+            "adaptive_bp", self.cache["adaptive_bp"], **kwargs
+        )
+
+    def adaptive_bp_lead(self, **kwargs):
+        if not self.cache.get("adaptive_bp") or not self.cache.get("adaptive_bp_lead"):
+            adaptive_bp, adaptive_bp_lead, _ = adaptive_bandpass(
+                self.candles, sequential=True
+            )
+            self.cache["adaptive_bp"] = adaptive_bp
+            self.cache["adaptive_bp_lead"] = adaptive_bp_lead
+
+        self._process_transformations(
+            "adaptive_bp_lead", self.cache["adaptive_bp_lead"], **kwargs
+        )
+
+    def adaptive_cci(self, **kwargs):
+        if not self.cache.get("adaptive_cci"):
+            adaptive_cci_ = adaptive_cci(self.candles, sequential=True)
+            self.cache["adaptive_cci"] = adaptive_cci_
+
+        self._process_transformations(
+            "adaptive_cci", self.cache["adaptive_cci"], **kwargs
+        )
 
 
 def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.array]:
