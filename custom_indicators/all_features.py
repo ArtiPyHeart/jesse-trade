@@ -67,29 +67,35 @@ class FeatureCalculator:
                     res_fe[fe] = self.cache[fe]
                 else:
                     # 更复杂的特征名称解析
-                    # 尝试匹配基本特征名_index_方法_lag格式
-                    # 例如: ac_15, bandpass_dt, adaptive_bp_dt_lag3, swamicharts_rsi_5, acc_swing_index_dt_lag5
-                    pattern = (
-                        r"^((?:[a-zA-Z]+_?)+)(?:_(\d+))?(?:_(dt|ddt))?(?:_lag(\d+))?$"
-                    )
-                    m = re.match(pattern, fe)
-
-                    if m:
-                        base_name = m.group(
-                            1
-                        )  # 基本特征名，如 "ac", "bandpass", "adaptive_bp"
-                        index = m.group(2)  # 可能的索引，如 "ac_15" 中的 "15"
-                        method = m.group(3)  # 可能的方法，如 "dt" 或 "ddt"
-                        lag_value = m.group(4)  # 可能的延迟值，如 "lag3" 中的 "3"
-
-                        # 准备kwargs
+                    # 按步骤拆解特征名称
+                    try:
+                        # 初始化参数
                         kwargs = {}
-                        if index:
-                            kwargs["index"] = int(index)
-                        if method:
+                        feature_parts = fe.split("_")
+                        remain_parts = feature_parts.copy()
+
+                        # 步骤1: 匹配方法(dt,ddt)和lag
+                        # 检查最后部分是否是lag
+                        if len(remain_parts) > 0 and remain_parts[-1].startswith("lag"):
+                            lag_pattern = r"^lag(\d+)$"
+                            lag_match = re.match(lag_pattern, remain_parts[-1])
+                            if lag_match:
+                                kwargs["lag"] = int(lag_match.group(1))
+                                remain_parts.pop()
+
+                        # 检查是否包含dt或ddt部分
+                        if len(remain_parts) > 0 and remain_parts[-1] in ["dt", "ddt"]:
+                            method = remain_parts[-1]
                             kwargs[method] = True
-                        if lag_value:
-                            kwargs["lag"] = int(lag_value)
+                            remain_parts.pop()
+
+                        # 步骤2: 检查最后部分是否是数字(作为index)
+                        if len(remain_parts) > 0 and remain_parts[-1].isdigit():
+                            kwargs["index"] = int(remain_parts[-1])
+                            remain_parts.pop()
+
+                        # 步骤3: 剩余部分组合成基础特征名称
+                        base_name = "_".join(remain_parts)
 
                         # 检查是否有对应的特征计算方法
                         if hasattr(self, base_name):
@@ -106,8 +112,8 @@ class FeatureCalculator:
                             raise ValueError(
                                 f"特征 '{fe}' 的基础计算方法 '{base_name}' 在 FeatureCalculator 类中未定义"
                             )
-                    else:
-                        raise ValueError(f"特征 '{fe}' 格式不符合要求，无法解析")
+                    except Exception as e:
+                        raise ValueError(f"特征 '{fe}' 解析失败: {str(e)}")
         if self.sequential:
             return res_fe
         else:
@@ -118,9 +124,9 @@ class FeatureCalculator:
         feature_name = base_key
         feature_value = base_value
         # 如果需要dt变换
-        if kwargs.get("dt"):
+        if "dt" in kwargs:
             feature_name = f"{feature_name}_dt"
-            if not self.cache.get(feature_name):
+            if feature_name not in self.cache:
                 dt_value = dt(feature_value)
                 self.cache[feature_name] = dt_value
             else:
@@ -129,9 +135,9 @@ class FeatureCalculator:
             feature_value = dt_value
 
         # 如果需要ddt变换
-        if kwargs.get("ddt"):
+        if "ddt" in kwargs:
             feature_name = f"{feature_name}_ddt"
-            if not self.cache.get(feature_name):
+            if feature_name not in self.cache:
                 ddt_value = ddt(feature_value)
                 self.cache[feature_name] = ddt_value
             else:
@@ -143,7 +149,7 @@ class FeatureCalculator:
         if "lag" in kwargs:
             lag_value = kwargs["lag"]
             feature_name = f"{feature_name}_lag{lag_value}"
-            if not self.cache.get(feature_name):
+            if feature_name not in self.cache:
                 lag_value = lag(feature_value, lag_value)
                 self.cache[feature_name] = lag_value
             else:
@@ -151,26 +157,27 @@ class FeatureCalculator:
 
             feature_value = lag_value
 
-    def ac_(self, **kwargs):
+    def ac(self, **kwargs):
         index = kwargs["index"]
-        if not self.cache.get(f"ac_{index}"):
+        if f"ac_{index}" not in self.cache:
             # 如果找不到任意一个ac_index，则计算所有ac_index
             auto_corr = autocorrelation(self.candles, sequential=True)
             for i in range(auto_corr.shape[1]):
                 self.cache[f"ac_{i}"] = auto_corr[:, i]
 
     def acc_swing_index(self, **kwargs):
-        if not self.cache.get("acc_swing_index"):
+        if "acc_swing_index" not in self.cache:
             self.cache["acc_swing_index"] = accumulated_swing_index(
                 self.candles, sequential=True
             )
+
         self._process_transformations(
             "acc_swing_index", self.cache["acc_swing_index"], **kwargs
         )
 
-    def acp_pwr_(self, **kwargs):
+    def acp_pwr(self, **kwargs):
         index = kwargs["index"]
-        if not self.cache.get(f"acp_pwr_{index}"):
+        if f"acp_pwr_{index}" not in self.cache:
             acp_dom_cycle, pwr = autocorrelation_periodogram(
                 self.candles, sequential=True
             )
@@ -178,12 +185,12 @@ class FeatureCalculator:
                 self.cache[f"acp_pwr_{i}"] = pwr[:, i]
 
     def acr(self, **kwargs):
-        if not self.cache.get("acr"):
+        if "acr" not in self.cache:
             acr = autocorrelation_reversals(self.candles, sequential=True)
             self.cache["acr"] = acr
 
     def adaptive_bp(self, **kwargs):
-        if not self.cache.get("adaptive_bp") or not self.cache.get("adaptive_bp_lead"):
+        if "adaptive_bp" not in self.cache or "adaptive_bp_lead" not in self.cache:
             adaptive_bp, adaptive_bp_lead, _ = adaptive_bandpass(
                 self.candles, sequential=True
             )
@@ -195,7 +202,7 @@ class FeatureCalculator:
         )
 
     def adaptive_bp_lead(self, **kwargs):
-        if not self.cache.get("adaptive_bp") or not self.cache.get("adaptive_bp_lead"):
+        if "adaptive_bp" not in self.cache or "adaptive_bp_lead" not in self.cache:
             adaptive_bp, adaptive_bp_lead, _ = adaptive_bandpass(
                 self.candles, sequential=True
             )
@@ -207,13 +214,367 @@ class FeatureCalculator:
         )
 
     def adaptive_cci(self, **kwargs):
-        if not self.cache.get("adaptive_cci"):
+        if "adaptive_cci" not in self.cache:
             adaptive_cci_ = adaptive_cci(self.candles, sequential=True)
             self.cache["adaptive_cci"] = adaptive_cci_
 
         self._process_transformations(
             "adaptive_cci", self.cache["adaptive_cci"], **kwargs
         )
+
+    def adaptive_rsi(self, **kwargs):
+        if "adaptive_rsi" not in self.cache:
+            adaptive_rsi_ = adaptive_rsi(self.candles, sequential=True)
+            self.cache["adaptive_rsi"] = adaptive_rsi_
+
+        self._process_transformations(
+            "adaptive_rsi", self.cache["adaptive_rsi"], **kwargs
+        )
+
+    def adaptive_stochastic(self, **kwargs):
+        if "adaptive_stochastic" not in self.cache:
+            adaptive_stochastic_ = adaptive_stochastic(self.candles, sequential=True)
+            self.cache["adaptive_stochastic"] = adaptive_stochastic_
+
+        self._process_transformations(
+            "adaptive_stochastic", self.cache["adaptive_stochastic"], **kwargs
+        )
+
+    def bandpass(self, **kwargs):
+        if "bandpass" not in self.cache or "highpass_bp" not in self.cache:
+            bandpass_tuple = ta.bandpass(self.candles, sequential=True)
+            self.cache["bandpass"] = bandpass_tuple.bp_normalized
+            self.cache["highpass_bp"] = bandpass_tuple.trigger
+
+        self._process_transformations("bandpass", self.cache["bandpass"], **kwargs)
+
+    def highpass_bp(self, **kwargs):
+        if "bandpass" not in self.cache or "highpass_bp" not in self.cache:
+            bandpass_tuple = ta.bandpass(self.candles, sequential=True)
+            self.cache["bandpass"] = bandpass_tuple.bp_normalized
+            self.cache["highpass_bp"] = bandpass_tuple.trigger
+
+        self._process_transformations(
+            "highpass_bp", self.cache["highpass_bp"], **kwargs
+        )
+
+    def comb_spectrum_dom_cycle(self, **kwargs):
+        if "comb_spectrum_dom_cycle" not in self.cache:
+            comb_spectrum_dom_cycle, pwr = comb_spectrum(self.candles, sequential=True)
+            self.cache["comb_spectrum_dom_cycle"] = comb_spectrum_dom_cycle
+            for i in range(pwr.shape[1]):
+                self.cache[f"comb_spectrum_pwr_{i}"] = pwr[:, i]
+
+        self._process_transformations(
+            "comb_spectrum_dom_cycle", self.cache["comb_spectrum_dom_cycle"], **kwargs
+        )
+
+    def comb_spectrum_pwr(self, **kwargs):
+        index = kwargs["index"]
+        if f"comb_spectrum_pwr_{index}" not in self.cache:
+            comb_spectrum_dom_cycle, pwr = comb_spectrum(self.candles, sequential=True)
+            self.cache["comb_spectrum_dom_cycle"] = comb_spectrum_dom_cycle
+            for i in range(pwr.shape[1]):
+                self.cache[f"comb_spectrum_pwr_{i}"] = pwr[:, i]
+
+    def conv(self, **kwargs):
+        index = kwargs["index"]
+        if f"conv_{index}" not in self.cache:
+            _, _, conv = ehlers_convolution(self.candles, sequential=True)
+            for i in range(conv.shape[1]):
+                self.cache[f"conv_{i}"] = conv[:, i]
+
+    def dft_dom_cycle(self, **kwargs):
+        if "dft_dom_cycle" not in self.cache:
+            dft_dom_cycle, spectrum = dft(self.candles, sequential=True)
+            self.cache["dft_dom_cycle"] = dft_dom_cycle
+            for i in range(spectrum.shape[1]):
+                self.cache[f"dft_spectrum_{i}"] = spectrum[:, i]
+
+        self._process_transformations(
+            "dft_dom_cycle", self.cache["dft_dom_cycle"], **kwargs
+        )
+
+    def dft_spectrum(self, **kwargs):
+        index = kwargs["index"]
+        if f"dft_spectrum_{index}" not in self.cache:
+            dft_dom_cycle, spectrum = dft(self.candles, sequential=True)
+            self.cache["dft_dom_cycle"] = dft_dom_cycle
+            for i in range(spectrum.shape[1]):
+                self.cache[f"dft_spectrum_{i}"] = spectrum[:, i]
+
+    def dual_diff(self, **kwargs):
+        if "dual_diff" not in self.cache:
+            dual_diff = dual_differentiator(self.candles, sequential=True)
+            self.cache["dual_diff"] = dual_diff
+
+        self._process_transformations("dual_diff", self.cache["dual_diff"], **kwargs)
+
+    def ehlers_early_onset_trend(self, **kwargs):
+        if "ehlers_early_onset_trend" not in self.cache:
+            ehlers_early_onset_trend_ = ehlers_early_onset_trend(
+                self.candles, sequential=True
+            )
+            self.cache["ehlers_early_onset_trend"] = ehlers_early_onset_trend_
+
+        self._process_transformations(
+            "ehlers_early_onset_trend", self.cache["ehlers_early_onset_trend"], **kwargs
+        )
+
+    def evenbetter_sinewave_long(self, **kwargs):
+        if "evenbetter_sinewave_long" not in self.cache:
+            eb_sw_long = evenbetter_sinewave(self.candles, duration=40, sequential=True)
+            self.cache["evenbetter_sinewave_long"] = eb_sw_long
+
+        self._process_transformations(
+            "evenbetter_sinewave_long", self.cache["evenbetter_sinewave_long"], **kwargs
+        )
+
+    def evenbetter_sinewave_short(self, **kwargs):
+        if "evenbetter_sinewave_short" not in self.cache:
+            eb_sw_short = evenbetter_sinewave(
+                self.candles, duration=20, sequential=True
+            )
+            self.cache["evenbetter_sinewave_short"] = eb_sw_short
+
+        self._process_transformations(
+            "evenbetter_sinewave_short",
+            self.cache["evenbetter_sinewave_short"],
+            **kwargs,
+        )
+
+    def fisher(self, **kwargs):
+        if "fisher" not in self.cache:
+            fisher_ind = ta.fisher(self.candles, sequential=True)
+            self.cache["fisher"] = fisher_ind.fisher
+
+        self._process_transformations("fisher", self.cache["fisher"], **kwargs)
+
+    def forecast_oscillator(self, **kwargs):
+        if "forecast_oscillator" not in self.cache:
+            forecast_oscillator = ta.fosc(self.candles, sequential=True)
+            self.cache["forecast_oscillator"] = forecast_oscillator
+
+        self._process_transformations(
+            "forecast_oscillator", self.cache["forecast_oscillator"], **kwargs
+        )
+
+    def homodyne(self, **kwargs):
+        if "homodyne" not in self.cache:
+            homodyne_ = homodyne(self.candles, sequential=True)
+            self.cache["homodyne"] = homodyne_
+
+        self._process_transformations("homodyne", self.cache["homodyne"], **kwargs)
+
+    def hurst_coef_fast(self, **kwargs):
+        if "hurst_coef_fast" not in self.cache:
+            hurst_coef_fast = hurst_coefficient(
+                self.candles, period=30, sequential=True
+            )
+            self.cache["hurst_coef_fast"] = hurst_coef_fast
+
+        self._process_transformations(
+            "hurst_coef_fast", self.cache["hurst_coef_fast"], **kwargs
+        )
+
+    def hurst_coef_slow(self, **kwargs):
+        if "hurst_coef_slow" not in self.cache:
+            hurst_coef_slow = hurst_coefficient(
+                self.candles, period=200, sequential=True
+            )
+            self.cache["hurst_coef_slow"] = hurst_coef_slow
+
+        self._process_transformations(
+            "hurst_coef_slow", self.cache["hurst_coef_slow"], **kwargs
+        )
+
+    def mod_rsi(self, **kwargs):
+        if "mod_rsi" not in self.cache:
+            mod_rsi_ = mod_rsi(self.candles, sequential=True)
+            self.cache["mod_rsi"] = mod_rsi_
+
+        self._process_transformations("mod_rsi", self.cache["mod_rsi"], **kwargs)
+
+    def mod_stochastic(self, **kwargs):
+        if "mod_stochastic" not in self.cache:
+            mod_stochastic_ = mod_stochastic(
+                self.candles, roofing_filter=True, sequential=True
+            )
+            self.cache["mod_stochastic"] = mod_stochastic_
+
+        self._process_transformations(
+            "mod_stochastic", self.cache["mod_stochastic"], **kwargs
+        )
+
+    def natr(self, **kwargs):
+        if "natr" not in self.cache:
+            natr_ = ta.natr(self.candles, sequential=True)
+            self.cache["natr"] = natr_
+
+        self._process_transformations("natr", self.cache["natr"], **kwargs)
+
+    def phase_accumulation(self, **kwargs):
+        if "phase_accumulation" not in self.cache:
+            phase_accumulation_ = phase_accumulation(self.candles, sequential=True)
+            self.cache["phase_accumulation"] = phase_accumulation_
+
+        self._process_transformations(
+            "phase_accumulation", self.cache["phase_accumulation"], **kwargs
+        )
+
+    def pfe(self, **kwargs):
+        if "pfe" not in self.cache:
+            pfe_ = ta.pfe(self.candles, sequential=True)
+            self.cache["pfe"] = pfe_
+
+        self._process_transformations("pfe", self.cache["pfe"], **kwargs)
+
+    def roofing_filter(self, **kwargs):
+        if "roofing_filter" not in self.cache:
+            roofing_filter_ = roofing_filter(self.candles, sequential=True)
+            self.cache["roofing_filter"] = roofing_filter_
+
+        self._process_transformations(
+            "roofing_filter", self.cache["roofing_filter"], **kwargs
+        )
+
+    def stc(self, **kwargs):
+        if "stc" not in self.cache:
+            stc_ = ta.stc(self.candles, sequential=True)
+            self.cache["stc"] = stc_
+
+        self._process_transformations("stc", self.cache["stc"], **kwargs)
+
+    def swamicharts_rsi(self, **kwargs):
+        index = kwargs["index"]
+        if f"swamicharts_rsi_{index}" not in self.cache:
+            lookback, swamicharts_rsi_ = swamicharts_rsi(self.candles, sequential=True)
+            for i in range(swamicharts_rsi_.shape[1]):
+                self.cache[f"swamicharts_rsi_{i}"] = swamicharts_rsi_[:, i]
+
+    def swamicharts_stochastic(self, **kwargs):
+        index = kwargs["index"]
+        if f"swamicharts_stochastic_{index}" not in self.cache:
+            lookback, swamicharts_stochastic_ = swamicharts_stochastic(
+                self.candles, sequential=True
+            )
+            for i in range(swamicharts_stochastic_.shape[1]):
+                self.cache[f"swamicharts_stochastic_{i}"] = swamicharts_stochastic_[
+                    :, i
+                ]
+
+    def td_sequential_buy(self, **kwargs):
+        if "td_sequential_buy" not in self.cache:
+            td_sequential_buy, td_sequential_sell = td_sequential(
+                self.candles, sequential=True
+            )
+            self.cache["td_sequential_buy"] = td_sequential_buy
+            self.cache["td_sequential_sell"] = td_sequential_sell
+
+    def td_sequential_sell(self, **kwargs):
+        if "td_sequential_sell" not in self.cache:
+            td_sequential_buy, td_sequential_sell = td_sequential(
+                self.candles, sequential=True
+            )
+            self.cache["td_sequential_buy"] = td_sequential_buy
+            self.cache["td_sequential_sell"] = td_sequential_sell
+
+    def td_sequential_buy_aggressive(self, **kwargs):
+        if "td_sequential_buy_aggressive" not in self.cache:
+            td_sequential_buy_aggressive, td_sequential_sell_aggressive = td_sequential(
+                self.candles, sequential=True, aggressive=True
+            )
+            self.cache["td_sequential_buy_aggressive"] = td_sequential_buy_aggressive
+            self.cache["td_sequential_sell_aggressive"] = td_sequential_sell_aggressive
+
+    def td_sequential_sell_aggressive(self, **kwargs):
+        if "td_sequential_sell_aggressive" not in self.cache:
+            td_sequential_buy_aggressive, td_sequential_sell_aggressive = td_sequential(
+                self.candles, sequential=True, aggressive=True
+            )
+            self.cache["td_sequential_buy_aggressive"] = td_sequential_buy_aggressive
+            self.cache["td_sequential_sell_aggressive"] = td_sequential_sell_aggressive
+
+    def td_sequential_buy_stealth(self, **kwargs):
+        if "td_sequential_buy_stealth" not in self.cache:
+            td_sequential_buy_stealth, td_sequential_sell_stealth = td_sequential(
+                self.candles, sequential=True, stealth_actions=True
+            )
+            self.cache["td_sequential_buy_stealth"] = td_sequential_buy_stealth
+            self.cache["td_sequential_sell_stealth"] = td_sequential_sell_stealth
+
+    def td_sequential_sell_stealth(self, **kwargs):
+        if "td_sequential_sell_stealth" not in self.cache:
+            td_sequential_buy_stealth, td_sequential_sell_stealth = td_sequential(
+                self.candles, sequential=True, stealth_actions=True
+            )
+            self.cache["td_sequential_buy_stealth"] = td_sequential_buy_stealth
+            self.cache["td_sequential_sell_stealth"] = td_sequential_sell_stealth
+
+    def td_sequential_buy_aggressive_stealth(self, **kwargs):
+        if "td_sequential_buy_aggressive_stealth" not in self.cache:
+            (
+                td_sequential_buy_aggressive_stealth,
+                td_sequential_sell_aggressive_stealth,
+            ) = td_sequential(
+                self.candles, sequential=True, aggressive=True, stealth_actions=True
+            )
+            self.cache["td_sequential_buy_aggressive_stealth"] = (
+                td_sequential_buy_aggressive_stealth
+            )
+            self.cache["td_sequential_sell_aggressive_stealth"] = (
+                td_sequential_sell_aggressive_stealth
+            )
+
+    def td_sequential_sell_aggressive_stealth(self, **kwargs):
+        if "td_sequential_sell_aggressive_stealth" not in self.cache:
+            (
+                td_sequential_buy_aggressive_stealth,
+                td_sequential_sell_aggressive_stealth,
+            ) = td_sequential(
+                self.candles, sequential=True, aggressive=True, stealth_actions=True
+            )
+            self.cache["td_sequential_buy_aggressive_stealth"] = (
+                td_sequential_buy_aggressive_stealth
+            )
+            self.cache["td_sequential_sell_aggressive_stealth"] = (
+                td_sequential_sell_aggressive_stealth
+            )
+
+    def trendflex(self, **kwargs):
+        if "trendflex" not in self.cache:
+            trendflex_ = ta.trendflex(self.candles, sequential=True)
+            self.cache["trendflex"] = trendflex_
+
+        self._process_transformations("trendflex", self.cache["trendflex"], **kwargs)
+
+    def voss(self, **kwargs):
+        if "voss" not in self.cache:
+            voss_filter_ = ta.voss(self.candles, sequential=True)
+            self.cache["voss"] = voss_filter_.voss
+            self.cache["voss_filt"] = voss_filter_.filt
+        self._process_transformations("voss", self.cache["voss"], **kwargs)
+
+    def voss_filt(self, **kwargs):
+        if "voss_filt" not in self.cache:
+            voss_filter_ = ta.voss(self.candles, sequential=True)
+            self.cache["voss"] = voss_filter_.voss
+            self.cache["voss_filt"] = voss_filter_.filt
+        self._process_transformations("voss_filt", self.cache["voss_filt"], **kwargs)
+
+    def vwap(self, **kwargs):
+        if "vwap" not in self.cache:
+            vwap_ = ta.vwap(self.candles, sequential=True)
+            self.cache["vwap"] = vwap_
+
+        self._process_transformations("vwap", self.cache["vwap"], **kwargs)
+
+    def williams_r(self, **kwargs):
+        if "williams_r" not in self.cache:
+            williams_r_ = ta.willr(self.candles, sequential=True)
+            self.cache["williams_r"] = williams_r_
+
+        self._process_transformations("williams_r", self.cache["williams_r"], **kwargs)
 
 
 def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.array]:
@@ -616,23 +977,23 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     voss_ = voss_filter_.voss
     filt_ = voss_filter_.filt
     res_fe["voss"] = voss_
-    res_fe["filt"] = filt_
+    res_fe["voss_filt"] = filt_
     res_fe["voss_dt"] = dt(voss_)
-    res_fe["filt_dt"] = dt(filt_)
+    res_fe["voss_filt_dt"] = dt(filt_)
     res_fe["voss_ddt"] = ddt(voss_)
-    res_fe["filt_ddt"] = ddt(filt_)
+    res_fe["voss_filt_ddt"] = ddt(filt_)
     for lg in range(1, LAG_MAX):
         res_fe[f"voss_lag{lg}"] = lag(voss_, lg)
     for lg in range(1, LAG_MAX):
-        res_fe[f"filt_lag{lg}"] = lag(filt_, lg)
+        res_fe[f"voss_filt_lag{lg}"] = lag(filt_, lg)
     for lg in range(1, LAG_MAX):
         res_fe[f"voss_dt_lag{lg}"] = lag(res_fe["voss_dt"], lg)
     for lg in range(1, LAG_MAX):
-        res_fe[f"filt_dt_lag{lg}"] = lag(res_fe["filt_dt"], lg)
+        res_fe[f"voss_filt_dt_lag{lg}"] = lag(res_fe["voss_filt_dt"], lg)
     for lg in range(1, LAG_MAX):
         res_fe[f"voss_ddt_lag{lg}"] = lag(res_fe["voss_ddt"], lg)
     for lg in range(1, LAG_MAX):
-        res_fe[f"filt_ddt_lag{lg}"] = lag(res_fe["filt_ddt"], lg)
+        res_fe[f"voss_filt_ddt_lag{lg}"] = lag(res_fe["voss_filt_ddt"], lg)
 
     # vwap
     vwap_ = ta.vwap(candles, sequential=True)
