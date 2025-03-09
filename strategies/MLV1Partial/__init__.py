@@ -5,20 +5,20 @@ from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
 from custom_indicators.config import (
-    DOLLAR_BAR_THRESHOLD_MID,
     DOLLAR_BAR_THRESHOLD_LONG,
+    DOLLAR_BAR_THRESHOLD_MID,
     DOLLAR_BAR_THRESHOLD_SHORT,
     LONG_TERM,
     META_ALL,
+    META_LONG,
+    META_MID,
+    META_SHORT,
     MID_TERM,
     SHORT_TERM,
     SIDE_ALL,
-    SIDE_SHORT,
-    META_SHORT,
-    SIDE_MID,
-    META_MID,
     SIDE_LONG,
-    META_LONG,
+    SIDE_MID,
+    SIDE_SHORT,
 )
 from custom_indicators.model import get_meta_model, get_side_model
 from custom_indicators.toolbox.bet_sizing import discretize_position
@@ -39,7 +39,7 @@ def discrete_position_ratio(old_ratio, new_ratio) -> float:
         return discrete_new_ratio
 
 
-class MLV1Strategy(Strategy):
+class MLV1Partial(Strategy):
 
     def __init__(self):
         super().__init__()
@@ -50,20 +50,15 @@ class MLV1Strategy(Strategy):
             DOLLAR_BAR_THRESHOLD_MID,
             max_bars=2000,
         )
-        self.dollar_bar_container.load_initial_candles(self.candles_1m)
 
         self.dollar_bar_short_term_fc = FeatureCalculator()
         self.dollar_bar_mid_term_fc = FeatureCalculator()
         self.dollar_bar_long_term_fc = FeatureCalculator()
 
     ############################### dollar bar 预处理 ##############################
-    @property
-    @cached
-    def candles_1m(self):
-        return self.get_candles(self.exchange, "BTC-USDT", "1m")
 
     def before(self):
-        self.dollar_bar_container.update_with_candle(self.candles_1m[-1])
+        self.dollar_bar_container.update_with_candle(self.candles)
 
     @property
     def should_trade_dollar_bar(self) -> bool:
@@ -72,7 +67,7 @@ class MLV1Strategy(Strategy):
     @property
     @cached
     def dollar_bar_short_term(self) -> np.ndarray:
-        return build_dollar_bar(self.candles_1m, DOLLAR_BAR_THRESHOLD_SHORT)
+        return build_dollar_bar(self.candles, DOLLAR_BAR_THRESHOLD_SHORT)
 
     @property
     def dollar_bar_mid_term(self) -> np.ndarray:
@@ -81,7 +76,7 @@ class MLV1Strategy(Strategy):
     @property
     @cached
     def dollar_bar_long_term(self) -> np.ndarray:
-        return build_dollar_bar(self.candles_1m, DOLLAR_BAR_THRESHOLD_LONG)
+        return build_dollar_bar(self.candles, DOLLAR_BAR_THRESHOLD_LONG)
 
     ############################ 机器学习模型 ############################
     @property
@@ -135,7 +130,7 @@ class MLV1Strategy(Strategy):
             **self.dollar_bar_short_term_features,
             **self.dollar_bar_mid_term_features,
             **self.dollar_bar_long_term_features,
-            "side_model_pred": self.side_model_pred,
+            "side_model_res": self.side_model_pred,
         }
         meta_features = {k: all_features[k] for k in META_ALL}
         return pd.DataFrame(meta_features)
@@ -191,7 +186,7 @@ class MLV1Strategy(Strategy):
         if not self.should_trade_dollar_bar:
             return False
         if self.meta_model_pred > 0.5:
-            if self.side_model_pred > 0.5:
+            if self.side_model_pred > 0.5 and self.get_final_qty(0) != 0:
                 return True
             else:
                 return False
@@ -203,7 +198,7 @@ class MLV1Strategy(Strategy):
             return False
         if self.meta_model_pred > 0.5:
             # 预测为多头
-            if self.side_model_pred < 0.5:
+            if self.side_model_pred < 0.5 and self.get_final_qty(0) != 0:
                 return True
             else:
                 return False

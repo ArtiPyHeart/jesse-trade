@@ -59,7 +59,9 @@ def estimate_dollar_bar_threshold(candles: np.ndarray, num_minutes: int) -> floa
 
 
 @numba.njit
-def build_dollar_bar(candles: np.ndarray, threshold: float) -> np.ndarray:
+def build_dollar_bar(
+    candles: np.ndarray, threshold: float, max_bars: int = -1
+) -> np.ndarray:
     """
     通过jesse的1分钟k线数据，构建更高时间周期的dollar bar，由近到远构建dollar bar
     candles: np.ndarray, shape=(num_candles, 6), columns=['timestamp', 'open', 'close', 'high', 'low', 'volume']
@@ -131,6 +133,9 @@ def build_dollar_bar(candles: np.ndarray, threshold: float) -> np.ndarray:
             bar_low = 9999999999999.0
             bar_volume = 0.0
 
+            if max_bars > 0 and bar_index > max_bars:
+                break
+
     # 舍弃未达阈值的剩余部分 —— 用切片替代原先的for循环
     return bars[:bar_index][::-1]
 
@@ -183,7 +188,7 @@ class DollarBarContainer:
         self._bar_volume = 0.0
         self._bar_timestamp = 0.0
 
-    def load_initial_candles(self, candles: np.ndarray):
+    def _load_initial_candles(self, candles: np.ndarray):
         """
         加载初始的所有1分钟K线数据，构建初始dollar bar
         适用于jesse回测开始或实盘交易启动时
@@ -207,7 +212,7 @@ class DollarBarContainer:
         self._reset_current_bar()
         self.is_new_bar_ready = False
 
-    def update_with_candle(self, candle: np.ndarray):
+    def _update_with_candle(self, candle: np.ndarray):
         """
         使用最新的一根1分钟K线更新dollar bar
         适用于jesse每分钟轮询时调用
@@ -279,6 +284,12 @@ class DollarBarContainer:
             self.is_new_bar_ready = True
         else:
             self.is_new_bar_ready = False
+
+    def update_with_candle(self, candle: np.ndarray):
+        if self.bars.size == 0:
+            self._load_initial_candles(candle)
+        else:
+            self._update_with_candle(candle)
 
     def get_dollar_bars(self) -> np.ndarray:
         """
