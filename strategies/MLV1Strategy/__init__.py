@@ -1,22 +1,15 @@
-from pydoc import Helper
 import pandas as pd
-from jesse import utils, helpers
+from jesse import utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import feature_bundle
-from custom_indicators.config import SIDE_ALL, META_ALL
+from custom_indicators.config import META_ALL, SIDE_ALL
 from custom_indicators.model import get_meta_model, get_side_model
-from custom_indicators.toolbox.bet_sizing import (
-    power_mapping,
-    discretize_position,
-)
-from custom_indicators.toolbox.filters import z_score_filter_np
+from custom_indicators.toolbox.bet_sizing import discretize_position, power_mapping
 
-SHORT_TERM = "3m"
-MID_TERM = "15m"
-LONG_TERM = "1h"
-
-Z_SCORE_FILTER_THRESHOLD = 1.2
+SHORT_TERM = "10m"
+MID_TERM = "25m"
+LONG_TERM = "2h"
 
 
 class MLV1Strategy(Strategy):
@@ -153,14 +146,12 @@ class MLV1Strategy(Strategy):
         # Only for limit orders，当提交的限价单没有成交时，是否在下一个candle取消
         return True
 
-    def z_score_filter(self):
-        src = helpers.get_candle_source(self.candles_mid, "close")
-        z_score = int(z_score_filter_np(src, z_score=Z_SCORE_FILTER_THRESHOLD)[-1])
-        return z_score == 1
+    def dollar_bar_filter(self):
+        pass
 
     def filters(self) -> list:
         return [
-            self.z_score_filter,
+            self.dollar_bar_filter,
         ]
 
     def go_long(self):
@@ -200,6 +191,6 @@ class MLV1Strategy(Strategy):
                 elif target_margin_ratio < 0:
                     self.buy = qty, self.price
 
-    def before_terminate(self):
-        # 在策略结束时执行，可以用于关闭仓位
-        self.liquidate()
+    # def before_terminate(self):
+    #     # 在策略结束时执行，可以用于关闭仓位
+    #     self.liquidate()

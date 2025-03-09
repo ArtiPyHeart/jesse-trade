@@ -133,3 +133,167 @@ def build_dollar_bar(candles: np.ndarray, threshold: float) -> np.ndarray:
 
     # 舍弃未达阈值的剩余部分 —— 用切片替代原先的for循环
     return bars[:bar_index][::-1]
+
+
+class DollarBarContainer:
+    """
+    Dollar Bar容器类，用于在jesse回测和实盘交易中管理和构建dollar bar
+
+    该类能够：
+    1. 存储和管理dollar bar，确保不超过最大数量限制
+    2. 在首次加载时构建初始dollar bar
+    3. 在后续每分钟轮询时更新dollar bar
+    4. 提供完整构建的dollar bar数据
+    5. 提供状态指示器，表明最新dollar bar是否已完成构建
+    """
+
+    def __init__(self, threshold: float, max_bars: int = 500):
+        """
+        初始化Dollar Bar容器
+
+        参数:
+            threshold: float - dollar bar的阈值 (price * volume)
+            max_bars: int - 最大保存的dollar bar数量
+        """
+        self.threshold = threshold
+        self.max_bars = max_bars
+
+        # 存储完整构建的dollar bar
+        self.bars = np.zeros((0, 6), dtype=np.float64)
+
+        # 存储当前正在构建的dollar bar
+        self.current_dollar_volume = 0.0
+        self.is_new_bar_ready = False
+
+        # 构建中的bar的数据
+        self._bar_open = 0.0
+        self._bar_close = 0.0
+        self._bar_high = 0.0
+        self._bar_low = 9999999999999.0
+        self._bar_volume = 0.0
+        self._bar_timestamp = 0.0
+
+    def _reset_current_bar(self):
+        """重置当前构建中的bar数据"""
+        self.current_dollar_volume = 0.0
+        self._bar_open = 0.0
+        self._bar_close = 0.0
+        self._bar_high = 0.0
+        self._bar_low = 9999999999999.0
+        self._bar_volume = 0.0
+        self._bar_timestamp = 0.0
+
+    def load_initial_candles(self, candles: np.ndarray):
+        """
+        加载初始的所有1分钟K线数据，构建初始dollar bar
+        适用于jesse回测开始或实盘交易启动时
+
+        参数:
+            candles: np.ndarray - jesse的1分钟K线数据，按照时间从远到近排列
+        """
+        if candles.size == 0:
+            return
+
+        # 使用现有的build_dollar_bar函数构建初始dollar bar
+        initial_bars = build_dollar_bar(candles, self.threshold)
+
+        # 限制数量不超过max_bars
+        if initial_bars.shape[0] > self.max_bars:
+            initial_bars = initial_bars[-self.max_bars :]
+
+        self.bars = initial_bars
+
+        # 初始化当前构建中的bar
+        self._reset_current_bar()
+        self.is_new_bar_ready = False
+
+    def update_with_candle(self, candle: np.ndarray):
+        """
+        使用最新的一根1分钟K线更新dollar bar
+        适用于jesse每分钟轮询时调用
+
+        参数:
+            candle: np.ndarray - 最新的一根jesse 1分钟K线，形状为(6,)
+        """
+        if candle.size == 0:
+            return
+
+        # 只取最后一行
+        if len(candle.shape) > 1 and candle.shape[0] > 1:
+            candle = candle[-1]
+
+        # 提取candle数据
+        ts = candle[0]
+        o = candle[1]
+        c = candle[2]
+        h = candle[3]
+        l = candle[4]
+        v = candle[5]
+
+        # 计算当前K线的dollar volume
+        dv = c * v
+
+        # 记录时间戳
+        self.bar_timestamp = ts
+
+        # 更新当前构建中的bar数据
+        if self.current_dollar_volume == 0.0:  # 开始新的bar
+            self._bar_open = o
+            self._bar_close = c
+            self._bar_high = h
+            self._bar_low = l
+            self._bar_volume = v
+        else:  # 继续累积当前bar
+            # bar_open已经是最早K线的open，不需要更新
+            self._bar_close = c  # 更新为最新close
+            self._bar_high = max(h, self._bar_high)
+            self._bar_low = min(l, self._bar_low)
+            self._bar_volume += v
+
+        # 累加dollar volume
+        self.current_dollar_volume += dv
+
+        # 检查是否达到阈值
+        if self.current_dollar_volume > self.threshold:
+            # 构建新的完整bar
+            new_bar = np.array(
+                [
+                    self._bar_timestamp,
+                    self._bar_open,
+                    self._bar_close,
+                    self._bar_high,
+                    self._bar_low,
+                    self._bar_volume,
+                ]
+            ).reshape(1, 6)
+
+            # 将新bar添加到现有bars中
+            self.bars = np.vstack([self.bars, new_bar])
+
+            # 如果超出最大数量限制，移除最旧的bar
+            if self.bars.shape[0] > self.max_bars:
+                self.bars = self.bars[1:]
+
+            # 重置当前bar并设置标志
+            self._reset_current_bar()
+            self.is_new_bar_ready = True
+        else:
+            self.is_new_bar_ready = False
+
+    def get_dollar_bars(self) -> np.ndarray:
+        """
+        获取当前所有完整构建的dollar bars
+
+        返回:
+            np.ndarray - 所有完整的dollar bars，不包含当前构建中的bar
+        """
+        return self.bars.copy()
+
+    def is_latest_bar_complete(self) -> bool:
+        """
+        检查最新的dollar bar是否构建完成
+
+        返回:
+            bool - 如果最新的dollar bar刚刚构建完成，返回True，否则返回False
+        """
+        return self.is_new_bar_ready
