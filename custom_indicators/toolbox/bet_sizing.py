@@ -63,9 +63,7 @@ def power_mapping(p_meta: float | np.ndarray, gamma=2.0, threshold=0.5):
     return result
 
 
-def discretize_position(
-    new_pos: float | np.ndarray, old_pos=None, step=0.05, threshold=0.05
-):
+def discretize_position(new_pos: float | np.ndarray, old_pos=None, threshold=0.05):
     """
     将连续持仓比例离散化，并可选地根据阈值控制是否更新持仓。
 
@@ -87,26 +85,24 @@ def discretize_position(
     # 将输入统一为 numpy 数组，以便同时处理标量或向量
     new_pos_array = np.array(new_pos, ndmin=1)
 
-    # 1) 首先对新目标持仓做离散化：round 到 step 的整数倍
-    discrete_new_pos = np.round(new_pos_array / step) * step
+    # # 1) 首先对新目标持仓做离散化：round 到 step 的整数倍
+    # discrete_new_pos = np.round(new_pos_array / step) * step
 
     # 如果没有 old_pos，则直接返回离散化结果
     if old_pos is None:
-        return (
-            discrete_new_pos.item() if discrete_new_pos.size == 1 else discrete_new_pos
-        )
+        return new_pos_array.item() if new_pos_array.size == 1 else new_pos_array
 
     # 否则，需要和 old_pos 比较看是否超过阈值
     old_pos_array = np.array(old_pos, ndmin=1)
     # 如果 old_pos_array 与 discrete_new_pos 形状不同，这里要注意对齐处理，本示例略过
 
     # 2) 计算调仓差值
-    diff = np.abs(discrete_new_pos - old_pos_array)
+    diff = np.abs(new_pos_array - old_pos_array)
     # 3) 判断是否超出阈值
     mask_need_trade = diff >= threshold
 
     # 4) 如果差值小于 threshold，则保持原有仓位不变
-    final_pos_array = np.where(mask_need_trade, discrete_new_pos, old_pos_array)
+    final_pos_array = np.where(mask_need_trade, new_pos_array, old_pos_array)
 
     # 根据输入类型返回标量或数组
     if final_pos_array.size == 1:
