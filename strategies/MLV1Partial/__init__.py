@@ -58,7 +58,9 @@ class MLV1Partial(Strategy):
     ############################### dollar bar 预处理 ##############################
 
     def before(self):
-        self.dollar_bar_container.update_with_candle(self.candles)
+        self.dollar_bar_container.update_with_candle(
+            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
+        )
 
     @property
     def should_trade_dollar_bar(self) -> bool:
@@ -67,7 +69,10 @@ class MLV1Partial(Strategy):
     @property
     @cached
     def dollar_bar_short_term(self) -> np.ndarray:
-        return build_dollar_bar(self.candles, DOLLAR_BAR_THRESHOLD_SHORT)
+        return build_dollar_bar(
+            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
+            DOLLAR_BAR_THRESHOLD_SHORT,
+        )
 
     @property
     def dollar_bar_mid_term(self) -> np.ndarray:
@@ -76,7 +81,10 @@ class MLV1Partial(Strategy):
     @property
     @cached
     def dollar_bar_long_term(self) -> np.ndarray:
-        return build_dollar_bar(self.candles, DOLLAR_BAR_THRESHOLD_LONG)
+        return build_dollar_bar(
+            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
+            DOLLAR_BAR_THRESHOLD_LONG,
+        )
 
     ############################ 机器学习模型 ############################
     @property

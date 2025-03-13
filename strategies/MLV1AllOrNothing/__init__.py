@@ -23,9 +23,10 @@ from custom_indicators.config import (
 from custom_indicators.model import get_meta_model, get_side_model
 from custom_indicators.toolbox.dollar_bar import DollarBarContainer, build_dollar_bar
 
-META_MODEL_THRESHOLD = 0.5
+META_MODEL_THRESHOLD = 0.65
 SIDE_MODEL_THRESHOLD = 0.5
-STOP_LOSS_RATIO = 0.03
+STOP_LOSS_RATIO = 0.05
+
 
 class MLV1AllOrNothing(Strategy):
 
@@ -46,7 +47,9 @@ class MLV1AllOrNothing(Strategy):
     ############################### dollar bar 预处理 ##############################
 
     def before(self):
-        self.dollar_bar_container.update_with_candle(self.candles)
+        self.dollar_bar_container.update_with_candle(
+            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
+        )
 
     @property
     def should_trade_dollar_bar(self) -> bool:
@@ -55,7 +58,11 @@ class MLV1AllOrNothing(Strategy):
     @property
     @cached
     def dollar_bar_short_term(self) -> np.ndarray:
-        return build_dollar_bar(self.candles, DOLLAR_BAR_THRESHOLD_SHORT, max_bars=5000)
+        return build_dollar_bar(
+            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
+            DOLLAR_BAR_THRESHOLD_SHORT,
+            max_bars=5000,
+        )
 
     @property
     def dollar_bar_mid_term(self) -> np.ndarray:
@@ -64,7 +71,11 @@ class MLV1AllOrNothing(Strategy):
     @property
     @cached
     def dollar_bar_long_term(self) -> np.ndarray:
-        return build_dollar_bar(self.candles, DOLLAR_BAR_THRESHOLD_LONG, max_bars=5000)
+        return build_dollar_bar(
+            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
+            DOLLAR_BAR_THRESHOLD_LONG,
+            max_bars=5000,
+        )
 
     ############################ 机器学习模型 ############################
     @property
@@ -127,6 +138,7 @@ class MLV1AllOrNothing(Strategy):
     @cached
     def meta_model_pred(self):
         return self.meta_model.predict(self.meta_model_features)[-1]
+
     ############################ jesse 交易逻辑 ############################
     def should_long(self) -> bool:
         if not self.should_trade_dollar_bar:
