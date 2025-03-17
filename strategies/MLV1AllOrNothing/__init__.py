@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from jesse import utils
+from jesse import utils, helpers
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
@@ -22,8 +22,9 @@ from custom_indicators.config import (
 )
 from custom_indicators.model import get_meta_model, get_side_model
 from custom_indicators.toolbox.dollar_bar import DollarBarContainer, build_dollar_bar
+from custom_indicators.toolbox.filters import z_score_filter_np
 
-META_MODEL_THRESHOLD = 0.65
+META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
 STOP_LOSS_RATIO = 0.05
 
@@ -140,6 +141,20 @@ class MLV1AllOrNothing(Strategy):
         return self.meta_model.predict(self.meta_model_features)[-1]
 
     ############################ jesse 交易逻辑 ############################
+    def z_score_filter(self) -> bool:
+        if not self.should_trade_dollar_bar:
+            return False
+        dollar_bar_close = helpers.get_candle_source(self.dollar_bar_mid_term, "close")
+        res = z_score_filter_np(
+            dollar_bar_close, mean_window=20, std_window=20, z_score=1
+        )[-1]
+        return res == 1
+
+    def filters(self) -> list:
+        return [
+            self.z_score_filter,
+        ]
+
     def should_long(self) -> bool:
         if not self.should_trade_dollar_bar:
             return False
