@@ -340,3 +340,4 @@ storage/logs/etc.txt
 storage/temp/cache_database.pickle
 *.parquet
 custom_indicators/toolbox/feature_selection/fcq_selector_cython.c
+custom_indicators/toolbox/feature_selection/docs/fcq_selector_cython.html
