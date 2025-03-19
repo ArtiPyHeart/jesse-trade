@@ -16,6 +16,7 @@ from tqdm.auto import tqdm
 cimport numpy as np
 cimport cython
 from libc.math cimport fabs, sqrt
+from cython.parallel import prange, parallel
 
 # 让Cython可以操作NumPy数组
 np.import_array()
@@ -106,6 +107,82 @@ def fast_corrwith_cython(double[:, :] X_values, double[:] y_values):
     
     return np.asarray(result)
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def fast_corrwith_cython_parallel(double[:, :] X_values, double[:] y_values, int num_threads=4):
+    """使用OpenMP并行计算特征与目标的相关系数"""
+    # 建议直接使用更高效的v2版本
+    return fast_corrwith_cython_parallel_v2(X_values, y_values, num_threads)
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def fast_corrwith_cython_parallel_v2(double[:, :] X_values, double[:] y_values, int num_threads=4):
+    """使用OpenMP并行计算特征与目标的相关系数 - 高效版"""
+    cdef Py_ssize_t n_samples = X_values.shape[0]
+    cdef Py_ssize_t n_features = X_values.shape[1]
+    cdef np.ndarray[DTYPE_t, ndim=1] result = np.zeros(n_features, dtype=np.float64)
+    
+    # 预计算y的统计量
+    cdef double y_mean = 0.0
+    for i in range(n_samples):
+        y_mean += y_values[i]
+    y_mean /= n_samples
+    
+    cdef double y_std = 0.0
+    for i in range(n_samples):
+        y_std += (y_values[i] - y_mean) ** 2
+    y_std = sqrt(y_std / n_samples)
+    
+    if y_std == 0:
+        return np.asarray(result)
+    
+    # 预计算y的归一化值
+    cdef double[:] y_norm_array = np.empty(n_samples, dtype=np.float64)
+    for i in range(n_samples):
+        y_norm_array[i] = (y_values[i] - y_mean) / y_std
+    
+    # 使用OpenMP并行处理每个特征
+    cdef Py_ssize_t j
+    
+    # 使用OpenMP并行化外层循环
+    with nogil, parallel(num_threads=num_threads):
+        for j in prange(n_features):
+            result[j] = _compute_correlation(X_values, y_norm_array, n_samples, j)
+    
+    return result
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+cdef double _compute_correlation(double[:, :] X, double[:] y_norm, Py_ssize_t n, Py_ssize_t j) nogil:
+    """计算单个特征与归一化y的相关系数（绝对值）"""
+    cdef double x_mean = 0.0
+    cdef double x_std = 0.0
+    cdef double corr = 0.0
+    cdef Py_ssize_t i
+    
+    # 计算x均值
+    for i in range(n):
+        x_mean += X[i, j]
+    x_mean /= n
+    
+    # 计算x标准差
+    for i in range(n):
+        x_std += (X[i, j] - x_mean) ** 2
+    x_std = sqrt(x_std / n)
+    
+    # 如果x是常数，相关系数为0
+    if x_std == 0:
+        return 0.0
+    
+    # 计算相关系数
+    for i in range(n):
+        corr += ((X[i, j] - x_mean) / x_std) * y_norm[i]
+    
+    corr /= n
+    return fabs(corr)
 
 cdef class CythonFCQSelector:
     """
