@@ -24,9 +24,9 @@ np.import_array()
 # 定义类型
 ctypedef np.float64_t DTYPE_t
 
-@cython.boundscheck(False)  # 禁用边界检查
-@cython.wraparound(False)   # 禁用负索引
-@cython.cdivision(True)     # 禁用除零检查
+# @cython.boundscheck(False)  # 禁用边界检查
+# @cython.wraparound(False)   # 禁用负索引
+# @cython.cdivision(True)     # 禁用除零检查
 def fast_corrwith_cython(double[:, :] X_values, double[:] y_values):
     """
     使用Cython加速计算X的每一列与y的相关系数
@@ -107,17 +107,17 @@ def fast_corrwith_cython(double[:, :] X_values, double[:] y_values):
     
     return np.asarray(result)
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
+# @cython.boundscheck(False)
+# @cython.wraparound(False)
+# @cython.cdivision(True)
 def fast_corrwith_cython_parallel(double[:, :] X_values, double[:] y_values, int num_threads=4):
     """使用OpenMP并行计算特征与目标的相关系数"""
     # 建议直接使用更高效的v2版本
     return fast_corrwith_cython_parallel_v2(X_values, y_values, num_threads)
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
+# @cython.boundscheck(False)
+# @cython.wraparound(False)
+# @cython.cdivision(True)
 def fast_corrwith_cython_parallel_v2(double[:, :] X_values, double[:] y_values, int num_threads=4):
     """使用OpenMP并行计算特征与目标的相关系数 - 高效版"""
     cdef Py_ssize_t n_samples = X_values.shape[0]
@@ -153,9 +153,9 @@ def fast_corrwith_cython_parallel_v2(double[:, :] X_values, double[:] y_values, 
     
     return result
 
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
+# @cython.boundscheck(False)
+# @cython.wraparound(False)
+# @cython.cdivision(True)
 cdef double _compute_correlation(double[:, :] X, double[:] y_norm, Py_ssize_t n, Py_ssize_t j) nogil:
     """计算单个特征与归一化y的相关系数（绝对值）"""
     cdef double x_mean = 0.0
