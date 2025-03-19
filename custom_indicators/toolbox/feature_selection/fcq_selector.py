@@ -1,4 +1,5 @@
 import copy
+import os
 from typing import List, Optional, Union
 
 import numba as nb
@@ -6,6 +7,8 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_selection import f_classif, f_regression
 from tqdm.auto import tqdm
+
+nb.set_num_threads(max(1, os.cpu_count() - 1))
 
 
 # numba加速的相关系数计算
