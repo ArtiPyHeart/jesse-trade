@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from jesse import utils, helpers
+from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
