@@ -21,104 +21,98 @@ from cython.parallel import prange, parallel
 # 让Cython可以操作NumPy数组
 np.import_array()
 
+cpu_count = os.cpu_count()
+
 # 定义类型
 ctypedef np.float64_t DTYPE_t
 
-@cython.boundscheck(False)  # 禁用边界检查
-@cython.wraparound(False)   # 禁用负索引
-@cython.cdivision(True)     # 禁用除零检查
-def fast_corrwith_cython(double[:, :] X_values, double[:] y_values):
-    """
-    使用Cython加速计算X的每一列与y的相关系数
+# @cython.boundscheck(False)  # 禁用边界检查
+# @cython.wraparound(False)   # 禁用负索引
+# @cython.cdivision(True)     # 禁用除零检查
+# def fast_corrwith_cython(double[:, :] X_values, double[:] y_values):
+#     """
+#     使用Cython加速计算X的每一列与y的相关系数
 
-    Parameters
-    ----------
-    X_values: np.ndarray
-        特征矩阵，形状为(n_samples, n_features)
-    y_values: np.ndarray
-        目标向量，形状为(n_samples,)
+#     Parameters
+#     ----------
+#     X_values: np.ndarray
+#         特征矩阵，形状为(n_samples, n_features)
+#     y_values: np.ndarray
+#         目标向量，形状为(n_samples,)
 
-    Returns
-    -------
-    np.ndarray
-        每个特征与y的相关系数的绝对值，形状为(n_features,)
-    """
-    cdef Py_ssize_t n_samples = X_values.shape[0]
-    cdef Py_ssize_t n_features = X_values.shape[1]
-    cdef np.ndarray[DTYPE_t, ndim=1] result = np.zeros(n_features, dtype=np.float64)
+#     Returns
+#     -------
+#     np.ndarray
+#         每个特征与y的相关系数的绝对值，形状为(n_features,)
+#     """
+#     cdef Py_ssize_t n_samples = X_values.shape[0]
+#     cdef Py_ssize_t n_features = X_values.shape[1]
+#     cdef np.ndarray[DTYPE_t, ndim=1] result = np.zeros(n_features, dtype=np.float64)
     
-    # 计算y的均值和标准差
-    cdef double y_mean = 0.0
-    cdef double y_std = 0.0
-    cdef double y_sum = 0.0
-    cdef double y_sq_sum = 0.0
-    cdef Py_ssize_t i, j
+#     # 计算y的均值和标准差
+#     cdef double y_mean = 0.0
+#     cdef double y_std = 0.0
+#     cdef double y_sum = 0.0
+#     cdef double y_sq_sum = 0.0
+#     cdef Py_ssize_t i, j
     
-    # 计算y的均值
-    for i in range(n_samples):
-        y_sum += y_values[i]
-    y_mean = y_sum / n_samples
+#     # 计算y的均值
+#     for i in range(n_samples):
+#         y_sum += y_values[i]
+#     y_mean = y_sum / n_samples
     
-    # 计算y的标准差
-    for i in range(n_samples):
-        y_sq_sum += (y_values[i] - y_mean) ** 2
-    y_std = sqrt(y_sq_sum / n_samples)
+#     # 计算y的标准差
+#     for i in range(n_samples):
+#         y_sq_sum += (y_values[i] - y_mean) ** 2
+#     y_std = sqrt(y_sq_sum / n_samples)
     
-    # 如果y是常数，返回全零数组
-    if y_std == 0:
-        return np.asarray(result)
+#     # 如果y是常数，返回全零数组
+#     if y_std == 0:
+#         return np.asarray(result)
     
-    # 为每个特征计算相关系数
-    cdef double x_mean, x_std, x_sum, x_sq_sum, corr_sum, x_val, y_norm
+#     # 为每个特征计算相关系数
+#     cdef double x_mean, x_std, x_sum, x_sq_sum, corr_sum, x_val, y_norm
     
-    # 预先计算规范化的y值
-    cdef double[:] y_norm_array = np.empty(n_samples, dtype=np.float64)
-    for i in range(n_samples):
-        y_norm_array[i] = (y_values[i] - y_mean) / y_std
+#     # 预先计算规范化的y值
+#     cdef double[:] y_norm_array = np.empty(n_samples, dtype=np.float64)
+#     for i in range(n_samples):
+#         y_norm_array[i] = (y_values[i] - y_mean) / y_std
     
-    for j in range(n_features):
-        x_sum = 0.0
-        x_sq_sum = 0.0
+#     for j in range(n_features):
+#         x_sum = 0.0
+#         x_sq_sum = 0.0
         
-        # 计算x的均值
-        for i in range(n_samples):
-            x_sum += X_values[i, j]
-        x_mean = x_sum / n_samples
+#         # 计算x的均值
+#         for i in range(n_samples):
+#             x_sum += X_values[i, j]
+#         x_mean = x_sum / n_samples
         
-        # 计算x的标准差
-        for i in range(n_samples):
-            x_sq_sum += (X_values[i, j] - x_mean) ** 2
-        x_std = sqrt(x_sq_sum / n_samples)
+#         # 计算x的标准差
+#         for i in range(n_samples):
+#             x_sq_sum += (X_values[i, j] - x_mean) ** 2
+#         x_std = sqrt(x_sq_sum / n_samples)
         
-        # 如果x是常数，相关系数为0
-        if x_std == 0:
-            result[j] = 0.0
-            continue
+#         # 如果x是常数，相关系数为0
+#         if x_std == 0:
+#             result[j] = 0.0
+#             continue
         
-        # 计算相关系数
-        corr_sum = 0.0
-        for i in range(n_samples):
-            x_val = (X_values[i, j] - x_mean) / x_std
-            corr_sum += x_val * y_norm_array[i]
+#         # 计算相关系数
+#         corr_sum = 0.0
+#         for i in range(n_samples):
+#             x_val = (X_values[i, j] - x_mean) / x_std
+#             corr_sum += x_val * y_norm_array[i]
         
-        # 相关系数是协方差除以标准差的乘积
-        corr = corr_sum / n_samples
-        result[j] = fabs(corr)  # 取绝对值
+#         # 相关系数是协方差除以标准差的乘积
+#         corr = corr_sum / n_samples
+#         result[j] = fabs(corr)  # 取绝对值
     
-    return np.asarray(result)
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
-def fast_corrwith_cython_parallel(double[:, :] X_values, double[:] y_values, int num_threads=4):
-    """使用OpenMP并行计算特征与目标的相关系数"""
-    # 建议直接使用更高效的v2版本
-    return fast_corrwith_cython_parallel_v2(X_values, y_values, num_threads)
+#     return np.asarray(result)
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-def fast_corrwith_cython_parallel_v2(double[:, :] X_values, double[:] y_values, int num_threads=4):
+def fast_corrwith_cython_parallel(double[:, :] X_values, double[:] y_values, int num_threads=cpu_count):
     """使用OpenMP并行计算特征与目标的相关系数 - 高效版"""
     cdef Py_ssize_t n_samples = X_values.shape[0]
     cdef Py_ssize_t n_features = X_values.shape[1]
@@ -153,9 +147,9 @@ def fast_corrwith_cython_parallel_v2(double[:, :] X_values, double[:] y_values, 
     
     return result
 
-# @cython.boundscheck(False)
-# @cython.wraparound(False)
-# @cython.cdivision(True)
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
 cdef double _compute_correlation(double[:, :] X, double[:] y_norm, Py_ssize_t n, Py_ssize_t j) nogil:
     """计算单个特征与归一化y的相关系数（绝对值）"""
     cdef double x_mean = 0.0
@@ -290,7 +284,7 @@ cdef class CythonFCQSelector:
         remaining_indices = [feature_to_idx[f] for f in remaining]
         X_remaining = X_data[:, remaining_indices]
         y_values = X_data[:, top_feature_idx]
-        redundance = fast_corrwith_cython(X_remaining, y_values)
+        redundance = fast_corrwith_cython_parallel(X_remaining, y_values)
 
         # 确定要选择的特征数量
         if self.max_features is None:
@@ -308,6 +302,7 @@ cdef class CythonFCQSelector:
             print(f"➤ 开始MRMR迭代选择过程...")
 
         # 主循环：迭代选择特征
+        eps = 1e-10
         for i in tqdm(
             range(n_to_select),
             disable=not self.verbose,
@@ -321,7 +316,6 @@ cdef class CythonFCQSelector:
             if i == 0:
                 # 第一轮迭代，冗余度是一维的
                 # 计算MRMR
-                eps = 1e-10
                 safe_redundance = np.maximum(redundance, eps)
                 mrmr_scores = relevance / safe_redundance
                 n = np.argmax(mrmr_scores)
@@ -343,7 +337,6 @@ cdef class CythonFCQSelector:
                 mean_redundance = np.mean(redundance, axis=0)
 
                 # 计算MRMR
-                eps = 1e-10
                 safe_redundance = np.maximum(mean_redundance, eps)
                 mrmr_scores = relevance / safe_redundance
                 n = np.argmax(mrmr_scores)
@@ -367,7 +360,7 @@ cdef class CythonFCQSelector:
             # 计算新的冗余度
             X_remaining = X_data[:, remaining_indices]
             y_values = X_data[:, feature_idx]
-            new_redundance = fast_corrwith_cython(X_remaining, y_values)
+            new_redundance = fast_corrwith_cython_parallel(X_remaining, y_values)
 
             # 第一次添加时，创建2D数组
             if i == 0:

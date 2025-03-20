@@ -141,19 +141,19 @@ class MLV1AllOrNothing(Strategy):
         return self.meta_model.predict(self.meta_model_features)[-1]
 
     ############################ jesse 交易逻辑 ############################
-    def z_score_filter(self) -> bool:
-        if not self.should_trade_dollar_bar:
-            return False
-        dollar_bar_close = helpers.get_candle_source(self.dollar_bar_mid_term, "close")
-        res = z_score_filter_np(
-            dollar_bar_close, mean_window=20, std_window=20, z_score=1
-        )[-1]
-        return res == 1
+    # def z_score_filter(self) -> bool:
+    #     if not self.should_trade_dollar_bar:
+    #         return False
+    #     dollar_bar_close = helpers.get_candle_source(self.dollar_bar_mid_term, "close")
+    #     res = z_score_filter_np(
+    #         dollar_bar_close, mean_window=20, std_window=20, z_score=1
+    #     )[-1]
+    #     return res == 1
 
-    def filters(self) -> list:
-        return [
-            self.z_score_filter,
-        ]
+    # def filters(self) -> list:
+    #     return [
+    #         self.z_score_filter,
+    #     ]
 
     def should_long(self) -> bool:
         if not self.should_trade_dollar_bar:
