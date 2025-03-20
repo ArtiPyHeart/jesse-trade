@@ -35,12 +35,12 @@ setup(
         extensions,
         compiler_directives={
             "language_level": "3",
-            # "boundscheck": False,  # 禁用边界检查
-            # "wraparound": False,  # 禁用负索引
-            # "cdivision": True,  # 禁用除零检查
-            # "initializedcheck": False,  # 禁用初始化检查
-            # "nonecheck": False,  # 禁用None检查
-            # "overflowcheck": False,  # 禁用溢出检查
+            "boundscheck": False,  # 禁用边界检查
+            "wraparound": False,  # 禁用负索引
+            "cdivision": True,  # 禁用除零检查
+            "initializedcheck": False,  # 禁用初始化检查
+            "nonecheck": False,  # 禁用None检查
+            "overflowcheck": False,  # 禁用溢出检查
             "profile": False,  # 禁用性能分析
             "linetrace": False,  # 禁用行跟踪
         },
