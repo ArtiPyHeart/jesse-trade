@@ -22,7 +22,10 @@ from custom_indicators.config import (
 )
 from custom_indicators.model import get_meta_model, get_side_model
 from custom_indicators.toolbox.bet_sizing import discretize_position
-from custom_indicators.toolbox.dollar_bar import DollarBarContainer, build_dollar_bar
+from custom_indicators.toolbox.bar.dollar_bar import (
+    DollarBarContainer,
+    build_dollar_bar,
+)
 
 DISCRETE_THRESHOLD = 0.05
 

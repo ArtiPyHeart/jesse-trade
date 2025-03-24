@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from jesse import helpers, utils
+from jesse import utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
@@ -21,8 +21,10 @@ from custom_indicators.config import (
     SIDE_SHORT,
 )
 from custom_indicators.model import get_meta_model, get_side_model
-from custom_indicators.toolbox.dollar_bar import DollarBarContainer, build_dollar_bar
-from custom_indicators.toolbox.filters import z_score_filter_np
+from custom_indicators.toolbox.bar.dollar_bar import (
+    DollarBarContainer,
+    build_dollar_bar,
+)
 
 META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
