@@ -33,7 +33,7 @@ from custom_indicators.dominant_cycle import (
 )
 from custom_indicators.utils.math import ddt, dt, lag
 
-LAG_MAX = 20
+LAG_MAX = 40
 
 
 class FeatureCalculator:

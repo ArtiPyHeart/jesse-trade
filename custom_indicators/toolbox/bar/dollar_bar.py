@@ -4,7 +4,7 @@ from jesse import helpers
 
 
 def estimate_dollar_bar_threshold(
-    candles: np.ndarray, num_minutes: int, with_sign: bool = True
+    candles: np.ndarray, num_minutes: int, with_sign: bool = False
 ) -> float:
     """
     通过jesse的1分钟k线数据，估计出更高时间周期的dollar bar的阈值
@@ -72,7 +72,7 @@ def estimate_dollar_bar_threshold(
 
 @numba.njit
 def build_dollar_bar(
-    candles: np.ndarray, threshold: float, max_bars: int = -1, with_sign: bool = True
+    candles: np.ndarray, threshold: float, max_bars: int = -1, with_sign: bool = False
 ) -> np.ndarray:
     """
     通过jesse的1分钟k线数据，构建更高时间周期的dollar bar，由近到远构建dollar bar
@@ -169,7 +169,7 @@ class DollarBarContainer:
     5. 提供状态指示器，表明最新dollar bar是否已完成构建
     """
 
-    def __init__(self, threshold: float, max_bars: int = 500, with_sign: bool = True):
+    def __init__(self, threshold: float, max_bars: int = 500, with_sign: bool = False):
         """
         初始化Dollar Bar容器
 

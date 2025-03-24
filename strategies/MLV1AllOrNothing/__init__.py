@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from jesse import utils, helpers
+from jesse import utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
@@ -15,27 +15,16 @@ from custom_indicators.config import (
     META_DOLLAR_BAR_LONG_FEATURES,
     META_DOLLAR_BAR_MID_FEATURES,
     META_DOLLAR_BAR_SHORT_FEATURES,
-    META_RANGE_BAR_LONG_FEATURES,
-    META_RANGE_BAR_MID_FEATURES,
-    META_RANGE_BAR_SHORT_FEATURES,
-    RANGE_BAR_LONG_TERM,
-    RANGE_BAR_MID_TERM,
-    RANGE_BAR_SHORT_TERM,
-    RANGE_BAR_THRESHOLD_LONG,
-    RANGE_BAR_THRESHOLD_MID,
-    RANGE_BAR_THRESHOLD_SHORT,
     SIDE_ALL,
     SIDE_DOLLAR_BAR_LONG_FEATURES,
     SIDE_DOLLAR_BAR_MID_FEATURES,
     SIDE_DOLLAR_BAR_SHORT_FEATURES,
-    SIDE_RANGE_BAR_LONG_FEATURES,
-    SIDE_RANGE_BAR_MID_FEATURES,
-    SIDE_RANGE_BAR_SHORT_FEATURES,
 )
 from custom_indicators.model import get_meta_model, get_side_model
-from custom_indicators.toolbox.bar.dollar_bar import build_dollar_bar
-from custom_indicators.toolbox.bar.range_bar import RangeBarContainer, build_range_bar
-from custom_indicators.toolbox.filters import z_score_filter_np
+from custom_indicators.toolbox.bar.dollar_bar import (
+    DollarBarContainer,
+    build_dollar_bar,
+)
 
 META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
@@ -49,14 +38,10 @@ class MLV1AllOrNothing(Strategy):
         self.meta_model = get_meta_model(self.is_livetrading)
         self.side_model = get_side_model(self.is_livetrading)
 
-        self.main_bar_container = RangeBarContainer(
-            RANGE_BAR_THRESHOLD_MID,
+        self.main_bar_container = DollarBarContainer(
+            DOLLAR_BAR_THRESHOLD_MID,
             max_bars=5000,
         )
-
-        self.range_bar_short_term_fc = FeatureCalculator()
-        self.range_bar_mid_term_fc = FeatureCalculator()
-        self.range_bar_long_term_fc = FeatureCalculator()
 
         self.dollar_bar_short_term_fc = FeatureCalculator()
         self.dollar_bar_mid_term_fc = FeatureCalculator()
@@ -75,29 +60,6 @@ class MLV1AllOrNothing(Strategy):
 
     @property
     @cached
-    def range_bar_short_term(self) -> np.ndarray:
-        return build_range_bar(
-            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
-            RANGE_BAR_THRESHOLD_SHORT,
-            max_bars=5000,
-        )
-
-    @property
-    @cached
-    def range_bar_mid_term(self) -> np.ndarray:
-        return self.main_bar_container.get_range_bars()
-
-    @property
-    @cached
-    def range_bar_long_term(self) -> np.ndarray:
-        return build_range_bar(
-            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
-            RANGE_BAR_THRESHOLD_LONG,
-            max_bars=5000,
-        )
-
-    @property
-    @cached
     def dollar_bar_short_term(self) -> np.ndarray:
         return build_dollar_bar(
             self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
@@ -107,11 +69,7 @@ class MLV1AllOrNothing(Strategy):
 
     @property
     def dollar_bar_mid_term(self) -> np.ndarray:
-        return build_dollar_bar(
-            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
-            DOLLAR_BAR_THRESHOLD_MID,
-            max_bars=5000,
-        )
+        return self.main_bar_container.get_dollar_bars()
 
     @property
     @cached
@@ -123,49 +81,6 @@ class MLV1AllOrNothing(Strategy):
         )
 
     ############################ 机器学习模型 ############################
-    @property
-    @cached
-    def range_bar_short_term_features(self) -> dict:
-        self.range_bar_short_term_fc.load(self.range_bar_short_term)
-        feature_names = sorted(
-            [
-                i.replace(f"{RANGE_BAR_SHORT_TERM}_", "")
-                for i in set(
-                    SIDE_RANGE_BAR_SHORT_FEATURES + META_RANGE_BAR_SHORT_FEATURES
-                )
-            ]
-        )
-        features = self.range_bar_short_term_fc.get(feature_names)
-        return {f"{RANGE_BAR_SHORT_TERM}_{k}": v for k, v in features.items()}
-
-    @property
-    @cached
-    def range_bar_mid_term_features(self) -> dict:
-        self.range_bar_mid_term_fc.load(self.range_bar_mid_term)
-        feature_names = sorted(
-            [
-                i.replace(f"{RANGE_BAR_MID_TERM}_", "")
-                for i in set(SIDE_RANGE_BAR_MID_FEATURES + META_RANGE_BAR_MID_FEATURES)
-            ]
-        )
-        features = self.range_bar_mid_term_fc.get(feature_names)
-        return {f"{RANGE_BAR_MID_TERM}_{k}": v for k, v in features.items()}
-
-    @property
-    @cached
-    def range_bar_long_term_features(self) -> dict:
-        self.range_bar_long_term_fc.load(self.range_bar_long_term)
-        feature_names = sorted(
-            [
-                i.replace(f"{RANGE_BAR_LONG_TERM}_", "")
-                for i in set(
-                    SIDE_RANGE_BAR_LONG_FEATURES + META_RANGE_BAR_LONG_FEATURES
-                )
-            ]
-        )
-        features = self.range_bar_long_term_fc.get(feature_names)
-        return {f"{RANGE_BAR_LONG_TERM}_{k}": v for k, v in features.items()}
-
     @property
     @cached
     def dollar_bar_short_term_features(self) -> dict:
@@ -214,9 +129,6 @@ class MLV1AllOrNothing(Strategy):
     @property
     def side_model_features(self) -> pd.DataFrame:
         all_features = {
-            **self.range_bar_short_term_features,
-            **self.range_bar_mid_term_features,
-            **self.range_bar_long_term_features,
             **self.dollar_bar_short_term_features,
             **self.dollar_bar_mid_term_features,
             **self.dollar_bar_long_term_features,
@@ -232,9 +144,6 @@ class MLV1AllOrNothing(Strategy):
     @property
     def meta_model_features(self) -> pd.DataFrame:
         all_features = {
-            **self.range_bar_short_term_features,
-            **self.range_bar_mid_term_features,
-            **self.range_bar_long_term_features,
             **self.dollar_bar_short_term_features,
             **self.dollar_bar_mid_term_features,
             **self.dollar_bar_long_term_features,
@@ -249,19 +158,19 @@ class MLV1AllOrNothing(Strategy):
         return self.meta_model.predict(self.meta_model_features)[-1]
 
     ############################ jesse 交易逻辑 ############################
-    def z_score_filter(self) -> bool:
-        if not self.should_trade_main_bar:
-            return False
-        dollar_bar_close = helpers.get_candle_source(self.dollar_bar_mid_term, "close")
-        res = z_score_filter_np(
-            dollar_bar_close, mean_window=5, std_window=5, z_score=1
-        )
-        return res > 0.5
+    # def z_score_filter(self) -> bool:
+    #     if not self.should_trade_main_bar:
+    #         return False
+    #     dollar_bar_close = helpers.get_candle_source(self.dollar_bar_mid_term, "close")
+    #     res = z_score_filter_np(
+    #         dollar_bar_close, mean_window=5, std_window=5, z_score=1
+    #     )
+    #     return res > 0.5
 
-    def filters(self) -> list:
-        return [
-            self.z_score_filter,
-        ]
+    # def filters(self) -> list:
+    #     return [
+    #         self.z_score_filter,
+    #     ]
 
     def should_long(self) -> bool:
         if not self.should_trade_main_bar:
