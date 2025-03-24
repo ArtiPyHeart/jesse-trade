@@ -255,8 +255,8 @@ class MLV1AllOrNothing(Strategy):
         dollar_bar_close = helpers.get_candle_source(self.dollar_bar_mid_term, "close")
         res = z_score_filter_np(
             dollar_bar_close, mean_window=5, std_window=5, z_score=1
-        )[-1]
-        return res == 1
+        )
+        return res > 0.5
 
     def filters(self) -> list:
         return [
