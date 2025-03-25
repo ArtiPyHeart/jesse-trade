@@ -4,23 +4,23 @@ from jesse import utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
-from custom_indicators.config import (
+from model.config import (
+    DOLLAR_BAR_LONG_TERM,
+    DOLLAR_BAR_MID_TERM,
+    DOLLAR_BAR_SHORT_TERM,
     DOLLAR_BAR_THRESHOLD_LONG,
     DOLLAR_BAR_THRESHOLD_MID,
     DOLLAR_BAR_THRESHOLD_SHORT,
-    LONG_TERM,
     META_ALL,
-    META_LONG,
-    META_MID,
-    META_SHORT,
-    MID_TERM,
-    SHORT_TERM,
+    META_DOLLAR_BAR_LONG_FEATURES,
+    META_DOLLAR_BAR_MID_FEATURES,
+    META_DOLLAR_BAR_SHORT_FEATURES,
     SIDE_ALL,
-    SIDE_LONG,
-    SIDE_MID,
-    SIDE_SHORT,
+    SIDE_DOLLAR_BAR_LONG_FEATURES,
+    SIDE_DOLLAR_BAR_MID_FEATURES,
+    SIDE_DOLLAR_BAR_SHORT_FEATURES,
 )
-from custom_indicators.model import get_meta_model, get_side_model
+from model.config import get_meta_model, get_side_model
 from custom_indicators.toolbox.bet_sizing import discretize_position
 from custom_indicators.toolbox.bar.dollar_bar import (
     DollarBarContainer,
@@ -95,30 +95,30 @@ class MLV1Partial(Strategy):
     def dollar_bar_short_term_features(self) -> dict:
         self.dollar_bar_short_term_fc.load(self.dollar_bar_short_term)
         feature_names = sorted(
-            [i.replace(f"{SHORT_TERM}_", "") for i in set(SIDE_SHORT + META_SHORT)]
+            [i.replace(f"{DOLLAR_BAR_SHORT_TERM}_", "") for i in set(SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES)]
         )
         features = self.dollar_bar_short_term_fc.get(feature_names)
-        return {f"{SHORT_TERM}_{k}": v for k, v in features.items()}
+        return {f"{DOLLAR_BAR_SHORT_TERM}_{k}": v for k, v in features.items()}
 
     @property
     @cached
     def dollar_bar_mid_term_features(self) -> dict:
         self.dollar_bar_mid_term_fc.load(self.dollar_bar_mid_term)
         feature_names = sorted(
-            [i.replace(f"{MID_TERM}_", "") for i in set(SIDE_MID + META_MID)]
+            [i.replace(f"{DOLLAR_BAR_MID_TERM}_", "") for i in set(SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES)]
         )
         features = self.dollar_bar_mid_term_fc.get(feature_names)
-        return {f"{MID_TERM}_{k}": v for k, v in features.items()}
+        return {f"{DOLLAR_BAR_MID_TERM}_{k}": v for k, v in features.items()}
 
     @property
     @cached
     def dollar_bar_long_term_features(self) -> dict:
         self.dollar_bar_long_term_fc.load(self.dollar_bar_long_term)
         feature_names = sorted(
-            [i.replace(f"{LONG_TERM}_", "") for i in set(SIDE_LONG + META_LONG)]
+            [i.replace(f"{DOLLAR_BAR_LONG_TERM}_", "") for i in set(SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES)]
         )
         features = self.dollar_bar_long_term_fc.get(feature_names)
-        return {f"{LONG_TERM}_{k}": v for k, v in features.items()}
+        return {f"{DOLLAR_BAR_LONG_TERM}_{k}": v for k, v in features.items()}
 
     @property
     def side_model_features(self) -> pd.DataFrame:

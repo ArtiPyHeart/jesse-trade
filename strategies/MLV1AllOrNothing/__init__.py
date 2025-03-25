@@ -4,7 +4,7 @@ from jesse import utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
-from custom_indicators.config import (
+from model.config import (
     DOLLAR_BAR_LONG_TERM,
     DOLLAR_BAR_MID_TERM,
     DOLLAR_BAR_SHORT_TERM,
@@ -20,7 +20,7 @@ from custom_indicators.config import (
     SIDE_DOLLAR_BAR_MID_FEATURES,
     SIDE_DOLLAR_BAR_SHORT_FEATURES,
 )
-from custom_indicators.model import get_meta_model, get_side_model
+from model.config import get_meta_model, get_side_model
 from custom_indicators.toolbox.bar.dollar_bar import (
     DollarBarContainer,
     build_dollar_bar,
