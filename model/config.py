@@ -3,6 +3,14 @@ from pathlib import Path
 
 import lightgbm as lgb
 
+DOLLAR_BAR_SHORT_TERM = "25m"
+DOLLAR_BAR_MID_TERM = "90m"
+DOLLAR_BAR_LONG_TERM = "5h"
+
+DOLLAR_BAR_THRESHOLD_SHORT = 204684512.28151602
+DOLLAR_BAR_THRESHOLD_MID = 789497401.657276
+DOLLAR_BAR_THRESHOLD_LONG = 2660898647.659708
+
 meta_model_path = Path(__file__).parent / "model_meta.txt"
 meta_model_prod_path = Path(__file__).parent / "model_meta_prod.txt"
 
@@ -28,12 +36,9 @@ def get_side_model(is_livetrading: bool):
         side_model = lgb.Booster(model_file=side_model_path)
         return side_model
 
+
 with open(Path(__file__).parent / "feature_info.json", "r") as f:
     feature_info = json.load(f)
-
-DOLLAR_BAR_SHORT_TERM = "30m"
-DOLLAR_BAR_MID_TERM = "2h"
-DOLLAR_BAR_LONG_TERM = "6h"
 
 SIDE_DOLLAR_BAR_SHORT_FEATURES = feature_info["side"][DOLLAR_BAR_SHORT_TERM]
 SIDE_DOLLAR_BAR_MID_FEATURES = feature_info["side"][DOLLAR_BAR_MID_TERM]
@@ -58,7 +63,3 @@ META_DOLLAR_BAR_ALL = (
     + META_DOLLAR_BAR_LONG_FEATURES
 )
 META_ALL = META_DOLLAR_BAR_ALL + META_MODEL_SIDE_RES
-
-DOLLAR_BAR_THRESHOLD_SHORT = 248550043.9622903
-DOLLAR_BAR_THRESHOLD_MID = 1052682535.8991117
-DOLLAR_BAR_THRESHOLD_LONG = 3216529968.747286

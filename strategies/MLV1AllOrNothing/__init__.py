@@ -4,6 +4,10 @@ from jesse import utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
+from custom_indicators.toolbox.bar.dollar_bar import (
+    DollarBarContainer,
+    build_dollar_bar,
+)
 from model.config import (
     DOLLAR_BAR_LONG_TERM,
     DOLLAR_BAR_MID_TERM,
@@ -19,11 +23,8 @@ from model.config import (
     SIDE_DOLLAR_BAR_LONG_FEATURES,
     SIDE_DOLLAR_BAR_MID_FEATURES,
     SIDE_DOLLAR_BAR_SHORT_FEATURES,
-)
-from model.config import get_meta_model, get_side_model
-from custom_indicators.toolbox.bar.dollar_bar import (
-    DollarBarContainer,
-    build_dollar_bar,
+    get_meta_model,
+    get_side_model,
 )
 
 META_MODEL_THRESHOLD = 0.5
