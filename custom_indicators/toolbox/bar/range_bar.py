@@ -62,7 +62,9 @@ def build_range_bar(
             bar_volume += v
 
         # 达到阈值后把这根 bar 放进结果
-        price_change = max(bar_close, bar_open) / min(bar_close, bar_open) - 1
+        price_change = np.log(max(bar_close, bar_open)) - np.log(
+            min(bar_close, bar_open)
+        )
         if price_change >= threshold:
             # 记录 bar
             bars[bar_index, 0] = bar_timestamp
@@ -188,9 +190,8 @@ class RangeBarContainer:
             self._bar_low = min(l, self._bar_low)
             self._bar_volume += v
 
-        price_change = (
-            max(self._bar_close, self._bar_open) / min(self._bar_close, self._bar_open)
-            - 1
+        price_change = np.log(max(self._bar_close, self._bar_open)) - np.log(
+            min(self._bar_close, self._bar_open)
         )
         if price_change >= self.threshold:
             # 构建新的完整bar
