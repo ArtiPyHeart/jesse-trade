@@ -103,7 +103,7 @@ class RangeBarContainer:
 
     """
 
-    def __init__(self, threshold: float, max_bars: int = 500):
+    def __init__(self, threshold: float, max_bars: int = 5000):
         self.threshold = threshold
         self.max_bars = max_bars
 

@@ -175,7 +175,7 @@ class DollarBarContainer:
     """
 
     def __init__(
-        self, threshold: float, max_bars: int = 500, with_sign: bool = with_sign
+        self, threshold: float, max_bars: int = 5000, with_sign: bool = with_sign
     ):
         """
         初始化Dollar Bar容器
