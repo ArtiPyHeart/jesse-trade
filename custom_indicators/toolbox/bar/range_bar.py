@@ -25,7 +25,6 @@ def build_range_bar(
     bar_index = 0
 
     # 用于累积 dollar bar
-    current_dollar_volume = 0.0
     bar_open = 0.0
     bar_close = 0.0
     bar_high = 0.0
