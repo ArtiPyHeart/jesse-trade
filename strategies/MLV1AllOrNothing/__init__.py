@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from jesse import utils
+from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
@@ -30,6 +30,7 @@ from model.config import (
 META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
 STOP_LOSS_RATIO = 0.05
+ORDER_TIMEOUT = 300 * 1000
 
 
 class MLV1AllOrNothing(Strategy):
@@ -54,6 +55,12 @@ class MLV1AllOrNothing(Strategy):
         self.main_bar_container.update_with_candle(
             self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
         )
+        # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
+        for order in self.orders:
+            if (
+                order.is_active() or order.is_partially_filled()
+            ) and helpers.now_to_timestamp() - order.created_at > ORDER_TIMEOUT:
+                order.cancel()
 
     @property
     def should_trade_main_bar(self) -> bool:
@@ -197,11 +204,11 @@ class MLV1AllOrNothing(Strategy):
 
     def should_cancel_entry(self) -> bool:
         # Only for limit orders，当提交的限价单没有成交时，是否在下一个candle取消
-        return True
+        return False
 
     def go_long(self):
         # 打开多仓
-        entry_price = self.price
+        entry_price = self.price - 0.1
         qty = utils.size_to_qty(
             self.available_margin, entry_price, fee_rate=self.fee_rate
         )
@@ -210,7 +217,7 @@ class MLV1AllOrNothing(Strategy):
 
     def go_short(self):
         # 打开空仓
-        entry_price = self.price
+        entry_price = self.price + 0.1
         qty = utils.size_to_qty(
             self.available_margin, entry_price, fee_rate=self.fee_rate
         )
