@@ -49,18 +49,20 @@ class MLV1AllOrNothing(Strategy):
         self.dollar_bar_mid_term_fc = FeatureCalculator()
         self.dollar_bar_long_term_fc = FeatureCalculator()
 
-    ############################### dollar bar 预处理 ##############################
+    def cancel_active_orders(self):
+        # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
+        alive_orders = [o for o in self.orders if o.is_active or o.is_partially_filled]
+        for order in alive_orders:
+            if helpers.now_to_timestamp() - order.created_at > ORDER_TIMEOUT:
+                order.cancel()
 
+    ############################### dollar bar 预处理 ##############################
     def before(self):
         self.main_bar_container.update_with_candle(
             self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
         )
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
-        for order in self.orders:
-            if (
-                order.is_active() or order.is_partially_filled()
-            ) and helpers.now_to_timestamp() - order.created_at > ORDER_TIMEOUT:
-                order.cancel()
+        self.cancel_active_orders()
 
     @property
     def should_trade_main_bar(self) -> bool:
@@ -207,6 +209,7 @@ class MLV1AllOrNothing(Strategy):
         return False
 
     def go_long(self):
+        self.cancel_active_orders()
         # 打开多仓
         entry_price = self.price - 0.1
         qty = utils.size_to_qty(
@@ -216,6 +219,7 @@ class MLV1AllOrNothing(Strategy):
         self.stop_loss = qty, entry_price * (1 - STOP_LOSS_RATIO)
 
     def go_short(self):
+        self.cancel_active_orders()
         # 打开空仓
         entry_price = self.price + 0.1
         qty = utils.size_to_qty(
