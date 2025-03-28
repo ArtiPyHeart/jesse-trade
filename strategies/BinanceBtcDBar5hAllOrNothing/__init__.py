@@ -8,7 +8,8 @@ from custom_indicators.toolbox.bar.dollar_bar import (
     DollarBarContainer,
     build_dollar_bar,
 )
-from model.config import (
+
+from .config import (
     DOLLAR_BAR_LONG_TERM,
     DOLLAR_BAR_MID_TERM,
     DOLLAR_BAR_SHORT_TERM,
@@ -33,7 +34,7 @@ STOP_LOSS_RATIO = 0.05
 ORDER_TIMEOUT = 300 * 1000
 
 
-class MLV1AllOrNothing(Strategy):
+class BinanceBtcDBar5hAllOrNothing(Strategy):
 
     def __init__(self):
         super().__init__()
@@ -99,8 +100,8 @@ class MLV1AllOrNothing(Strategy):
             [
                 i.replace(f"{DOLLAR_BAR_SHORT_TERM}_", "")
                 for i in set(
-                    SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES
-                )
+                SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES
+            )
             ]
         )
         features = self.dollar_bar_short_term_fc.get(feature_names)
@@ -114,8 +115,8 @@ class MLV1AllOrNothing(Strategy):
             [
                 i.replace(f"{DOLLAR_BAR_MID_TERM}_", "")
                 for i in set(
-                    SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES
-                )
+                SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES
+            )
             ]
         )
         features = self.dollar_bar_mid_term_fc.get(feature_names)
@@ -129,8 +130,8 @@ class MLV1AllOrNothing(Strategy):
             [
                 i.replace(f"{DOLLAR_BAR_LONG_TERM}_", "")
                 for i in set(
-                    SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES
-                )
+                SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES
+            )
             ]
         )
         features = self.dollar_bar_long_term_fc.get(feature_names)
