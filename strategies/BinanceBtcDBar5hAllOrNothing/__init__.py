@@ -60,7 +60,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
     ############################### dollar bar 预处理 ##############################
     def before(self):
         self.main_bar_container.update_with_candle(
-            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
+            self.candles
         )
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
         self.cancel_active_orders()
@@ -73,7 +73,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
     @cached
     def dollar_bar_short_term(self) -> np.ndarray:
         return build_dollar_bar(
-            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
+            self.candles,
             DOLLAR_BAR_THRESHOLD_SHORT,
             max_bars=5000,
         )
@@ -86,7 +86,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
     @cached
     def dollar_bar_long_term(self) -> np.ndarray:
         return build_dollar_bar(
-            self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m"),
+            self.candles,
             DOLLAR_BAR_THRESHOLD_LONG,
             max_bars=5000,
         )
