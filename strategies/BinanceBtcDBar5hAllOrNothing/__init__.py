@@ -35,7 +35,6 @@ ORDER_TIMEOUT = 300 * 1000
 
 
 class BinanceBtcDBar5hAllOrNothing(Strategy):
-
     def __init__(self):
         super().__init__()
         self.meta_model = get_meta_model(self.is_livetrading)
@@ -59,9 +58,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
 
     ############################### dollar bar 预处理 ##############################
     def before(self):
-        self.main_bar_container.update_with_candle(
-            self.candles
-        )
+        self.main_bar_container.update_with_candle(self.candles)
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
         self.cancel_active_orders()
 
@@ -100,8 +97,8 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
             [
                 i.replace(f"{DOLLAR_BAR_SHORT_TERM}_", "")
                 for i in set(
-                SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES
-            )
+                    SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES
+                )
             ]
         )
         features = self.dollar_bar_short_term_fc.get(feature_names)
@@ -115,8 +112,8 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
             [
                 i.replace(f"{DOLLAR_BAR_MID_TERM}_", "")
                 for i in set(
-                SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES
-            )
+                    SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES
+                )
             ]
         )
         features = self.dollar_bar_mid_term_fc.get(feature_names)
@@ -130,8 +127,8 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
             [
                 i.replace(f"{DOLLAR_BAR_LONG_TERM}_", "")
                 for i in set(
-                SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES
-            )
+                    SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES
+                )
             ]
         )
         features = self.dollar_bar_long_term_fc.get(feature_names)
@@ -214,7 +211,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
         # 打开多仓
         entry_price = self.price - 0.1
         qty = utils.size_to_qty(
-            self.available_margin, entry_price, fee_rate=self.fee_rate
+            self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
         )
         self.buy = qty, entry_price
         self.stop_loss = qty, entry_price * (1 - STOP_LOSS_RATIO)
@@ -224,7 +221,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
         # 打开空仓
         entry_price = self.price + 0.1
         qty = utils.size_to_qty(
-            self.available_margin, entry_price, fee_rate=self.fee_rate
+            self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
         )
         self.sell = qty, entry_price
         self.stop_loss = qty, entry_price * (1 + STOP_LOSS_RATIO)
