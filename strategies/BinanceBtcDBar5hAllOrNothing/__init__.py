@@ -211,7 +211,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
         # 打开多仓
         entry_price = self.price - 0.1
         qty = utils.size_to_qty(
-            self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
+            self.available_margin, entry_price, fee_rate=self.fee_rate
         )
         self.buy = qty, entry_price
         self.stop_loss = qty, entry_price * (1 - STOP_LOSS_RATIO)
@@ -221,7 +221,7 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
         # 打开空仓
         entry_price = self.price + 0.1
         qty = utils.size_to_qty(
-            self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
+            self.available_margin, entry_price, fee_rate=self.fee_rate
         )
         self.sell = qty, entry_price
         self.stop_loss = qty, entry_price * (1 + STOP_LOSS_RATIO)
