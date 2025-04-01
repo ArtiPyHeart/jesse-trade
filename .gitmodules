@@ -1,6 +1,3 @@
 [submodule "extern/mlfinlab"]
 	path = extern/mlfinlab
 	url = https://github.com/quantopian/mlfinlab.git
-[submodule "extern/feature_engine"]
-	path = extern/feature_engine
-	url = https://github.com/ArtiPyHeart/feature_engine.git
