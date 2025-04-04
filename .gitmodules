@@ -1,3 +1,6 @@
 [submodule "extern/mlfinlab"]
 	path = extern/mlfinlab
 	url = https://github.com/quantopian/mlfinlab.git
+[submodule "extern/ndd"]
+	path = extern/ndd
+	url = https://github.com/simomarsili/ndd.git
