@@ -1,5 +1,38 @@
 import numpy as np
-from numba import njit
+from jesse.indicators.high_pass import high_pass_fast
+from jesse.indicators.high_pass_2_pole import high_pass_2_pole_fast
+from jesse.indicators.supersmoother import supersmoother_fast
+from jesse.indicators.supersmoother_3_pole import (
+    supersmoother_fast as super_smoother_3_pole_fast,
+)
+
+
+def high_pass_filter(source: np.ndarray, period: int = 48) -> np.ndarray:
+    """
+    高通滤波器
+    """
+    return high_pass_fast(source, period)
+
+
+def high_pass_2_pole_filter(source: np.ndarray, period: int = 48) -> np.ndarray:
+    """
+    2 阶高通滤波器
+    """
+    return high_pass_2_pole_fast(source, period)
+
+
+def super_smoother_filter(source: np.ndarray, period: int = 10) -> np.ndarray:
+    """
+    超平滑滤波器
+    """
+    return supersmoother_fast(source, period)
+
+
+def super_smoother_3_pole_filter(source: np.ndarray, period: int = 10) -> np.ndarray:
+    """
+    3 阶超平滑滤波器
+    """
+    return super_smoother_3_pole_fast(source, period)
 
 
 def z_score_filter_np(
