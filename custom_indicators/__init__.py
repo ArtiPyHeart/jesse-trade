@@ -12,6 +12,9 @@ from custom_indicators.prod_indicator.autocorrelation_periodogram import (
 from custom_indicators.prod_indicator.autocorrelation_reversals import (
     autocorrelation_reversals,
 )
+from custom_indicators.prod_indicator.chaiken_money_flow import chaiken_money_flow
+from custom_indicators.prod_indicator.change_variance_ratio import change_variance_ratio
+from custom_indicators.prod_indicator.cmma import cmma
 from custom_indicators.prod_indicator.comb_spectrum import comb_spectrum
 from custom_indicators.prod_indicator.convolution import ehlers_convolution
 from custom_indicators.prod_indicator.decycler_oscillator import decycler_oscillator
@@ -20,10 +23,21 @@ from custom_indicators.prod_indicator.ehlers_early_onset_trend import (
     ehlers_early_onset_trend,
 )
 from custom_indicators.prod_indicator.evenbetter_sinewave import evenbetter_sinewave
+from custom_indicators.prod_indicator.fti import fti
 from custom_indicators.prod_indicator.hurst import hurst_coefficient
+from custom_indicators.prod_indicator.iqr_ratio import iqr_ratio
+from custom_indicators.prod_indicator.ma_difference import ma_difference
 from custom_indicators.prod_indicator.mod_bollinger import mod_bollinger
 from custom_indicators.prod_indicator.mod_rsi import mod_rsi
 from custom_indicators.prod_indicator.mod_stochastic import mod_stochastic
+from custom_indicators.prod_indicator.norm_on_balance_volume import (
+    norm_on_balance_volume,
+)
+from custom_indicators.prod_indicator.price_change_oscillator import (
+    price_change_oscillator,
+)
+from custom_indicators.prod_indicator.price_variance_ratio import price_variance_ratio
+from custom_indicators.prod_indicator.reactivity import reactivity
 from custom_indicators.prod_indicator.roofing_filter import roofing_filter
 from custom_indicators.prod_indicator.swamicharts_rsi import swamicharts_rsi
 from custom_indicators.prod_indicator.swamicharts_stochastic import (
@@ -54,4 +68,14 @@ __all__ = [
     "swamicharts_rsi",
     "swamicharts_stochastic",
     "td_sequential",
+    "chaiken_money_flow",
+    "change_variance_ratio",
+    "cmma",
+    "fti",
+    "iqr_ratio",
+    "ma_difference",
+    "norm_on_balance_volume",
+    "price_change_oscillator",
+    "price_variance_ratio",
+    "reactivity",
 ]

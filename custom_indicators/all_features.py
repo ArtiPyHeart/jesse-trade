@@ -3,6 +3,8 @@ import re
 import jesse.indicators as ta
 import numpy as np
 from jesse import helpers
+from jesse.indicators import adx, aroon
+from jesse.indicators.aroon import AROON
 
 from custom_indicators import (
     accumulated_swing_index,
@@ -13,14 +15,24 @@ from custom_indicators import (
     autocorrelation,
     autocorrelation_periodogram,
     autocorrelation_reversals,
+    chaiken_money_flow,
+    change_variance_ratio,
+    cmma,
     comb_spectrum,
     dft,
     ehlers_convolution,
     ehlers_early_onset_trend,
     evenbetter_sinewave,
+    fti,
     hurst_coefficient,
+    iqr_ratio,
+    ma_difference,
     mod_rsi,
     mod_stochastic,
+    norm_on_balance_volume,
+    price_change_oscillator,
+    price_variance_ratio,
+    reactivity,
     roofing_filter,
     swamicharts_rsi,
     swamicharts_stochastic,
@@ -31,9 +43,20 @@ from custom_indicators.dominant_cycle import (
     homodyne,
     phase_accumulation,
 )
+from custom_indicators.prod_indicator.fti import FTIResult
+from custom_indicators.prod_indicator.micro_structure import (
+    amihud_lambda,
+    bekker_parkinson_vol,
+    corwin_schultz_estimator,
+    hasbrouck_lambda,
+    kyle_lambda,
+    roll_impact,
+    roll_measure,
+)
+from custom_indicators.prod_indicator.nsb_entropy import entropy_for_jesse
 from custom_indicators.utils.math import ddt, dt, lag
 
-LAG_MAX = 40
+LAG_MAX = 30
 
 
 class FeatureCalculator:
@@ -189,6 +212,16 @@ class FeatureCalculator:
             acr = autocorrelation_reversals(self.candles, sequential=True)
             self.cache["acr"] = acr
 
+    def adx(self, **kwargs):
+        index = kwargs["index"]
+        if f"adx_{index}" not in self.cache:
+            adx_ = adx(self.candles, period=index, sequential=True)
+            self.cache[f"adx_{index}"] = adx_
+
+        self._process_transformations(
+            f"adx_{index}", self.cache[f"adx_{index}"], **kwargs
+        )
+
     def adaptive_bp(self, **kwargs):
         if "adaptive_bp" not in self.cache or "adaptive_bp_lead" not in self.cache:
             adaptive_bp, adaptive_bp_lead, _ = adaptive_bandpass(
@@ -240,6 +273,15 @@ class FeatureCalculator:
             "adaptive_stochastic", self.cache["adaptive_stochastic"], **kwargs
         )
 
+    def amihud_lambda(self, **kwargs):
+        if "amihud_lambda" not in self.cache:
+            amihud_lambda_ = amihud_lambda(self.candles, sequential=True)
+            self.cache["amihud_lambda"] = amihud_lambda_
+
+        self._process_transformations(
+            "amihud_lambda", self.cache["amihud_lambda"], **kwargs
+        )
+
     def bandpass(self, **kwargs):
         if "bandpass" not in self.cache or "highpass_bp" not in self.cache:
             bandpass_tuple = ta.bandpass(self.candles, sequential=True)
@@ -247,6 +289,15 @@ class FeatureCalculator:
             self.cache["highpass_bp"] = bandpass_tuple.trigger
 
         self._process_transformations("bandpass", self.cache["bandpass"], **kwargs)
+
+    def bekker_parkinson_vol(self, **kwargs):
+        if "bekker_parkinson_vol" not in self.cache:
+            bekker_parkinson_vol_ = bekker_parkinson_vol(self.candles, sequential=True)
+            self.cache["bekker_parkinson_vol"] = bekker_parkinson_vol_
+
+        self._process_transformations(
+            "bekker_parkinson_vol", self.cache["bekker_parkinson_vol"], **kwargs
+        )
 
     def highpass_bp(self, **kwargs):
         if "bandpass" not in self.cache or "highpass_bp" not in self.cache:
@@ -256,6 +307,44 @@ class FeatureCalculator:
 
         self._process_transformations(
             "highpass_bp", self.cache["highpass_bp"], **kwargs
+        )
+
+    def chaiken_money_flow(self, **kwargs):
+        if "chaiken_money_flow" not in self.cache:
+            chaiken_money_flow_ = chaiken_money_flow(self.candles, sequential=True)
+            self.cache["chaiken_money_flow"] = chaiken_money_flow_
+
+        self._process_transformations(
+            "chaiken_money_flow", self.cache["chaiken_money_flow"], **kwargs
+        )
+
+    def change_variance_ratio(self, **kwargs):
+        if "change_variance_ratio" not in self.cache:
+            change_variance_ratio_ = change_variance_ratio(
+                self.candles, sequential=True
+            )
+            self.cache["change_variance_ratio"] = change_variance_ratio_
+
+        self._process_transformations(
+            "change_variance_ratio", self.cache["change_variance_ratio"], **kwargs
+        )
+
+    def cmma(self, **kwargs):
+        if "cmma" not in self.cache:
+            cmma_ = cmma(self.candles, sequential=True)
+            self.cache["cmma"] = cmma_
+
+        self._process_transformations("cmma", self.cache["cmma"], **kwargs)
+
+    def corwin_schultz_estimator(self, **kwargs):
+        if "corwin_schultz_estimator" not in self.cache:
+            corwin_schultz_estimator_ = corwin_schultz_estimator(
+                self.candles, sequential=True
+            )
+            self.cache["corwin_schultz_estimator"] = corwin_schultz_estimator_
+
+        self._process_transformations(
+            "corwin_schultz_estimator", self.cache["corwin_schultz_estimator"], **kwargs
         )
 
     def comb_spectrum_dom_cycle(self, **kwargs):
@@ -321,6 +410,15 @@ class FeatureCalculator:
             "ehlers_early_onset_trend", self.cache["ehlers_early_onset_trend"], **kwargs
         )
 
+    def entropy_for_jesse(self, **kwargs):
+        if "entropy_for_jesse" not in self.cache:
+            entropy_for_jesse_ = entropy_for_jesse(self.candles, sequential=True)
+            self.cache["entropy_for_jesse"] = entropy_for_jesse_
+
+        self._process_transformations(
+            "entropy_for_jesse", self.cache["entropy_for_jesse"], **kwargs
+        )
+
     def evenbetter_sinewave_long(self, **kwargs):
         if "evenbetter_sinewave_long" not in self.cache:
             eb_sw_long = evenbetter_sinewave(self.candles, duration=40, sequential=True)
@@ -350,6 +448,24 @@ class FeatureCalculator:
 
         self._process_transformations("fisher", self.cache["fisher"], **kwargs)
 
+    def fti(self, **kwargs):
+        if "fti" not in self.cache:
+            fti_: FTIResult = fti(self.candles, sequential=True)
+            self.cache["fti"] = fti_.fti
+            self.cache["fti_best_period"] = fti_.best_period
+
+        self._process_transformations("fti", self.cache["fti"], **kwargs)
+
+    def fti_best_period(self, **kwargs):
+        if "fti_best_period" not in self.cache:
+            fti_: FTIResult = fti(self.candles, sequential=True)
+            self.cache["fti"] = fti_.fti
+            self.cache["fti_best_period"] = fti_.best_period
+
+        self._process_transformations(
+            "fti_best_period", self.cache["fti_best_period"], **kwargs
+        )
+
     def forecast_oscillator(self, **kwargs):
         if "forecast_oscillator" not in self.cache:
             forecast_oscillator = ta.fosc(self.candles, sequential=True)
@@ -357,6 +473,15 @@ class FeatureCalculator:
 
         self._process_transformations(
             "forecast_oscillator", self.cache["forecast_oscillator"], **kwargs
+        )
+
+    def hasbrouck_lambda(self, **kwargs):
+        if "hasbrouck_lambda" not in self.cache:
+            hasbrouck_lambda_ = hasbrouck_lambda(self.candles, sequential=True)
+            self.cache["hasbrouck_lambda"] = hasbrouck_lambda_
+
+        self._process_transformations(
+            "hasbrouck_lambda", self.cache["hasbrouck_lambda"], **kwargs
         )
 
     def homodyne(self, **kwargs):
@@ -388,6 +513,31 @@ class FeatureCalculator:
             "hurst_coef_slow", self.cache["hurst_coef_slow"], **kwargs
         )
 
+    def iqr_ratio(self, **kwargs):
+        if "iqr_ratio" not in self.cache:
+            iqr_ratio_ = iqr_ratio(self.candles, sequential=True)
+            self.cache["iqr_ratio"] = iqr_ratio_
+
+        self._process_transformations("iqr_ratio", self.cache["iqr_ratio"], **kwargs)
+
+    def kyle_lambda(self, **kwargs):
+        if "kyle_lambda" not in self.cache:
+            kyle_lambda_ = kyle_lambda(self.candles, sequential=True)
+            self.cache["kyle_lambda"] = kyle_lambda_
+
+        self._process_transformations(
+            "kyle_lambda", self.cache["kyle_lambda"], **kwargs
+        )
+
+    def ma_difference(self, **kwargs):
+        if "ma_difference" not in self.cache:
+            ma_difference_ = ma_difference(self.candles, sequential=True)
+            self.cache["ma_difference"] = ma_difference_
+
+        self._process_transformations(
+            "ma_difference", self.cache["ma_difference"], **kwargs
+        )
+
     def mod_rsi(self, **kwargs):
         if "mod_rsi" not in self.cache:
             mod_rsi_ = mod_rsi(self.candles, sequential=True)
@@ -413,6 +563,17 @@ class FeatureCalculator:
 
         self._process_transformations("natr", self.cache["natr"], **kwargs)
 
+    def norm_on_balance_volume(self, **kwargs):
+        if "norm_on_balance_volume" not in self.cache:
+            norm_on_balance_volume_ = norm_on_balance_volume(
+                self.candles, sequential=True
+            )
+            self.cache["norm_on_balance_volume"] = norm_on_balance_volume_
+
+        self._process_transformations(
+            "norm_on_balance_volume", self.cache["norm_on_balance_volume"], **kwargs
+        )
+
     def phase_accumulation(self, **kwargs):
         if "phase_accumulation" not in self.cache:
             phase_accumulation_ = phase_accumulation(self.candles, sequential=True)
@@ -428,6 +589,51 @@ class FeatureCalculator:
             self.cache["pfe"] = pfe_
 
         self._process_transformations("pfe", self.cache["pfe"], **kwargs)
+
+    def price_change_oscillator(self, **kwargs):
+        if "price_change_oscillator" not in self.cache:
+            price_change_oscillator_ = price_change_oscillator(
+                self.candles, sequential=True
+            )
+            self.cache["price_change_oscillator"] = price_change_oscillator_
+
+        self._process_transformations(
+            "price_change_oscillator", self.cache["price_change_oscillator"], **kwargs
+        )
+
+    def price_variance_ratio(self, **kwargs):
+        if "price_variance_ratio" not in self.cache:
+            price_variance_ratio_ = price_variance_ratio(self.candles, sequential=True)
+            self.cache["price_variance_ratio"] = price_variance_ratio_
+
+        self._process_transformations(
+            "price_variance_ratio", self.cache["price_variance_ratio"], **kwargs
+        )
+
+    def reactivity(self, **kwargs):
+        if "reactivity" not in self.cache:
+            reactivity_ = reactivity(self.candles, sequential=True)
+            self.cache["reactivity"] = reactivity_
+
+        self._process_transformations("reactivity", self.cache["reactivity"], **kwargs)
+
+    def roll_impact(self, **kwargs):
+        if "roll_impact" not in self.cache:
+            roll_impact_ = roll_impact(self.candles, sequential=True)
+            self.cache["roll_impact"] = roll_impact_
+
+        self._process_transformations(
+            "roll_impact", self.cache["roll_impact"], **kwargs
+        )
+
+    def roll_measure(self, **kwargs):
+        if "roll_measure" not in self.cache:
+            roll_measure_ = roll_measure(self.candles, sequential=True)
+            self.cache["roll_measure"] = roll_measure_
+
+        self._process_transformations(
+            "roll_measure", self.cache["roll_measure"], **kwargs
+        )
 
     def roofing_filter(self, **kwargs):
         if "roofing_filter" not in self.cache:
@@ -581,6 +787,40 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     candles = helpers.slice_candles(candles, sequential)
     res_fe = {}
 
+    # adx
+    adx_7 = adx(candles, period=7, sequential=True)
+    adx_14 = adx(candles, period=14, sequential=True)
+    res_fe["adx_7"] = adx_7
+    res_fe["adx_7_dt"] = dt(adx_7)
+    res_fe["adx_7_ddt"] = ddt(adx_7)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"adx_7_lag{lg}"] = lag(adx_7, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"adx_7_dt_lag{lg}"] = lag(res_fe["adx_7_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"adx_7_ddt_lag{lg}"] = lag(res_fe["adx_7_ddt"], lg)
+    res_fe["adx_14"] = adx_14
+    res_fe["adx_14_dt"] = dt(adx_14)
+    res_fe["adx_14_ddt"] = ddt(adx_14)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"adx_14_lag{lg}"] = lag(adx_14, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"adx_14_dt_lag{lg}"] = lag(res_fe["adx_14_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"adx_14_ddt_lag{lg}"] = lag(res_fe["adx_14_ddt"], lg)
+
+    # aroon diff
+    aroon_: AROON = aroon(candles, sequential=True)
+    res_fe["aroon_diff"] = aroon_.up - aroon_.down
+    res_fe["aroon_diff_dt"] = dt(res_fe["aroon_diff"])
+    res_fe["aroon_diff_ddt"] = ddt(res_fe["aroon_diff"])
+    for lg in range(1, LAG_MAX):
+        res_fe[f"aroon_diff_lag{lg}"] = lag(res_fe["aroon_diff"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"aroon_diff_dt_lag{lg}"] = lag(res_fe["aroon_diff_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"aroon_diff_ddt_lag{lg}"] = lag(res_fe["aroon_diff_ddt"], lg)
+
     # autocorrelation
     auto_corr = autocorrelation(candles, sequential=True)
     for i in range(auto_corr.shape[1]):
@@ -670,6 +910,18 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
             res_fe["adaptive_stochastic_ddt"], lg
         )
 
+    # amihud lambda
+    amihud_lambda_ = amihud_lambda(candles, sequential=True)
+    res_fe["amihud_lambda"] = amihud_lambda_
+    res_fe["amihud_lambda_dt"] = dt(amihud_lambda_)
+    res_fe["amihud_lambda_ddt"] = ddt(amihud_lambda_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"amihud_lambda_lag{lg}"] = lag(amihud_lambda_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"amihud_lambda_dt_lag{lg}"] = lag(res_fe["amihud_lambda_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"amihud_lambda_ddt_lag{lg}"] = lag(res_fe["amihud_lambda_ddt"], lg)
+
     # bandpass & highpass
     bandpass_tuple = ta.bandpass(candles, sequential=True)
     res_fe["bandpass"] = bandpass_tuple.bp_normalized
@@ -690,6 +942,82 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"highpass_bp_dt_lag{lg}"] = lag(res_fe["highpass_bp_dt"], lg)
     for lg in range(1, LAG_MAX):
         res_fe[f"highpass_bp_ddt_lag{lg}"] = lag(res_fe["highpass_bp_ddt"], lg)
+
+    # bekker_parkinson_vol
+    bekker_parkinson_vol_ = bekker_parkinson_vol(candles, sequential=True)
+    res_fe["bekker_parkinson_vol"] = bekker_parkinson_vol_
+    res_fe["bekker_parkinson_vol_dt"] = dt(bekker_parkinson_vol_)
+    res_fe["bekker_parkinson_vol_ddt"] = ddt(bekker_parkinson_vol_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"bekker_parkinson_vol_lag{lg}"] = lag(bekker_parkinson_vol_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"bekker_parkinson_vol_dt_lag{lg}"] = lag(
+            res_fe["bekker_parkinson_vol_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"bekker_parkinson_vol_ddt_lag{lg}"] = lag(
+            res_fe["bekker_parkinson_vol_ddt"], lg
+        )
+
+    # chaiken money flow
+    chaiken_money_flow_ = chaiken_money_flow(candles, sequential=True)
+    res_fe["chaiken_money_flow"] = chaiken_money_flow_
+    res_fe["chaiken_money_flow_dt"] = dt(chaiken_money_flow_)
+    res_fe["chaiken_money_flow_ddt"] = ddt(chaiken_money_flow_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"chaiken_money_flow_lag{lg}"] = lag(chaiken_money_flow_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"chaiken_money_flow_dt_lag{lg}"] = lag(
+            res_fe["chaiken_money_flow_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"chaiken_money_flow_ddt_lag{lg}"] = lag(
+            res_fe["chaiken_money_flow_ddt"], lg
+        )
+
+    # change variance ratio
+    change_variance_ratio_ = change_variance_ratio(candles, sequential=True)
+    res_fe["change_variance_ratio"] = change_variance_ratio_
+    res_fe["change_variance_ratio_dt"] = dt(change_variance_ratio_)
+    res_fe["change_variance_ratio_ddt"] = ddt(change_variance_ratio_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"change_variance_ratio_lag{lg}"] = lag(change_variance_ratio_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"change_variance_ratio_dt_lag{lg}"] = lag(
+            res_fe["change_variance_ratio_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"change_variance_ratio_ddt_lag{lg}"] = lag(
+            res_fe["change_variance_ratio_ddt"], lg
+        )
+
+    # cmma
+    cmma_ = cmma(candles, sequential=True)
+    res_fe["cmma"] = cmma_
+    res_fe["cmma_dt"] = dt(cmma_)
+    res_fe["cmma_ddt"] = ddt(cmma_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"cmma_lag{lg}"] = lag(cmma_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"cmma_dt_lag{lg}"] = lag(res_fe["cmma_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"cmma_ddt_lag{lg}"] = lag(res_fe["cmma_ddt"], lg)
+
+    # corwin_schultz_estimator
+    corwin_schultz_estimator_ = corwin_schultz_estimator(candles, sequential=True)
+    res_fe["corwin_schultz_estimator"] = corwin_schultz_estimator_
+    res_fe["corwin_schultz_estimator_dt"] = dt(corwin_schultz_estimator_)
+    res_fe["corwin_schultz_estimator_ddt"] = ddt(corwin_schultz_estimator_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"corwin_schultz_estimator_lag{lg}"] = lag(corwin_schultz_estimator_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"corwin_schultz_estimator_dt_lag{lg}"] = lag(
+            res_fe["corwin_schultz_estimator_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"corwin_schultz_estimator_ddt_lag{lg}"] = lag(
+            res_fe["corwin_schultz_estimator_ddt"], lg
+        )
 
     # comb spectrum
     comb_spectrum_dom_cycle, pwr = comb_spectrum(candles, sequential=True)
@@ -756,6 +1084,22 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
             res_fe["ehlers_early_onset_trend_ddt"], lg
         )
 
+    # entropy for jesse
+    entropy_for_jesse_ = entropy_for_jesse(candles, sequential=True)
+    res_fe["entropy_for_jesse"] = entropy_for_jesse_
+    res_fe["entropy_for_jesse_dt"] = dt(entropy_for_jesse_)
+    res_fe["entropy_for_jesse_ddt"] = ddt(entropy_for_jesse_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"entropy_for_jesse_lag{lg}"] = lag(entropy_for_jesse_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"entropy_for_jesse_dt_lag{lg}"] = lag(
+            res_fe["entropy_for_jesse_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"entropy_for_jesse_ddt_lag{lg}"] = lag(
+            res_fe["entropy_for_jesse_ddt"], lg
+        )
+
     # evenbetter sinewave
     eb_sw_long = evenbetter_sinewave(candles, duration=40, sequential=True)
     res_fe["evenbetter_sinewave_long"] = eb_sw_long
@@ -804,6 +1148,41 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     for lg in range(1, LAG_MAX):
         res_fe[f"forecast_oscillator_lag{lg}"] = lag(forecast_oscillator, lg)
 
+    # fti
+    fti_: FTIResult = fti(candles, sequential=True)
+    res_fe["fti"] = fti_.fti
+    res_fe["fti_dt"] = dt(fti_.fti)
+    res_fe["fti_ddt"] = ddt(fti_.fti)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"fti_lag{lg}"] = lag(fti_.fti, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"fti_dt_lag{lg}"] = lag(res_fe["fti_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"fti_ddt_lag{lg}"] = lag(res_fe["fti_ddt"], lg)
+    res_fe["fti_best_period"] = fti_.best_period
+    res_fe["fti_best_period_dt"] = dt(fti_.best_period)
+    res_fe["fti_best_period_ddt"] = ddt(fti_.best_period)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"fti_best_period_lag{lg}"] = lag(fti_.best_period, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"fti_best_period_dt_lag{lg}"] = lag(res_fe["fti_best_period_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"fti_best_period_ddt_lag{lg}"] = lag(res_fe["fti_best_period_ddt"], lg)
+
+    # hasbrouck lambda
+    hasbrouck_lambda_ = hasbrouck_lambda(candles, sequential=True)
+    res_fe["hasbrouck_lambda"] = hasbrouck_lambda_
+    res_fe["hasbrouck_lambda_dt"] = dt(hasbrouck_lambda_)
+    res_fe["hasbrouck_lambda_ddt"] = ddt(hasbrouck_lambda_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"hasbrouck_lambda_lag{lg}"] = lag(hasbrouck_lambda_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"hasbrouck_lambda_dt_lag{lg}"] = lag(res_fe["hasbrouck_lambda_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"hasbrouck_lambda_ddt_lag{lg}"] = lag(
+            res_fe["hasbrouck_lambda_ddt"], lg
+        )
+
     # homodyne
     homodyne_ = homodyne(candles, sequential=True)
     res_fe["homodyne"] = homodyne_
@@ -837,6 +1216,42 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"hurst_coef_slow_dt_lag{lg}"] = lag(res_fe["hurst_coef_slow_dt"], lg)
     for lg in range(1, LAG_MAX):
         res_fe[f"hurst_coef_slow_ddt_lag{lg}"] = lag(res_fe["hurst_coef_slow_ddt"], lg)
+
+    # iqr ratio
+    iqr_ratio_ = iqr_ratio(candles, sequential=True)
+    res_fe["iqr_ratio"] = iqr_ratio_
+    res_fe["iqr_ratio_dt"] = dt(iqr_ratio_)
+    res_fe["iqr_ratio_ddt"] = ddt(iqr_ratio_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"iqr_ratio_lag{lg}"] = lag(iqr_ratio_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"iqr_ratio_dt_lag{lg}"] = lag(res_fe["iqr_ratio_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"iqr_ratio_ddt_lag{lg}"] = lag(res_fe["iqr_ratio_ddt"], lg)
+
+    # kyle lambda
+    kyle_lambda_ = kyle_lambda(candles, sequential=True)
+    res_fe["kyle_lambda"] = kyle_lambda_
+    res_fe["kyle_lambda_dt"] = dt(kyle_lambda_)
+    res_fe["kyle_lambda_ddt"] = ddt(kyle_lambda_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"kyle_lambda_lag{lg}"] = lag(kyle_lambda_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"kyle_lambda_dt_lag{lg}"] = lag(res_fe["kyle_lambda_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"kyle_lambda_ddt_lag{lg}"] = lag(res_fe["kyle_lambda_ddt"], lg)
+
+    # ma_difference
+    ma_difference_ = ma_difference(candles, sequential=True)
+    res_fe["ma_difference"] = ma_difference_
+    res_fe["ma_difference_dt"] = dt(ma_difference_)
+    res_fe["ma_difference_ddt"] = ddt(ma_difference_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"ma_difference_lag{lg}"] = lag(ma_difference_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"ma_difference_dt_lag{lg}"] = lag(res_fe["ma_difference_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"ma_difference_ddt_lag{lg}"] = lag(res_fe["ma_difference_ddt"], lg)
 
     # modified rsi
     mod_rsi_ = mod_rsi(candles, sequential=True)
@@ -874,6 +1289,22 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     for lg in range(1, LAG_MAX):
         res_fe[f"natr_ddt_lag{lg}"] = lag(res_fe["natr_ddt"], lg)
 
+    # norm on balance volume
+    norm_on_balance_volume_ = norm_on_balance_volume(candles, sequential=True)
+    res_fe["norm_on_balance_volume"] = norm_on_balance_volume_
+    res_fe["norm_on_balance_volume_dt"] = dt(norm_on_balance_volume_)
+    res_fe["norm_on_balance_volume_ddt"] = ddt(norm_on_balance_volume_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"norm_on_balance_volume_lag{lg}"] = lag(norm_on_balance_volume_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"norm_on_balance_volume_dt_lag{lg}"] = lag(
+            res_fe["norm_on_balance_volume_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"norm_on_balance_volume_ddt_lag{lg}"] = lag(
+            res_fe["norm_on_balance_volume_ddt"], lg
+        )
+
     # phase accumulation
     phase_accumulation_ = phase_accumulation(candles, sequential=True)
     res_fe["phase_accumulation"] = phase_accumulation_
@@ -901,6 +1332,74 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"pfe_dt_lag{lg}"] = lag(res_fe["pfe_dt"], lg)
     for lg in range(1, LAG_MAX):
         res_fe[f"pfe_ddt_lag{lg}"] = lag(res_fe["pfe_ddt"], lg)
+
+    # price change oscillator
+    price_change_oscillator_ = price_change_oscillator(candles, sequential=True)
+    res_fe["price_change_oscillator"] = price_change_oscillator_
+    res_fe["price_change_oscillator_dt"] = dt(price_change_oscillator_)
+    res_fe["price_change_oscillator_ddt"] = ddt(price_change_oscillator_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"price_change_oscillator_lag{lg}"] = lag(price_change_oscillator_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"price_change_oscillator_dt_lag{lg}"] = lag(
+            res_fe["price_change_oscillator_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"price_change_oscillator_ddt_lag{lg}"] = lag(
+            res_fe["price_change_oscillator_ddt"], lg
+        )
+
+    # price variance ratio
+    price_variance_ratio_ = price_variance_ratio(candles, sequential=True)
+    res_fe["price_variance_ratio"] = price_variance_ratio_
+    res_fe["price_variance_ratio_dt"] = dt(price_variance_ratio_)
+    res_fe["price_variance_ratio_ddt"] = ddt(price_variance_ratio_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"price_variance_ratio_lag{lg}"] = lag(price_variance_ratio_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"price_variance_ratio_dt_lag{lg}"] = lag(
+            res_fe["price_variance_ratio_dt"], lg
+        )
+    for lg in range(1, LAG_MAX):
+        res_fe[f"price_variance_ratio_ddt_lag{lg}"] = lag(
+            res_fe["price_variance_ratio_ddt"], lg
+        )
+
+    # reactivity
+    reactivity_ = reactivity(candles, sequential=True)
+    res_fe["reactivity"] = reactivity_
+    res_fe["reactivity_dt"] = dt(reactivity_)
+    res_fe["reactivity_ddt"] = ddt(reactivity_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"reactivity_lag{lg}"] = lag(reactivity_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"reactivity_dt_lag{lg}"] = lag(res_fe["reactivity_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"reactivity_ddt_lag{lg}"] = lag(res_fe["reactivity_ddt"], lg)
+
+    # roll impact
+    roll_impact_ = roll_impact(candles, sequential=True)
+    res_fe["roll_impact"] = roll_impact_
+    res_fe["roll_impact_dt"] = dt(roll_impact_)
+    res_fe["roll_impact_ddt"] = ddt(roll_impact_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"roll_impact_lag{lg}"] = lag(roll_impact_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"roll_impact_dt_lag{lg}"] = lag(res_fe["roll_impact_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"roll_impact_ddt_lag{lg}"] = lag(res_fe["roll_impact_ddt"], lg)
+
+    # roll measure
+    roll_measure_ = roll_measure(candles, sequential=True)
+    res_fe["roll_measure"] = roll_measure_
+    res_fe["roll_measure_dt"] = dt(roll_measure_)
+    res_fe["roll_measure_ddt"] = ddt(roll_measure_)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"roll_measure_lag{lg}"] = lag(roll_measure_, lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"roll_measure_dt_lag{lg}"] = lag(res_fe["roll_measure_dt"], lg)
+    for lg in range(1, LAG_MAX):
+        res_fe[f"roll_measure_ddt_lag{lg}"] = lag(res_fe["roll_measure_ddt"], lg)
 
     # roofing filter
     rf = roofing_filter(candles, sequential=True)
@@ -1041,9 +1540,9 @@ if __name__ == "__main__":
 
     fe = feature_bundle(trading_1m, sequential=True)
     for k, v in fe.items():
-        assert len(v) == len(
-            trading_1m
-        ), f"{k} has length {len(v)} but candles has length {len(trading_1m)}"
+        assert len(v) == len(trading_1m), (
+            f"{k} has length {len(v)} but candles has length {len(trading_1m)}"
+        )
     fe_last = feature_bundle(trading_1m, sequential=False)
     for k, v in fe_last.items():
         assert len(v) == 1, f"{k} has length {len(v)} not 1"
