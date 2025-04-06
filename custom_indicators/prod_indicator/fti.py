@@ -2,6 +2,7 @@ from typing import NamedTuple
 
 import numpy as np
 from jesse import helpers
+from numba import njit
 from scipy import special
 
 
@@ -12,6 +13,220 @@ class FTIResult(NamedTuple):
     filtered_value: float  # 最佳周期的滤波值
     width: float  # 最佳周期的宽度
     best_period: float  # 具有最大FTI的周期
+
+
+# 定义独立的numba加速函数
+@njit
+def _find_coefs_numba(min_period, period, half_length):
+    """计算特定周期的滤波器系数 - numba加速版"""
+    # 系数设置
+    d = np.array([0.35577019, 0.2436983, 0.07211497, 0.00630165])
+    coefs = np.zeros(half_length + 1)
+
+    # 计算中心系数
+    fact = 2.0 / period
+    coefs[0] = fact
+
+    # 计算其他系数
+    fact *= np.pi
+    for i in range(1, half_length + 1):
+        coefs[i] = np.sin(i * fact) / (i * np.pi)
+
+    # 调整末端点
+    coefs[half_length] *= 0.5
+
+    # 应用加权窗口并归一化
+    sumg = coefs[0]
+    for i in range(1, half_length + 1):
+        sum_val = d[0]
+        fact_i = i * np.pi / half_length
+        for j in range(1, 4):
+            sum_val += 2.0 * d[j] * np.cos(j * fact_i)
+        coefs[i] *= sum_val
+        sumg += 2.0 * coefs[i]
+
+    # 归一化系数
+    if sumg != 0:
+        coefs /= sumg
+
+    return coefs
+
+
+@njit
+def _extrapolate_data_numba(y, lookback, half_length):
+    """使用最小二乘线外推数据 - numba加速版"""
+    # 计算最近half_length+1个数据点的均值
+    xmean = -0.5 * half_length
+    ymean = 0.0
+    for i in range(lookback - half_length - 1, lookback):
+        ymean += y[i]
+    ymean /= half_length + 1
+
+    # 计算最小二乘线的斜率
+    xsq = 0.0
+    xy = 0.0
+    for i in range(half_length + 1):
+        xdiff = -i - xmean
+        ydiff = y[lookback - 1 - i] - ymean
+        xsq += xdiff * xdiff
+        xy += xdiff * ydiff
+
+    slope = xy / xsq if xsq != 0 else 0.0
+
+    # 扩展数据
+    for i in range(half_length):
+        y[lookback + i] = (i + 1.0 - xmean) * slope + ymean
+
+    return y
+
+
+@njit
+def _apply_filter_numba(y, coefs, half_length, lookback, diff_work, leg_work):
+    """应用滤波器并收集移动腿 - numba加速版"""
+    # 初始化变量
+    extreme_type = 0  # 未定义。1=高点; -1=低点
+    extreme_value = 0.0
+    n_legs = 0
+    longest_leg = 0.0
+    prior = 0.0
+    filtered_value = 0.0
+
+    # 对数据块中的每个点应用滤波器
+    for iy in range(half_length, lookback):
+        # 应用卷积滤波器
+        sum_val = coefs[0] * y[iy]  # 中心点
+        for i in range(1, half_length + 1):
+            sum_val += coefs[i] * (y[iy + i] + y[iy - i])  # 对称滤波
+
+        # 如果这是当前数据点的滤波值，保存它
+        if iy == lookback - 1:
+            filtered_value = sum_val
+
+        # 保存实际值与滤波值之间的差异，用于宽度计算
+        diff_work[iy - half_length] = abs(y[iy] - sum_val)
+
+        # 收集移动腿
+        if iy == half_length:  # 第一个点
+            extreme_type = 0
+            extreme_value = sum_val
+            n_legs = 0
+            longest_leg = 0.0
+
+        elif extreme_type == 0:  # 等待第一个滤波价格变化
+            if sum_val > extreme_value:
+                extreme_type = -1  # 第一个点是低点
+            elif sum_val < extreme_value:
+                extreme_type = 1  # 第一个点是高点
+
+        elif iy == lookback - 1:  # 最后一点，视为转折点
+            if extreme_type != 0:
+                leg_length = abs(extreme_value - sum_val)
+                leg_work[n_legs] = leg_length
+                n_legs += 1
+                if leg_length > longest_leg:
+                    longest_leg = leg_length
+
+        else:  # 内部前进
+            if extreme_type == 1 and sum_val > prior:  # 下降后转为上升
+                leg_length = extreme_value - prior
+                leg_work[n_legs] = leg_length
+                n_legs += 1
+                if leg_length > longest_leg:
+                    longest_leg = leg_length
+                extreme_type = -1
+                extreme_value = prior
+
+            elif extreme_type == -1 and sum_val < prior:  # 上升后转为下降
+                leg_length = prior - extreme_value
+                leg_work[n_legs] = leg_length
+                n_legs += 1
+                if leg_length > longest_leg:
+                    longest_leg = leg_length
+                extreme_type = 1
+                extreme_value = prior
+
+        prior = sum_val
+
+    return filtered_value, longest_leg, n_legs, diff_work, leg_work
+
+
+@njit
+def _calculate_width_numba(diff_work, lookback, half_length, beta):
+    """计算通道宽度 - numba加速版"""
+    # 创建副本进行排序以避免修改原始数组
+    sorted_diffs = np.sort(diff_work[: lookback - half_length])
+    i = int(beta * (lookback - half_length)) - 1
+    if i < 0:
+        i = 0
+
+    # 返回通道宽度
+    return sorted_diffs[i]
+
+
+@njit
+def _calculate_fti_numba(leg_work, width, n_legs, longest_leg, noise_cut):
+    """计算FTI值 - numba加速版"""
+    # 计算噪声水平
+    noise_level = noise_cut * longest_leg
+
+    # 计算所有大于噪声水平的腿的平均值
+    sum_val = 0.0
+    n = 0
+    for i in range(n_legs):
+        if leg_work[i] > noise_level:
+            sum_val += leg_work[i]
+            n += 1
+
+    # 计算非噪声腿的平均移动
+    if n > 0:
+        mean_move = sum_val / n
+        return mean_move / (width + 1.0e-5)
+    else:
+        return 0.0
+
+
+@njit
+def _sort_local_maxima_numba(fti_values, min_period, max_period):
+    """排序FTI局部最大值并保存排序后的索引 - numba加速版"""
+    num_periods = max_period - min_period + 1
+    sorted_indices = np.zeros(num_periods, dtype=np.int32)
+    sort_work = np.zeros(num_periods)
+
+    # 找到局部最大值（包括两个端点）
+    n = 0
+    for i in range(num_periods):
+        if (
+            i == 0
+            or i == num_periods - 1
+            or (
+                fti_values[i] >= fti_values[i - 1]
+                and fti_values[i] >= fti_values[i + 1]
+            )
+        ):
+            sort_work[n] = -fti_values[i]  # 要降序排列FTI，但排序是升序
+            sorted_indices[n] = i
+            n += 1
+
+    # 对局部最大值进行排序
+    if n > 0:
+        # 手动实现简单的排序，因为numba不支持argsort的完整功能
+        for i in range(n):
+            for j in range(i + 1, n):
+                if sort_work[i] > sort_work[j]:
+                    # 交换值和索引
+                    temp_val = sort_work[i]
+                    temp_idx = sorted_indices[i]
+                    sort_work[i] = sort_work[j]
+                    sorted_indices[i] = sorted_indices[j]
+                    sort_work[j] = temp_val
+                    sorted_indices[j] = temp_idx
+
+    # 填充剩余的排序索引为0
+    if n < num_periods:
+        for i in range(n, num_periods):
+            sorted_indices[i] = 0
+
+    return sorted_indices
 
 
 class FTI:
@@ -54,7 +269,7 @@ class FTI:
         self.filtered = np.zeros(max_period - min_period + 1)
         self.width = np.zeros(max_period - min_period + 1)
         self.fti_values = np.zeros(max_period - min_period + 1)
-        self.sorted = np.zeros(max_period - min_period + 1, dtype=int)
+        self.sorted = np.zeros(max_period - min_period + 1, dtype=np.int32)
         self.diff_work = np.zeros(lookback)
         self.leg_work = np.zeros(lookback)
         self.sort_work = np.zeros(max_period - min_period + 1)
@@ -64,39 +279,9 @@ class FTI:
             self._find_coefs(i)
 
     def _find_coefs(self, period: int):
-        """
-        计算特定周期的滤波器系数
-
-        该FIR低通滤波器来自Otnes: Applied Time Series Analysis
-        """
-        # 系数设置
-        d = np.array([0.35577019, 0.2436983, 0.07211497, 0.00630165])
+        """计算特定周期的滤波器系数"""
         idx = period - self.min_period
-
-        # 计算中心系数
-        fact = 2.0 / period
-        self.coefs[idx, 0] = fact
-
-        # 计算其他系数
-        fact *= np.pi
-        for i in range(1, self.half_length + 1):
-            self.coefs[idx, i] = np.sin(i * fact) / (i * np.pi)
-
-        # 调整末端点
-        self.coefs[idx, self.half_length] *= 0.5
-
-        # 应用加权窗口并归一化
-        sumg = self.coefs[idx, 0]
-        for i in range(1, self.half_length + 1):
-            sum_val = d[0]
-            fact = i * np.pi / self.half_length
-            for j in range(1, 4):
-                sum_val += 2.0 * d[j] * np.cos(j * fact)
-            self.coefs[idx, i] *= sum_val
-            sumg += 2.0 * self.coefs[idx, i]
-
-        # 归一化系数
-        self.coefs[idx, :] /= sumg
+        self.coefs[idx] = _find_coefs_numba(self.min_period, period, self.half_length)
 
     def process(self, data):
         """
@@ -117,7 +302,7 @@ class FTI:
                 self.y[self.lookback - 1 - i] = data[i]
 
         # 拟合最小二乘线并扩展
-        self._extrapolate_data()
+        self.y = _extrapolate_data_numba(self.y, self.lookback, self.half_length)
 
         # 处理每个周期
         for period_idx, period in enumerate(
@@ -126,7 +311,9 @@ class FTI:
             self._process_period(period_idx, period)
 
         # 排序FTI局部最大值并保存排序后的索引
-        self._sort_local_maxima()
+        self.sorted = _sort_local_maxima_numba(
+            self.fti_values, self.min_period, self.max_period
+        )
 
         # 返回结果
         best_idx = self.sorted[0]
@@ -154,170 +341,35 @@ class FTI:
             best_period=float(best_period),
         )
 
-    def _extrapolate_data(self):
-        """使用最小二乘线外推数据"""
-        # 计算最近half_length+1个数据点的均值
-        xmean = -0.5 * self.half_length
-        ymean = np.mean(self.y[self.lookback - 1 - self.half_length : self.lookback])
-
-        # 计算最小二乘线的斜率
-        xsq = xy = 0.0
-        for i in range(self.half_length + 1):
-            xdiff = -i - xmean
-            ydiff = self.y[self.lookback - 1 - i] - ymean
-            xsq += xdiff * xdiff
-            xy += xdiff * ydiff
-
-        slope = xy / xsq
-
-        # 扩展数据
-        for i in range(self.half_length):
-            self.y[self.lookback + i] = (i + 1.0 - xmean) * slope + ymean
-
     def _process_period(self, period_idx, period):
         """处理单个周期的数据"""
         # 获取该周期的滤波器系数
         coefs = self.coefs[period_idx]
 
         # 应用滤波器到数据块中的每个值
-        self._apply_filter(period_idx, period, coefs)
+        filtered_value, longest_leg, n_legs, self.diff_work, self.leg_work = (
+            _apply_filter_numba(
+                self.y,
+                coefs,
+                self.half_length,
+                self.lookback,
+                self.diff_work,
+                self.leg_work,
+            )
+        )
+
+        # 保存滤波值
+        self.filtered[period_idx] = filtered_value
 
         # 计算通道宽度
-        self._calculate_width(period_idx)
+        self.width[period_idx] = _calculate_width_numba(
+            self.diff_work, self.lookback, self.half_length, self.beta
+        )
 
         # 计算FTI值
-        self._calculate_fti(period_idx)
-
-    def _apply_filter(self, period_idx, period, coefs):
-        """应用滤波器并收集移动腿"""
-        # 初始化变量
-        extreme_type = 0  # 未定义。1=高点; -1=低点
-        extreme_value = 0.0
-        n_legs = 0
-        longest_leg = 0.0
-        prior = 0.0
-
-        # 对数据块中的每个点应用滤波器
-        for iy in range(self.half_length, self.lookback):
-            # 应用卷积滤波器
-            sum_val = coefs[0] * self.y[iy]  # 中心点
-            for i in range(1, self.half_length + 1):
-                sum_val += coefs[i] * (self.y[iy + i] + self.y[iy - i])  # 对称滤波
-
-            # 如果这是当前数据点的滤波值，保存它
-            if iy == self.lookback - 1:
-                self.filtered[period_idx] = sum_val
-
-            # 保存实际值与滤波值之间的差异，用于宽度计算
-            self.diff_work[iy - self.half_length] = abs(self.y[iy] - sum_val)
-
-            # 收集移动腿
-            if iy == self.half_length:  # 第一个点
-                extreme_type = 0
-                extreme_value = sum_val
-                n_legs = 0
-                longest_leg = 0.0
-
-            elif extreme_type == 0:  # 等待第一个滤波价格变化
-                if sum_val > extreme_value:
-                    extreme_type = -1  # 第一个点是低点
-                elif sum_val < extreme_value:
-                    extreme_type = 1  # 第一个点是高点
-
-            elif iy == self.lookback - 1:  # 最后一点，视为转折点
-                if extreme_type:
-                    leg_length = abs(extreme_value - sum_val)
-                    self.leg_work[n_legs] = leg_length
-                    n_legs += 1
-                    if leg_length > longest_leg:
-                        longest_leg = leg_length
-
-            else:  # 内部前进
-                if extreme_type == 1 and sum_val > prior:  # 下降后转为上升
-                    leg_length = extreme_value - prior
-                    self.leg_work[n_legs] = leg_length
-                    n_legs += 1
-                    if leg_length > longest_leg:
-                        longest_leg = leg_length
-                    extreme_type = -1
-                    extreme_value = prior
-
-                elif extreme_type == -1 and sum_val < prior:  # 上升后转为下降
-                    leg_length = prior - extreme_value
-                    self.leg_work[n_legs] = leg_length
-                    n_legs += 1
-                    if leg_length > longest_leg:
-                        longest_leg = leg_length
-                    extreme_type = 1
-                    extreme_value = prior
-
-            prior = sum_val
-
-        # 保存最长腿长度和总腿数，供FTI计算使用
-        self._longest_leg = longest_leg
-        self._n_legs = n_legs
-
-    def _calculate_width(self, period_idx):
-        """计算通道宽度"""
-        # 排序差异并找到分位数
-        sorted_diffs = np.sort(self.diff_work[: self.lookback - self.half_length])
-        i = int(self.beta * (self.lookback - self.half_length)) - 1
-        if i < 0:
-            i = 0
-
-        # 保存通道宽度
-        self.width[period_idx] = sorted_diffs[i]
-
-    def _calculate_fti(self, period_idx):
-        """计算FTI值"""
-        # 计算噪声水平
-        noise_level = self.noise_cut * self._longest_leg
-
-        # 计算所有大于噪声水平的腿的平均值
-        sum_val = 0.0
-        n = 0
-        for i in range(self._n_legs):
-            if self.leg_work[i] > noise_level:
-                sum_val += self.leg_work[i]
-                n += 1
-
-        # 计算非噪声腿的平均移动
-        if n > 0:
-            mean_move = sum_val / n
-            self.fti_values[period_idx] = mean_move / (self.width[period_idx] + 1.0e-5)
-        else:
-            self.fti_values[period_idx] = 0.0
-
-    def _sort_local_maxima(self):
-        """排序FTI局部最大值并保存排序后的索引"""
-        n = 0
-        num_periods = self.max_period - self.min_period + 1
-
-        # 找到局部最大值（包括两个端点）
-        for i in range(num_periods):
-            if (
-                i == 0
-                or i == num_periods - 1
-                or (
-                    self.fti_values[i] >= self.fti_values[i - 1]
-                    and self.fti_values[i] >= self.fti_values[i + 1]
-                )
-            ):
-                self.sort_work[n] = -self.fti_values[i]  # 要降序排列FTI，但qsort是升序
-                self.sorted[n] = i
-                n += 1
-
-        # 对局部最大值进行排序
-        if n > 0:
-            # 使用argsort代替原始C++代码中的qsortdsi
-            idx = np.argsort(self.sort_work[:n])
-            temp_sorted = self.sorted[:n].copy()
-            for i in range(n):
-                self.sorted[i] = temp_sorted[idx[i]]
-
-        # 填充剩余的排序索引为0，以防万一
-        if n < num_periods:
-            self.sorted[n:] = 0
+        self.fti_values[period_idx] = _calculate_fti_numba(
+            self.leg_work, self.width[period_idx], n_legs, longest_leg, self.noise_cut
+        )
 
 
 def fti(
