@@ -4,3 +4,6 @@
 [submodule "extern/ndd"]
 	path = extern/ndd
 	url = https://github.com/simomarsili/ndd.git
+[submodule "extern/AlphaForge"]
+	path = extern/AlphaForge
+	url = https://github.com/DulyHao/AlphaForge.git
