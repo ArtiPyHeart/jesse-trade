@@ -14,11 +14,9 @@
 #include <string.h>
 #include <windows.h>
 
-
 #include "classes.h"
 #include "const.h"
 #include "funcdefs.h"
-
 
 /*
 --------------------------------------------------------------------------------
