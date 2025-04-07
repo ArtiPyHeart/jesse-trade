@@ -7,3 +7,6 @@
 [submodule "extern/AlphaForge"]
 	path = extern/AlphaForge
 	url = https://github.com/DulyHao/AlphaForge.git
+[submodule "extern/feature_engine"]
+	path = extern/feature_engine
+	url = https://github.com/feature-engine/feature_engine.git
