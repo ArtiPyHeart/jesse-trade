@@ -5,7 +5,8 @@ from typing import List, Optional, Union
 import numba as nb
 import numpy as np
 import pandas as pd
-from sklearn.feature_selection import f_classif, f_regression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
 from tqdm.auto import tqdm
 
 nb.set_num_threads(max(1, os.cpu_count() - 1))
@@ -60,28 +61,43 @@ def fast_corrwith_numba(X_values: np.ndarray, y_values: np.ndarray) -> np.ndarra
     return result
 
 
-# 纯净版FCQSelector实现，关键部分使用numba加速
-class FCQSelector:
+# 基于随机森林的RFCQ特征选择器实现
+class RFCQSelector:
     """
-    专为FCQ方法优化的特征选择器，关键部分使用numba加速
+    基于随机森林的RFCQ特征选择器，关键部分使用numba加速
 
-    FCQ = F-statistic for relevance, Correlation for redundancy, Quotient for combining
+    RFCQ = Random Forest for relevance, Correlation for redundancy, Quotient for combining
 
     Parameters
     ----------
     max_features: int, 默认=None
         要选择的特征数量。如果为None，则默认为特征总数的20%。
 
-    regression: bool, 默认=False
-        是否为回归问题。True表示回归，False表示分类。
+    scoring: str, 默认='accuracy'
+        评估随机森林性能的指标。
+
+    cv: int, 默认=3
+        交叉验证的折数。
+
+    param_grid: dict, 默认=None
+        随机森林的超参数网格。如果为None，则使用默认的网格 {"max_depth": [1, 2, 3, 4]}。
 
     verbose: bool, 默认=True
         是否显示进度条和详细信息。
+
+    random_state: int, 默认=None
+        随机种子，用于随机森林的初始化。
+
+    n_jobs: int, 默认=None
+        并行任务数。None表示1，-1表示使用所有处理器。
 
     Attributes
     ----------
     features_to_drop_: list
         训练后要删除的特征列表
+
+    variables_: list
+        考虑的特征列表
 
     relevance_: numpy.ndarray
         每个特征与目标的相关性
@@ -90,12 +106,20 @@ class FCQSelector:
     def __init__(
         self,
         max_features: Optional[int] = None,
-        regression: bool = False,
+        scoring: str = "roc_auc",
+        cv: int = 3,
+        param_grid: Optional[dict] = None,
         verbose: bool = True,
+        random_state: Optional[int] = 42,
+        n_jobs: Optional[int] = -1,
     ):
         self.max_features = max_features
-        self.regression = regression
+        self.scoring = scoring
+        self.cv = cv
+        self.param_grid = param_grid
         self.verbose = verbose
+        self.random_state = random_state
+        self.n_jobs = n_jobs
         self.features_to_drop_ = None
         self.variables_ = None
         self.relevance_ = None
@@ -108,23 +132,39 @@ class FCQSelector:
 
     def _calculate_relevance(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """
-        计算特征与目标的相关性（使用F统计量）
+        计算特征与目标的相关性（使用随机森林特征重要性）
         """
         X_values = X.values
         y_values = y.values
 
-        if self.regression:
-            # 回归问题使用f_regression
-            f_values, _ = f_regression(X_values, y_values)
+        # 创建随机森林分类器
+        model = RandomForestClassifier(
+            class_weight="balanced",
+            random_state=self.random_state,
+            n_jobs=self.n_jobs,
+        )
+
+        # 设置参数网格
+        if self.param_grid:
+            param_grid = self.param_grid
         else:
-            # 分类问题使用f_classif
-            f_values, _ = f_classif(X_values, y_values)
+            param_grid = {"max_depth": [1, 2, 3, 4]}
 
-        return f_values
+        # 网格搜索
+        cv_model = GridSearchCV(
+            model, cv=self.cv, scoring=self.scoring, param_grid=param_grid
+        )
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "FCQSelector":
+        cv_model.fit(X_values, y_values)
+
+        # 获取特征重要性
+        relevance = cv_model.best_estimator_.feature_importances_
+
+        return relevance
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "RFCQSelector":
         """
-        训练FCQ特征选择器
+        训练RFCQ特征选择器
 
         Parameters
         ----------
@@ -154,7 +194,7 @@ class FCQSelector:
 
         # 计算相关性
         if self.verbose:
-            print("➤ 计算特征与目标变量的相关性...")
+            print("➤ 计算特征与目标变量的相关性(使用随机森林)...")
         X_numeric = X[self.variables_]
         self.relevance_ = self._calculate_relevance(X_numeric, y)
 
@@ -170,7 +210,9 @@ class FCQSelector:
         top_feature = remaining[n]
 
         if self.verbose:
-            print(f"✓ 选择第1个特征: {top_feature} (最大F值: {self.relevance_[n]:.4f})")
+            print(
+                f"✓ 选择第1个特征: {top_feature} (最大重要性: {self.relevance_[n]:.4f})"
+            )
 
         # 更新特征列表
         selected = [top_feature]
@@ -256,10 +298,6 @@ class FCQSelector:
 
                 relevance = np.delete(relevance, n)
                 redundance = np.delete(redundance, n, axis=1)
-
-            # if self.verbose:
-            #     feat_num = i + 2  # 第一个特征已经选过了，所以从2开始
-            #     print(f"✓ 选择第{feat_num}个特征: {feature}")
 
             # 如果已经选完了所有特征，退出循环
             if len(remaining) == 0:
