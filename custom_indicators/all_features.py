@@ -282,6 +282,13 @@ class FeatureCalculator:
             "amihud_lambda", self.cache["amihud_lambda"], **kwargs
         )
 
+    def aroon_diff(self, **kwargs):
+        if "aroon_diff" not in self.cache:
+            aroon_: AROON = aroon(self.candles, sequential=True)
+            self.cache["aroon_diff"] = aroon_.up - aroon_.down
+
+        self._process_transformations("aroon_diff", self.cache["aroon_diff"], **kwargs)
+
     def bandpass(self, **kwargs):
         if "bandpass" not in self.cache or "highpass_bp" not in self.cache:
             bandpass_tuple = ta.bandpass(self.candles, sequential=True)
