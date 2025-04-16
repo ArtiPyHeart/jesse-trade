@@ -243,9 +243,11 @@ class BinanceBtcDBar5hAllOrNothing(Strategy):
         if self.is_long:
             if not self.should_long():
                 self.liquidate()
+                self.cancel_active_orders()
         if self.is_short:
             if not self.should_short():
                 self.liquidate()
+                self.cancel_active_orders()
 
     # def before_terminate(self):
     #     # 在策略结束时执行，可以用于关闭仓位
