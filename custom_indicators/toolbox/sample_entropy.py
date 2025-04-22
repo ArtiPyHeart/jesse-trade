@@ -61,5 +61,7 @@ def dynamic_sample_entropy(
     elif mode == "std":
         data_std = np.std(data)
         r = r_ratio * data_std
+    else:
+        raise ValueError("mode must be either 'range' or 'std'")
 
     return sample_entropy(data, emb_dim, r)
