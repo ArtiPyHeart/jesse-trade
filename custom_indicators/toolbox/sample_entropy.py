@@ -59,7 +59,7 @@ def dynamic_sample_entropy(
         data_range = np.max(data) - np.min(data)
         r = r_ratio * data_range
     elif mode == "std":
-        data_std = np.std(data)
+        data_std: float = np.std(data).item()
         r = r_ratio * data_std
     else:
         raise ValueError("mode must be either 'range' or 'std'")
