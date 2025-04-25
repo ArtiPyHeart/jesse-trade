@@ -1,5 +1,4 @@
 tqdm
-numba-progress
 plotly
 nbformat
 ipywidgets
