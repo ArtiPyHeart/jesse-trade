@@ -1,6 +1,8 @@
 tqdm
 numba-progress
 plotly
+nbformat
+ipywidgets
 fastparquet
 feature-engine
 scikit-learn
