@@ -8,3 +8,5 @@ scikit-learn
 optuna
 joblib
 lightweight-charts
+matplotlib
+seaborn

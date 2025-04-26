@@ -33,18 +33,26 @@ def _delete_row_1d(arr: np.ndarray, row_to_delete: int) -> np.ndarray:
 def _nb_merge_bar(
     candles: np.ndarray,
     candles_return: np.ndarray,
+    sign_first: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     action_bar_index = np.abs(candles_return).argmin()
     action_bar = candles[action_bar_index]
     if action_bar_index - 1 >= 0:
         last_bar = candles[action_bar_index - 1]
+        is_same_sign_last = (
+            candles_return[action_bar_index - 1] * candles_return[action_bar_index] > 0
+        )
         last_range = np.abs(
             candles_return[action_bar_index - 1] - candles_return[action_bar_index]
         )
     else:
         last_bar = None
+
     if action_bar_index + 1 <= candles.shape[0] - 1:
         next_bar = candles[action_bar_index + 1]
+        is_same_sign_next = (
+            candles_return[action_bar_index] * candles_return[action_bar_index + 1] > 0
+        )
         next_range = np.abs(
             candles_return[action_bar_index] - candles_return[action_bar_index + 1]
         )
@@ -64,29 +72,64 @@ def _nb_merge_bar(
         candles_return[action_bar_index - 1] = new_bar[2] / new_bar[1]
         candles_return = _delete_row_1d(candles_return, action_bar_index)
     else:
-        if last_range < next_range:
-            new_bar = _get_new_bar(last_bar, action_bar)
-            candles[action_bar_index - 1] = new_bar
-            candles = _delete_row_2d(candles, action_bar_index)
-            candles_return[action_bar_index - 1] = new_bar[2] / new_bar[1]
-            candles_return = _delete_row_1d(candles_return, action_bar_index)
+        if sign_first:
+            if is_same_sign_last and is_same_sign_next:
+                if last_range < next_range:
+                    new_bar = _get_new_bar(last_bar, action_bar)
+                    candles[action_bar_index - 1] = new_bar
+                    candles = _delete_row_2d(candles, action_bar_index)
+                    candles_return[action_bar_index - 1] = new_bar[2] / new_bar[1]
+                    candles_return = _delete_row_1d(candles_return, action_bar_index)
+                else:
+                    new_bar = _get_new_bar(action_bar, next_bar)
+                    candles[action_bar_index] = new_bar
+                    candles = _delete_row_2d(candles, action_bar_index + 1)
+                    candles_return[action_bar_index] = new_bar[2] / new_bar[1]
+                    candles_return = _delete_row_1d(
+                        candles_return, action_bar_index + 1
+                    )
+            else:
+                if is_same_sign_last:
+                    new_bar = _get_new_bar(last_bar, action_bar)
+                    candles[action_bar_index - 1] = new_bar
+                    candles = _delete_row_2d(candles, action_bar_index)
+                    candles_return[action_bar_index - 1] = new_bar[2] / new_bar[1]
+                    candles_return = _delete_row_1d(candles_return, action_bar_index)
+                else:
+                    new_bar = _get_new_bar(action_bar, next_bar)
+                    candles[action_bar_index] = new_bar
+                    candles = _delete_row_2d(candles, action_bar_index + 1)
+                    candles_return[action_bar_index] = new_bar[2] / new_bar[1]
+                    candles_return = _delete_row_1d(
+                        candles_return, action_bar_index + 1
+                    )
         else:
-            new_bar = _get_new_bar(action_bar, next_bar)
-            candles[action_bar_index] = new_bar
-            candles = _delete_row_2d(candles, action_bar_index + 1)
-            candles_return[action_bar_index] = new_bar[2] / new_bar[1]
-            candles_return = _delete_row_1d(candles_return, action_bar_index + 1)
-
+            if last_range < next_range:
+                new_bar = _get_new_bar(last_bar, action_bar)
+                candles[action_bar_index - 1] = new_bar
+                candles = _delete_row_2d(candles, action_bar_index)
+                candles_return[action_bar_index - 1] = new_bar[2] / new_bar[1]
+                candles_return = _delete_row_1d(candles_return, action_bar_index)
+            else:
+                new_bar = _get_new_bar(action_bar, next_bar)
+                candles[action_bar_index] = new_bar
+                candles = _delete_row_2d(candles, action_bar_index + 1)
+                candles_return[action_bar_index] = new_bar[2] / new_bar[1]
+                candles_return = _delete_row_1d(candles_return, action_bar_index + 1)
     return candles, candles_return
 
 
-def np_merge_bars(candles: np.ndarray, bars_limit: int) -> np.ndarray:
+def np_merge_bars(
+    candles: np.ndarray, bars_limit: int, lag: int = 1, sign_first: bool = False
+) -> np.ndarray:
     assert candles.shape[0] > bars_limit, (
         f"bars_limit must be less than candles.shape[0], "
         f"but got {candles.shape[0] = } < {bars_limit = }"
     )
-    candles_return = candles[:, 2] / candles[:, 1]
+    candles_return = candles[lag:, 2] / candles[:-lag, 2]
+    candles = candles[lag:]
     rounds = candles.shape[0] - bars_limit
     for _ in tqdm(range(rounds)):
-        candles, candles_return = _nb_merge_bar(candles, candles_return)
+        candles, candles_return = _nb_merge_bar(candles, candles_return, sign_first)
+        assert candles.shape[0] == candles_return.shape[0]
     return candles
