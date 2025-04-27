@@ -73,7 +73,7 @@ def _nb_merge_bar(
         candles_return = _delete_row_1d(candles_return, action_bar_index)
     else:
         if sign_first:
-            if is_same_sign_last and is_same_sign_next:
+            if is_same_sign_last is is_same_sign_next:
                 if last_range < next_range:
                     new_bar = _get_new_bar(last_bar, action_bar)
                     candles[action_bar_index - 1] = new_bar
@@ -89,13 +89,7 @@ def _nb_merge_bar(
                         candles_return, action_bar_index + 1
                     )
             else:
-                if is_same_sign_last:
-                    new_bar = _get_new_bar(last_bar, action_bar)
-                    candles[action_bar_index - 1] = new_bar
-                    candles = _delete_row_2d(candles, action_bar_index)
-                    candles_return[action_bar_index - 1] = new_bar[2] / new_bar[1]
-                    candles_return = _delete_row_1d(candles_return, action_bar_index)
-                else:
+                if is_same_sign_next:
                     new_bar = _get_new_bar(action_bar, next_bar)
                     candles[action_bar_index] = new_bar
                     candles = _delete_row_2d(candles, action_bar_index + 1)
@@ -103,6 +97,12 @@ def _nb_merge_bar(
                     candles_return = _delete_row_1d(
                         candles_return, action_bar_index + 1
                     )
+                else:
+                    new_bar = _get_new_bar(last_bar, action_bar)
+                    candles[action_bar_index - 1] = new_bar
+                    candles = _delete_row_2d(candles, action_bar_index)
+                    candles_return[action_bar_index - 1] = new_bar[2] / new_bar[1]
+                    candles_return = _delete_row_1d(candles_return, action_bar_index)
         else:
             if last_range < next_range:
                 new_bar = _get_new_bar(last_bar, action_bar)
