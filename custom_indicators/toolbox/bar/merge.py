@@ -119,6 +119,18 @@ def _nb_merge_bar(
     return candles, candles_return
 
 
+@njit
+def _batch_nb_merge_bar(
+    candles: np.ndarray,
+    candles_return: np.ndarray,
+    sign_first: bool,
+    batch_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    for _ in range(batch_size):
+        candles, candles_return = _nb_merge_bar(candles, candles_return, sign_first)
+    return candles, candles_return
+
+
 def np_merge_bars(
     candles: np.ndarray, bars_limit: int, lag: int = 1, sign_first: bool = False
 ) -> np.ndarray:
@@ -129,7 +141,19 @@ def np_merge_bars(
     candles_return = candles[lag:, 2] / candles[:-lag, 2]
     candles = candles[lag:]
     rounds = candles.shape[0] - bars_limit
-    for _ in tqdm(range(rounds)):
-        candles, candles_return = _nb_merge_bar(candles, candles_return, sign_first)
+
+    BATCH_SIZE = 10000
+
+    for _ in tqdm(range(rounds // BATCH_SIZE)):
+        candles, candles_return = _batch_nb_merge_bar(
+            candles, candles_return, sign_first, BATCH_SIZE
+        )
         assert candles.shape[0] == candles_return.shape[0]
+
+    # 处理剩下的
+    candles, candles_return = _batch_nb_merge_bar(
+        candles, candles_return, sign_first, rounds % BATCH_SIZE
+    )
+    assert candles.shape[0] == candles_return.shape[0]
+
     return candles
