@@ -196,6 +196,7 @@ def _nb_merge_bars_inplace(
 
         # n、candles_return 的有效长度各缩短 1
         n -= 1
+
         # 打印进度
         if n % 50000 == 0:
             print("n = " + str(n) + ", target = " + str(bars_limit))

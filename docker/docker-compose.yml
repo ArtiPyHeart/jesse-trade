@@ -13,7 +13,7 @@ services:
     ports:
       - "9000:9000"
       # Jupyter Port
-      - "8888:8888"
+      # - "8888:8888"
     volumes:
       - ../:/home
     container_name: jesse
@@ -39,3 +39,4 @@ services:
     
 volumes:
   postgres-data:
+    external: true
