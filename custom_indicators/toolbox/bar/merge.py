@@ -100,11 +100,14 @@ def _nb_merge_bars_inplace(
     # 预处理：先裁剪出 lag 之后的视图，与旧实现保持一致
     candles_view = candles[lag:].copy()
     n = candles_view.shape[0]
+    candles_return = np.zeros(n, dtype=np.float64)
 
     # 主循环：不断合并直到满足 bars_limit
     while n > bars_limit:
         # 0. 准备 candles_return (长度 == candles_view)
-        candles_return = np.log(candles[lag:, 2] / candles[: n - lag, 2])
+        for i in range(n):
+            candles_return[i] = np.log(candles[i + lag, 2] / candles[i, 2])
+        candles_return = candles_return[:n]
 
         # 1. 找到 |return| 最小的 bar 下标(对应 action_bar)
         abs_min = np.abs(candles_return[0])
@@ -116,7 +119,6 @@ def _nb_merge_bars_inplace(
                 action_idx = i
 
         # 2. 依据 last_range / next_range 规则决定与前还是后合并
-        merge_with_prev = False  # 是否与前一根合并
         if action_idx == 0:
             merge_with_prev = False  # 只能与下一根合并
         elif action_idx == n - 1:
