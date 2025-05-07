@@ -2,16 +2,7 @@ from typing import Optional
 
 import numpy as np
 from numba import njit
-
-# tqdm 可选依赖，无则回退到普通 range。保持全局命名，避免静态分析器警告。
-try:
-    from tqdm.auto import tqdm  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-
-    def tqdm(x, *args, **kwargs):  # type: ignore
-        """简易降级实现：直接返回原可迭代对象。"""
-
-        return x
+from tqdm.auto import tqdm
 
 
 @njit
@@ -113,14 +104,14 @@ def _nb_merge_bars_inplace(
     candles_view = candles[lag:].copy()
     n = candles_view.shape[0]
 
-    # 按旧实现的写法构造 candles_return (长度 == candles_view)
-    candles_return = np.empty(n, dtype=np.float64)
-    for i in range(n):
-        candles_return[i] = candles[i + lag, 2] / candles[i, 2]
-
     # 主循环：不断合并直到满足 bars_limit
     while n > bars_limit:
-        # 1. 找到 |return| 最小的 bar 下标（对应 action_bar)
+        # 0. 准备 candles_return (长度 == candles_view)
+        candles_return = np.empty(n, dtype=np.float64)
+        for i in range(n):
+            candles_return[i] = candles[i + lag, 2] / candles[i, 2]
+
+        # 1. 找到 |return| 最小的 bar 下标(对应 action_bar)
         abs_min = np.abs(candles_return[0])
         action_idx = 0
         for i in range(1, n):
@@ -185,14 +176,6 @@ def _nb_merge_bars_inplace(
             candles_view[j - 1, 3] = candles_view[j, 3]
             candles_view[j - 1, 4] = candles_view[j, 4]
             candles_view[j - 1, 5] = candles_view[j, 5]
-
-        # 3.4 更新 candles_return —— 完全遵循旧实现语义：
-        #    只写入新 bar 自身的 close/open；其他位置保持不变
-        candles_return[i1] = candles_view[i1, 2] / candles_view[i1, 1]
-
-        # 左移 candles_return[i2+1 : n]
-        for j in range(i2 + 1, n):
-            candles_return[j - 1] = candles_return[j]
 
         # n、candles_return 的有效长度各缩短 1
         n -= 1
