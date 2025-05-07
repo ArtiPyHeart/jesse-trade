@@ -1,8 +1,5 @@
-from typing import Optional
-
 import numpy as np
 from numba import njit
-from tqdm.auto import tqdm
 
 
 @njit
@@ -109,7 +106,7 @@ def _nb_merge_bars_inplace(
         # 0. 准备 candles_return (长度 == candles_view)
         candles_return = np.empty(n, dtype=np.float64)
         for i in range(n):
-            candles_return[i] = candles[i + lag, 2] / candles[i, 2]
+            candles_return[i] = np.log(candles[i, 2] / candles[i - lag, 2])
 
         # 1. 找到 |return| 最小的 bar 下标(对应 action_bar)
         abs_min = np.abs(candles_return[0])
@@ -192,8 +189,6 @@ def np_merge_bars(
     candles: np.ndarray,
     bars_limit: int,
     lag: int = 1,
-    use_fast: bool = True,
-    show_progress: Optional[bool] = False,
 ) -> np.ndarray:
     """在保持算法逻辑不变的前提下，对原实现进行显著提速。
 
@@ -205,11 +200,6 @@ def np_merge_bars(
         目标 bar 数量 (合并停止条件)。
     lag : int, default 1
         与原实现保持一致。
-    use_fast : bool, default True
-        若为 *True* (默认)，使用一次性完成全部循环的 numba 实现；
-        若为 *False*，回退到旧实现 (便于对比测试)。
-    show_progress : bool, default False
-        仅在 *use_fast=False* 时有效，决定是否使用 tqdm。
     """
 
     assert candles.shape[0] > bars_limit, (
@@ -217,17 +207,4 @@ def np_merge_bars(
         f"but got {candles.shape[0] = } < {bars_limit = }"
     )
 
-    if use_fast:
-        # 直接调用优化后的实现
-        return _nb_merge_bars_inplace(candles, bars_limit, lag)
-
-    # ---------- 兼容旧实现 ----------
-    candles_return = candles[lag:, 2] / candles[:-lag, 2]
-    candles_view = candles[lag:]
-    rounds = candles_view.shape[0] - bars_limit
-
-    iterator = tqdm(range(rounds)) if show_progress else range(rounds)
-    for _ in iterator:
-        candles_view, candles_return = _nb_merge_bar(candles_view, candles_return)
-
-    return candles_view
+    return _nb_merge_bars_inplace(candles, bars_limit, lag)
