@@ -1,5 +1,8 @@
+from typing import Optional
+
 import numpy as np
 from numba import njit
+from tqdm.auto import tqdm
 
 
 @njit
@@ -100,16 +103,15 @@ def _nb_merge_bars_inplace(
     # 预处理：先裁剪出 lag 之后的视图，与旧实现保持一致
     candles_view = candles[lag:].copy()
     n = candles_view.shape[0]
-    candles_return = np.zeros(n, dtype=np.float64)
+
+    # 按旧实现的写法构造 candles_return (长度 == candles_view)
+    candles_return = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        candles_return[i] = candles[i + lag, 2] / candles[i, 2]
 
     # 主循环：不断合并直到满足 bars_limit
     while n > bars_limit:
-        # 0. 准备 candles_return (长度 == candles_view)
-        for i in range(n):
-            candles_return[i] = np.log(candles[i + lag, 2] / candles[i, 2])
-        candles_return = candles_return[:n]
-
-        # 1. 找到 |return| 最小的 bar 下标(对应 action_bar)
+        # 1. 找到 |return| 最小的 bar 下标（对应 action_bar)
         abs_min = np.abs(candles_return[0])
         action_idx = 0
         for i in range(1, n):
@@ -119,6 +121,7 @@ def _nb_merge_bars_inplace(
                 action_idx = i
 
         # 2. 依据 last_range / next_range 规则决定与前还是后合并
+        merge_with_prev = False  # 是否与前一根合并
         if action_idx == 0:
             merge_with_prev = False  # 只能与下一根合并
         elif action_idx == n - 1:
@@ -174,6 +177,14 @@ def _nb_merge_bars_inplace(
             candles_view[j - 1, 4] = candles_view[j, 4]
             candles_view[j - 1, 5] = candles_view[j, 5]
 
+        # 3.4 更新 candles_return —— 完全遵循旧实现语义：
+        #    只写入新 bar 自身的 close/open；其他位置保持不变
+        candles_return[i1] = candles_view[i1, 2] / candles_view[i1, 1]
+
+        # 左移 candles_return[i2+1 : n]
+        for j in range(i2 + 1, n):
+            candles_return[j - 1] = candles_return[j]
+
         # n、candles_return 的有效长度各缩短 1
         n -= 1
 
@@ -189,6 +200,8 @@ def np_merge_bars(
     candles: np.ndarray,
     bars_limit: int,
     lag: int = 1,
+    use_fast: bool = True,
+    show_progress: Optional[bool] = False,
 ) -> np.ndarray:
     """在保持算法逻辑不变的前提下，对原实现进行显著提速。
 
@@ -200,6 +213,11 @@ def np_merge_bars(
         目标 bar 数量 (合并停止条件)。
     lag : int, default 1
         与原实现保持一致。
+    use_fast : bool, default True
+        若为 *True* (默认)，使用一次性完成全部循环的 numba 实现；
+        若为 *False*，回退到旧实现 (便于对比测试)。
+    show_progress : bool, default False
+        仅在 *use_fast=False* 时有效，决定是否使用 tqdm。
     """
 
     assert candles.shape[0] > bars_limit, (
@@ -207,4 +225,17 @@ def np_merge_bars(
         f"but got {candles.shape[0] = } < {bars_limit = }"
     )
 
-    return _nb_merge_bars_inplace(candles, bars_limit, lag)
+    if use_fast:
+        # 直接调用优化后的实现
+        return _nb_merge_bars_inplace(candles, bars_limit, lag)
+
+    # ---------- 兼容旧实现 ----------
+    candles_return = candles[lag:, 2] / candles[:-lag, 2]
+    candles_view = candles[lag:]
+    rounds = candles_view.shape[0] - bars_limit
+
+    iterator = tqdm(range(rounds)) if show_progress else range(rounds)
+    for _ in iterator:
+        candles_view, candles_return = _nb_merge_bar(candles_view, candles_return)
+
+    return candles_view
