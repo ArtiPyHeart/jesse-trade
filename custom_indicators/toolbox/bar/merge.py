@@ -104,9 +104,7 @@ def _nb_merge_bars_inplace(
     # 主循环：不断合并直到满足 bars_limit
     while n > bars_limit:
         # 0. 准备 candles_return (长度 == candles_view)
-        candles_return = np.empty(n, dtype=np.float64)
-        for i in range(n):
-            candles_return[i] = np.log(candles[i, 2] / candles[i - lag, 2])
+        candles_return = np.log(candles[lag:, 2] / candles[: n - lag, 2])
 
         # 1. 找到 |return| 最小的 bar 下标(对应 action_bar)
         abs_min = np.abs(candles_return[0])
