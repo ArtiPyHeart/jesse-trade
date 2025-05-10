@@ -29,7 +29,7 @@ def plot_kde(array_1d: np.ndarray, lag=1):
     plt.show()
 
 
-def plot_kde_cross(array_1d: np.ndarray) -> np.ndarray:
+def find_kde_cross(array_1d: np.ndarray) -> np.ndarray:
     # —— 2. 拟合 KDE & 拟合正态 φ(x|μ,σ) ——
     kde = gaussian_kde(array_1d)
     mu, sigma = array_1d.mean(), array_1d.std(ddof=0)
