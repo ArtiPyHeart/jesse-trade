@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 
 
@@ -41,4 +43,8 @@ def sample_entropy(x, m=2, r_ratio: float = 0.3, mode: str = "range"):
 
     Bm = _count_pairs(Xm)
     Am = _count_pairs(Xm1)
-    return np.nan if Am == 0 or Bm == 0 else -np.log(Am / Bm)
+    if Am == 0 or Bm == 0:
+        warnings.warn("sample_entropy: Am or Bm is 0, return NaN")
+        return np.nan
+    else:
+        return -np.log(Am / Bm)
