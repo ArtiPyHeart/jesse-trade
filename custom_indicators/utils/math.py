@@ -88,3 +88,15 @@ def kurtosis(array: np.ndarray, n: int = 20) -> np.ndarray:
         # 峰度计算公式
         ret[i] = (m4 / var**2) - 3 if var != 0 else 0
     return ret
+
+
+def rolling_sum_with_nan(arr: np.ndarray, window: int) -> np.ndarray:
+    if window > len(arr):
+        # 窗口大于数组长度时，全部返回nan
+        return np.full_like(arr, np.nan, dtype=float)
+    # 计算累积和，前面插入0方便计算滑动窗口和
+    cumsum = np.cumsum(np.insert(arr, 0, 0))
+    # 计算窗口内的和
+    result = cumsum[window:] - cumsum[:-window]
+    # 开头用nan补齐，使得结果长度和输入相同
+    return np.concatenate((np.full(window - 1, np.nan), result))
