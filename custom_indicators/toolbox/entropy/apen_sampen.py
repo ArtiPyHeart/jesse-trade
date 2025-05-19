@@ -125,6 +125,40 @@ def sample_entropy_numba(x, m=2, r_ratio: float = 0.3, mode: str = "range"):
         return -np.log(Am / Bm)
 
 
+@jit(nopython=True)
+def _phi_numba(x, m, r):
+    """
+    使用Numba优化的phi函数计算
+    """
+    N = len(x)
+    total = 0
+
+    for i in range(N - m + 1):
+        template = x[i : i + m]
+        matches = 0
+        for j in range(N - m + 1):
+            max_diff = 0
+            for k in range(m):
+                diff = abs(template[k] - x[j + k])
+                if diff > max_diff:
+                    max_diff = diff
+            if max_diff <= r:
+                matches += 1
+        if matches > 0:
+            total += np.log(matches / (N - m + 1))
+
+    return total / (N - m + 1)
+
+
+def approximate_entropy_numba(x, m=2, r_ratio: float = 0.3, mode: str = "range"):
+    """
+    使用Numba优化的approximate entropy计算函数
+    """
+    x = np.asarray(x, float)
+    r = r_ratio * _data_range(x, mode)
+    return _phi_numba(x, m, r) - _phi_numba(x, m + 1, r)
+
+
 if __name__ == "__main__":
     import time
 
@@ -134,8 +168,10 @@ if __name__ == "__main__":
 
     # 预热Numba
     _ = sample_entropy_numba(test_data)
+    _ = approximate_entropy_numba(test_data)
 
     # 测试正确性
+    print("=== Sample Entropy 测试 ===")
     result_original = sample_entropy(test_data)
     result_fast = sample_entropy_fast(test_data)
     result_numba = sample_entropy_numba(test_data)
@@ -146,6 +182,14 @@ if __name__ == "__main__":
     print(f"原始vs优化差异: {abs(result_original - result_fast)}")
     print(f"原始vsNumba差异: {abs(result_original - result_numba)}")
 
+    print("\n=== Approximate Entropy 测试 ===")
+    result_orig_apen = approximate_entropy(test_data)
+    result_numba_apen = approximate_entropy_numba(test_data)
+
+    print(f"原始函数结果: {result_orig_apen}")
+    print(f"Numba优化结果: {result_numba_apen}")
+    print(f"结果差异: {abs(result_orig_apen - result_numba_apen)}")
+
     # 性能测试
     def benchmark(func, data, iterations=100):
         start_time = time.time()
@@ -155,13 +199,21 @@ if __name__ == "__main__":
         return (end_time - start_time) / iterations
 
     # 运行性能测试
+    print("\n=== Sample Entropy 性能测试 ===")
     original_time = benchmark(sample_entropy, test_data)
     fast_time = benchmark(sample_entropy_fast, test_data)
     numba_time = benchmark(sample_entropy_numba, test_data)
 
-    print("\n性能测试结果:")
     print(f"原始函数平均执行时间: {original_time * 1000:.2f} ms")
     print(f"优化函数平均执行时间: {fast_time * 1000:.2f} ms")
     print(f"Numba优化平均执行时间: {numba_time * 1000:.2f} ms")
     print(f"优化函数性能提升: {original_time / fast_time:.2f}x")
     print(f"Numba优化性能提升: {original_time / numba_time:.2f}x")
+
+    print("\n=== Approximate Entropy 性能测试 ===")
+    orig_apen_time = benchmark(approximate_entropy, test_data)
+    numba_apen_time = benchmark(approximate_entropy_numba, test_data)
+
+    print(f"原始函数平均执行时间: {orig_apen_time * 1000:.2f} ms")
+    print(f"Numba优化平均执行时间: {numba_apen_time * 1000:.2f} ms")
+    print(f"性能提升: {orig_apen_time / numba_apen_time:.2f}x")
