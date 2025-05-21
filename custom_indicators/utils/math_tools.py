@@ -90,13 +90,22 @@ def kurtosis(array: np.ndarray, n: int = 20) -> np.ndarray:
     return ret
 
 
+@njit
+def np_array_fill_nan(todo: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """
+    在todo数组开头填充nan，使得todo和target数组长度相同
+    """
+    res = np.concatenate((np.full(len(target) - len(todo), np.nan), todo))
+    return res
+
+
 def rolling_sum_with_nan(arr: np.ndarray, window: int) -> np.ndarray:
     if window > len(arr):
         # 窗口大于数组长度时，全部返回nan
-        return np.full_like(arr, np.nan, dtype=float)
+        return np.full_like(arr, np.nan, dtype=np.float64)
     # 计算累积和，前面插入0方便计算滑动窗口和
-    cumsum = np.cumsum(np.insert(arr, 0, 0))
+    cumsum_res = np.cumsum(np.insert(arr, 0, 0))
     # 计算窗口内的和
-    result = cumsum[window:] - cumsum[:-window]
+    result = cumsum_res[window:] - cumsum_res[:-window]
     # 开头用nan补齐，使得结果长度和输入相同
     return np.concatenate((np.full(window - 1, np.nan), result))

@@ -6,7 +6,7 @@ from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
 from custom_indicators.prod_indicator.roofing_filter import _roofing_filter
-from custom_indicators.utils.math import deg_cos, deg_sin
+from custom_indicators.utils.math_tools import deg_cos, deg_sin
 
 
 @njit

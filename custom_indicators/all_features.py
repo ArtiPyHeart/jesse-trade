@@ -54,7 +54,7 @@ from custom_indicators.prod_indicator.micro_structure import (
     roll_measure,
 )
 from custom_indicators.prod_indicator.nsb_entropy import entropy_for_jesse
-from custom_indicators.utils.math import ddt, dt, lag
+from custom_indicators.utils.math_tools import ddt, dt, lag
 
 LAG_MAX = 30
 

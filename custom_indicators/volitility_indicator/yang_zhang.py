@@ -1,7 +1,7 @@
 import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 
-from custom_indicators.utils.math import rolling_sum_with_nan
+from custom_indicators.utils.math_tools import rolling_sum_with_nan
 
 
 def yang_zhang_volatility(

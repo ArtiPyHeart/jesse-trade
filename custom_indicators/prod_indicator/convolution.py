@@ -2,7 +2,7 @@ import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit
 
-from custom_indicators.utils.math import deg_cos, deg_sin
+from custom_indicators.utils.math_tools import deg_cos, deg_sin
 
 
 # 新增：先定义子函数，用于进行Corr/Slope/Convolution的计算
@@ -20,7 +20,7 @@ def _calc_corr_slope_conv(Filt: np.ndarray, length: int, maxN: int):
             Sx = Sy = Sxx = Syy = Sxy = 0.0
             for II in range(1, N + 1):
                 X = Filt[i - (II - 1)]
-                Y = Filt[i - ((N - II))]
+                Y = Filt[i - (N - II)]
                 Sx += X
                 Sy += Y
                 Sxx += X * X

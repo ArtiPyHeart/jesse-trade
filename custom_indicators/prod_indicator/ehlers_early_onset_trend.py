@@ -5,7 +5,7 @@ import numpy.typing as npt
 from jesse.helpers import get_candle_source, slice_candles
 from numba import njit  # 新增 numba 导入
 
-from custom_indicators.utils.math import deg_cos, deg_sin
+from custom_indicators.utils.math_tools import deg_cos, deg_sin
 
 
 # 新增 numba 加速的计算子函数
