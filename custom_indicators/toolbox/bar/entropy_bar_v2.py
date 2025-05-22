@@ -69,48 +69,31 @@ class EntropyBarContainer:
 
         window_on_vol = self.window * vol_ref / (vol_t + 1e-10)
         window_on_vol = np.clip(window_on_vol, self.MIN_WINDOW, self.MAX_WINDOW)
-        assert len(candle_for_vol) == len(window_on_vol)
         log_ret_list = log_ret(candle_for_vol, window_on_vol)
         with WorkerPool() as pool:
             entropy_array = pool.map(sample_entropy_numba, log_ret_list)
         # 统一处理长度
         if self.bars.size == 0:
-            candle_to_merge = candles[-len(entropy_array) :]
+            len_gap = len(candles) - len(entropy_array)
+            candle_to_merge = candles[len_gap:]
         else:
             # 要考虑unfinished bar的情况
-            if self._unfinished_bars.size == 0:
-                # 没有遗留bar
-                candle_to_merge = candles[
-                    candles[:, 0].astype(int) > self.latest_timestamp
-                ]
-                if len(entropy_array) > len(candle_to_merge):
-                    entropy_array = entropy_array[-len(candle_to_merge) :]
-                elif len(entropy_array) < len(candle_to_merge):
-                    raise ValueError("Not enough entropy calculated.")
-                else:
-                    pass
+            candle_to_stack = candles[
+                candles[:, 0].astype(int) > int(self._unfinished_bars[-1, 0])
+            ]
+            if len(entropy_array) > len(candle_to_stack):
+                len_gap = len(entropy_array) - len(candle_to_stack)
+                entropy_array = entropy_array[len_gap:]
+            elif len(entropy_array) < len(candle_to_stack):
+                raise ValueError("Not enough entropy calculated.")
             else:
-                # ⚠️存在遗留bar，需要合并
-                candle_to_stack = candles[
-                    candles[:, 0].astype(int) > int(self._unfinished_bars[-1, 0])
-                ]
-                if len(entropy_array) > len(candle_to_stack):
-                    entropy_array = entropy_array[-len(candle_to_stack) :]
-                elif len(entropy_array) < len(candle_to_stack):
-                    raise ValueError("Not enough entropy calculated.")
-                else:
-                    pass
-                self._unfinished_bars = np.vstack(
-                    (self._unfinished_bars, candle_to_stack)
-                )
-                self._unfinished_bars_entropy = (
-                    self._unfinished_bars_entropy + entropy_array
-                )
-                assert len(self._unfinished_bars) == len(self._unfinished_bars_entropy)
-                candle_to_merge = self._unfinished_bars
-                entropy_array = self._unfinished_bars_entropy
-
-        assert len(candle_to_merge) == len(entropy_array)
+                pass
+            self._unfinished_bars = np.vstack((self._unfinished_bars, candle_to_stack))
+            self._unfinished_bars_entropy = (
+                self._unfinished_bars_entropy + entropy_array
+            )
+            candle_to_merge = self._unfinished_bars
+            entropy_array = self._unfinished_bars_entropy
 
         merged_bars = build_bar_by_cumsum(
             candle_to_merge,
@@ -122,41 +105,23 @@ class EntropyBarContainer:
         if len(merged_bars) > 0:
             if self.bars.size == 0:
                 # 初始化的情况
-                self.bars = np.vstack((self.bars, merged_bars))
+                self.bars = merged_bars
                 self.latest_timestamp = int(self.bars[-1, 0])
-                self._is_latest_bar_complete = False
-
-                unfinish_mask = (
-                    candle_to_merge[:, 0].astype(int) > self.latest_timestamp
-                )
-                self._unfinished_bars = candle_to_merge[unfinish_mask]
-                self._unfinished_bars_entropy = [
-                    e for e, u in zip(entropy_array, unfinish_mask) if u
-                ]
-                assert len(self._unfinished_bars) == len(self._unfinished_bars_entropy)
             else:
                 # 新增bar的情况
-                if len(merged_bars) > 0:
-                    self.bars = np.vstack((self.bars, merged_bars))
-                    self.latest_timestamp = int(self.bars[-1, 0])
-                    self._is_latest_bar_complete = True
-                else:
-                    self._is_latest_bar_complete = False
+                self.bars = np.vstack((self.bars, merged_bars))
+                self.latest_timestamp = int(self.bars[-1, 0])
 
-                unfinish_mask = (
-                    candle_to_merge[:, 0].astype(int) > self.latest_timestamp
-                )
-                if all([i is False for i in unfinish_mask]):
-                    self._unfinished_bars = np.empty((0, 6), dtype=np.float64)
-                    self._unfinished_bars_entropy = []
-                else:
-                    self._unfinished_bars = candle_to_merge[unfinish_mask]
-                    self._unfinished_bars_entropy = [
-                        e for e, u in zip(entropy_array, unfinish_mask) if u
-                    ]
-                    assert len(self._unfinished_bars) == len(
-                        self._unfinished_bars_entropy
-                    )
+            unfinish_mask = candle_to_merge[:, 0].astype(int) > self.latest_timestamp
+            self._unfinished_bars = candle_to_merge[unfinish_mask]
+            self._unfinished_bars_entropy = [
+                e for e, u in zip(entropy_array, unfinish_mask) if u
+            ]
+
+            if len(self._unfinished_bars) == 1:
+                self._is_latest_bar_complete = True
+            else:
+                self._is_latest_bar_complete = False
         else:
             self._is_latest_bar_complete = False
 
@@ -168,7 +133,7 @@ class EntropyBarContainer:
 
 
 if __name__ == "__main__":
-    candles = np.load("data/btc_1m.npy")[-200000:]
+    candles = np.load("/Users/yangqiuyu/Github/jesse-trade/data/btc_1m.npy")[-200000:]
     entropy_bar_container = EntropyBarContainer(
         window=52,
         window_vol_t=55,

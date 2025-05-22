@@ -8,7 +8,7 @@ def build_bar_by_threshold_greater_than(
     condition: np.ndarray,
     threshold: float,
     max_bars: int = -1,
-    reverse: bool = True,
+    reverse: bool = False,
 ) -> np.ndarray:
     if reverse:
         candles = candles[::-1]
@@ -25,7 +25,7 @@ def build_bar_by_threshold_greater_than(
     bar_low = candles[0, 4]
     bar_volume = candles[0, 5]
     is_empty_bar = False
-    n = 0
+    n = 1
 
     while n < len(candles):
         if condition[n] > threshold:
@@ -92,7 +92,7 @@ def build_bar_by_threshold_less_than(
     condition: np.ndarray,
     threshold: float,
     max_bars: int = -1,
-    reverse: bool = True,
+    reverse: bool = False,
 ) -> np.ndarray:
     if reverse:
         candles = candles[::-1]
@@ -109,7 +109,7 @@ def build_bar_by_threshold_less_than(
     bar_low = candles[0, 4]
     bar_volume = candles[0, 5]
     is_empty_bar = False
-    n = 0
+    n = 1
 
     while n < len(candles):
         if condition[n] < threshold:
@@ -176,7 +176,7 @@ def build_bar_by_cumsum(
     condition: np.ndarray,
     threshold: float,
     max_bars: int = -1,
-    reverse: bool = True,
+    reverse: bool = False,
 ) -> np.ndarray:
     if reverse:
         candles = candles[::-1]
@@ -193,10 +193,19 @@ def build_bar_by_cumsum(
     bar_low = candles[0, 4]
     bar_volume = candles[0, 5]
     bar_cumsum = condition[0]
-    n = 0
 
-    while n < len(candles):
-        if bar_cumsum > threshold:
+    for i in range(1, len(candles)):
+        if bar_cumsum <= threshold:
+            bar_cumsum += condition[i]
+            bar_timestamp = max(bar_timestamp, candles[i, 0])
+            bar_volume += candles[i, 5]
+            bar_high = max(bar_high, candles[i, 3])
+            bar_low = min(bar_low, candles[i, 4])
+            if reverse:
+                bar_open = candles[i, 1]
+            else:
+                bar_close = candles[i, 2]
+        else:
             bars[bar_index, 0] = bar_timestamp
             bars[bar_index, 1] = bar_open
             bars[bar_index, 2] = bar_close
@@ -209,25 +218,13 @@ def build_bar_by_cumsum(
                 break
 
             # 重置bar
-            bar_timestamp = candles[n, 0]
-            bar_open = candles[n, 1]
-            bar_close = candles[n, 2]
-            bar_high = candles[n, 3]
-            bar_low = candles[n, 4]
-            bar_volume = candles[n, 5]
-            bar_cumsum = condition[n]
-        else:
-            bar_cumsum += condition[n]
-            bar_timestamp = max(bar_timestamp, candles[n, 0])
-            bar_volume += candles[n, 5]
-            bar_high = max(bar_high, candles[n, 3])
-            bar_low = min(bar_low, candles[n, 4])
-            if reverse:
-                bar_open = candles[n, 1]
-            else:
-                bar_close = candles[n, 2]
-
-        n += 1
+            bar_timestamp = candles[i, 0]
+            bar_open = candles[i, 1]
+            bar_close = candles[i, 2]
+            bar_high = candles[i, 3]
+            bar_low = candles[i, 4]
+            bar_volume = candles[i, 5]
+            bar_cumsum = condition[i]
 
     if reverse:
         return bars[:bar_index][::-1]
