@@ -99,13 +99,27 @@ def np_array_fill_nan(todo: np.ndarray, target: np.ndarray) -> np.ndarray:
     return res
 
 
+@njit
 def rolling_sum_with_nan(arr: np.ndarray, window: int) -> np.ndarray:
     if window > len(arr):
         # 窗口大于数组长度时，全部返回nan
         return np.full_like(arr, np.nan, dtype=np.float64)
-    # 计算累积和，前面插入0方便计算滑动窗口和
-    cumsum_res = np.cumsum(np.insert(arr, 0, 0))
-    # 计算窗口内的和
-    result = cumsum_res[window:] - cumsum_res[:-window]
-    # 开头用nan补齐，使得结果长度和输入相同
-    return np.concatenate((np.full(window - 1, np.nan), result))
+
+    # 创建结果数组
+    result = np.full_like(arr, np.nan, dtype=np.float64)
+
+    # 计算第一个窗口的和
+    current_sum = np.sum(arr[:window])
+    result[window - 1] = current_sum
+
+    # 使用滑动窗口计算剩余的和
+    for i in range(window, len(arr)):
+        current_sum = current_sum - arr[i - window] + arr[i]
+        result[i] = current_sum
+
+    return result
+
+
+if __name__ == "__main__":
+    arr = np.array([1, 2, 3, 4, 5])
+    print(rolling_sum_with_nan(arr, 2))
