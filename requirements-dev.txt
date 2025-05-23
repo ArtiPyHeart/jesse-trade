@@ -10,3 +10,4 @@ joblib
 lightweight-charts
 matplotlib
 seaborn
+hmmlearn
