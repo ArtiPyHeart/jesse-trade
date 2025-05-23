@@ -21,8 +21,8 @@ def log_ret(candles: np.ndarray, window_on_vol: np.ndarray) -> list[np.ndarray]:
 
 
 class EntropyBarContainer:
-    MIN_WINDOW = 30
-    MAX_WINDOW = 60 * 24 * 7
+    MIN_WINDOW = 20
+    MAX_WINDOW = 60 * 24
 
     def __init__(
         self,
