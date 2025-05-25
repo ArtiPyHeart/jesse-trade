@@ -4,26 +4,17 @@ from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
-from custom_indicators.toolbox.bar.dollar_bar import (
-    DollarBarContainer,
-    build_dollar_bar,
-)
+from custom_indicators.toolbox.bar.entropy_bar_v2 import EntropyBarContainer
 
 from .config import (
-    DOLLAR_BAR_LONG_TERM,
-    DOLLAR_BAR_MID_TERM,
-    DOLLAR_BAR_SHORT_TERM,
-    DOLLAR_BAR_THRESHOLD_LONG,
-    DOLLAR_BAR_THRESHOLD_MID,
-    DOLLAR_BAR_THRESHOLD_SHORT,
+    ENTROPY_THRESHOLD,
     META_ALL,
-    META_DOLLAR_BAR_LONG_FEATURES,
-    META_DOLLAR_BAR_MID_FEATURES,
-    META_DOLLAR_BAR_SHORT_FEATURES,
-    SIDE_ALL,
-    SIDE_DOLLAR_BAR_LONG_FEATURES,
-    SIDE_DOLLAR_BAR_MID_FEATURES,
-    SIDE_DOLLAR_BAR_SHORT_FEATURES,
+    META_FEATURES,
+    SIDE_LONG,
+    SIDE_SHORT,
+    VOL_REF_WINDOW,
+    VOL_T_WINDOW,
+    WINDOW,
     get_meta_model,
     get_side_model,
 )
@@ -38,16 +29,22 @@ class BinanceMLV2(Strategy):
     def __init__(self):
         super().__init__()
         self.meta_model = get_meta_model(self.is_livetrading)
-        self.side_model = get_side_model(self.is_livetrading)
+        self.side_model_long = get_side_model(self.is_livetrading, "long")
+        self.side_model_short = get_side_model(self.is_livetrading, "short")
 
-        self.main_bar_container = DollarBarContainer(
-            DOLLAR_BAR_THRESHOLD_MID,
-            max_bars=5000,
+        self.main_bar_container = EntropyBarContainer(
+            window=WINDOW,
+            window_vol_t=VOL_T_WINDOW,
+            window_vol_ref=VOL_REF_WINDOW,
+            entropy_threshold=ENTROPY_THRESHOLD,
         )
 
-        self.dollar_bar_short_term_fc = FeatureCalculator()
-        self.dollar_bar_mid_term_fc = FeatureCalculator()
-        self.dollar_bar_long_term_fc = FeatureCalculator()
+        self.entropy_bar_fc = FeatureCalculator()
+
+    @property
+    def spot_candles(self):
+        candles = self.get_candles("Binance Spot", "BTC-USDT", "1m")
+        return candles
 
     def cancel_active_orders(self):
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
@@ -58,7 +55,7 @@ class BinanceMLV2(Strategy):
 
     ############################### dollar bar 预处理 ##############################
     def before(self):
-        self.main_bar_container.update_with_candle(self.candles)
+        self.main_bar_container.update_with_candle(self.spot_candles)
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
         self.cancel_active_orders()
 
@@ -67,96 +64,46 @@ class BinanceMLV2(Strategy):
         return self.main_bar_container.is_latest_bar_complete()
 
     @property
-    @cached
-    def dollar_bar_short_term(self) -> np.ndarray:
-        return build_dollar_bar(
-            self.candles,
-            DOLLAR_BAR_THRESHOLD_SHORT,
-            max_bars=5000,
-        )
-
-    @property
-    def dollar_bar_mid_term(self) -> np.ndarray:
-        return self.main_bar_container.get_dollar_bars()
-
-    @property
-    @cached
-    def dollar_bar_long_term(self) -> np.ndarray:
-        return build_dollar_bar(
-            self.candles,
-            DOLLAR_BAR_THRESHOLD_LONG,
-            max_bars=5000,
-        )
+    def entropy_bar(self) -> np.ndarray:
+        return self.main_bar_container.get_entropy_bar()
 
     ############################ 机器学习模型 ############################
 
     @property
     @cached
-    def dollar_bar_short_term_features(self) -> dict:
-        self.dollar_bar_short_term_fc.load(self.dollar_bar_short_term)
-        feature_names = sorted(
-            [
-                i.replace(f"{DOLLAR_BAR_SHORT_TERM}_", "")
-                for i in set(
-                    SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES
-                )
-            ]
-        )
-        features = self.dollar_bar_short_term_fc.get(feature_names)
-        return {f"{DOLLAR_BAR_SHORT_TERM}_{k}": v for k, v in features.items()}
+    def entropy_bar_features(self) -> dict:
+        self.entropy_bar_fc.load(self.entropy_bar)
+        feature_names = SIDE_LONG + SIDE_SHORT + META_FEATURES
+        feature_names = sorted(list(set(feature_names)))
+        features = self.entropy_bar_fc.get(feature_names)
+        return features
+
+    @property
+    def side_model_long_features(self) -> pd.DataFrame:
+        side_long = {k: self.entropy_bar_features[k] for k in SIDE_LONG}
+        return pd.DataFrame(side_long)
+
+    @property
+    def side_model_short_features(self) -> pd.DataFrame:
+        side_short = {k: self.entropy_bar_features[k] for k in SIDE_SHORT}
+        return pd.DataFrame(side_short)
 
     @property
     @cached
-    def dollar_bar_mid_term_features(self) -> dict:
-        self.dollar_bar_mid_term_fc.load(self.dollar_bar_mid_term)
-        feature_names = sorted(
-            [
-                i.replace(f"{DOLLAR_BAR_MID_TERM}_", "")
-                for i in set(
-                    SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES
-                )
-            ]
-        )
-        features = self.dollar_bar_mid_term_fc.get(feature_names)
-        return {f"{DOLLAR_BAR_MID_TERM}_{k}": v for k, v in features.items()}
+    def side_model_long_pred(self) -> float:
+        return self.side_model_long.predict(self.side_model_long_features)[-1]
 
     @property
     @cached
-    def dollar_bar_long_term_features(self) -> dict:
-        self.dollar_bar_long_term_fc.load(self.dollar_bar_long_term)
-        feature_names = sorted(
-            [
-                i.replace(f"{DOLLAR_BAR_LONG_TERM}_", "")
-                for i in set(
-                    SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES
-                )
-            ]
-        )
-        features = self.dollar_bar_long_term_fc.get(feature_names)
-        return {f"{DOLLAR_BAR_LONG_TERM}_{k}": v for k, v in features.items()}
-
-    @property
-    def side_model_features(self) -> pd.DataFrame:
-        all_features = {
-            **self.dollar_bar_short_term_features,
-            **self.dollar_bar_mid_term_features,
-            **self.dollar_bar_long_term_features,
-        }
-        side_features = {k: all_features[k] for k in SIDE_ALL}
-        return pd.DataFrame(side_features)
-
-    @property
-    @cached
-    def side_model_pred(self) -> float:
-        return self.side_model.predict(self.side_model_features)[-1]
+    def side_model_short_pred(self) -> float:
+        return self.side_model_short.predict(self.side_model_short_features)[-1]
 
     @property
     def meta_model_features(self) -> pd.DataFrame:
         all_features = {
-            **self.dollar_bar_short_term_features,
-            **self.dollar_bar_mid_term_features,
-            **self.dollar_bar_long_term_features,
-            "side_model_res": self.side_model_pred,
+            **self.entropy_bar_features,
+            "model_long": self.side_model_long_pred,
+            "model_short": self.side_model_short_pred,
         }
         meta_features = {k: all_features[k] for k in META_ALL}
         return pd.DataFrame(meta_features)
@@ -185,7 +132,11 @@ class BinanceMLV2(Strategy):
         if not self.should_trade_main_bar:
             return False
         if self.meta_model_pred > META_MODEL_THRESHOLD:
-            if self.side_model_pred > SIDE_MODEL_THRESHOLD:
+            if (
+                self.side_model_long_pred
+                > SIDE_MODEL_THRESHOLD
+                > self.side_model_short_pred
+            ):
                 return True
             else:
                 return False
@@ -196,7 +147,11 @@ class BinanceMLV2(Strategy):
         if not self.should_trade_main_bar:
             return False
         if self.meta_model_pred > META_MODEL_THRESHOLD:
-            if self.side_model_pred <= SIDE_MODEL_THRESHOLD:
+            if (
+                self.side_model_short_pred
+                > SIDE_MODEL_THRESHOLD
+                > self.side_model_long_pred
+            ):
                 return True
             else:
                 return False

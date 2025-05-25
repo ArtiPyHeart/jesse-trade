@@ -1,4 +1,9 @@
 import numpy as np
+
+from custom_indicators.utils.import_tools import ensure_package
+
+# 确保mpire包已安装
+ensure_package("mpire")
 from mpire import WorkerPool
 from numba import njit
 
@@ -30,11 +35,13 @@ class EntropyBarContainer:
         window_vol_t: int,
         window_vol_ref: int,
         entropy_threshold: float,
+        max_bars: int = 5000,
     ):
         self.window = window
         self.window_vol_t = window_vol_t
         self.window_vol_ref = window_vol_ref
         self.entropy_threshold = entropy_threshold
+        self.max_bars = max_bars
 
         self.latest_timestamp = 0
         self.bars = np.empty((0, 6), dtype=np.float64)
@@ -42,6 +49,10 @@ class EntropyBarContainer:
 
         self._unfinished_bars = np.empty((0, 6), dtype=np.float64)
         self._unfinished_bars_entropy = []
+
+    def _check_bar_limit(self):
+        if self.bars.shape[0] > self.max_bars:
+            self.bars = self.bars[-self.max_bars :]
 
     def update_with_candle(self, candles: np.ndarray):
         if self.bars.size == 0:
@@ -124,6 +135,8 @@ class EntropyBarContainer:
                 self._is_latest_bar_complete = False
         else:
             self._is_latest_bar_complete = False
+
+        self._check_bar_limit()
 
     def get_entropy_bar(self) -> np.ndarray:
         return self.bars.copy()
