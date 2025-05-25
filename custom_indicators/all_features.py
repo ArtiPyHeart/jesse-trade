@@ -56,7 +56,7 @@ from custom_indicators.prod_indicator.micro_structure import (
 from custom_indicators.prod_indicator.nsb_entropy import entropy_for_jesse
 from custom_indicators.utils.math_tools import ddt, dt, lag
 
-LAG_MAX = 30
+LAG_MAX = 20
 
 
 class FeatureCalculator:
