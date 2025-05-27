@@ -3,6 +3,19 @@ from numba import njit
 
 
 @njit
+def log_ret(candles: np.ndarray, window_on_vol: np.ndarray) -> list[np.ndarray]:
+    log_ret_list = []
+    for idx, w_on_vol in enumerate(window_on_vol):
+        if np.isfinite(w_on_vol):
+            w_on_vol = round(w_on_vol)
+            if idx - w_on_vol >= 0:
+                log_ret_list.append(
+                    np.log(candles[idx, 2] / candles[idx - w_on_vol : idx, 2])
+                )
+    return log_ret_list
+
+
+@njit
 def deg_sin(degrees: float) -> float:
     res = np.sin(np.deg2rad(degrees))
     return res

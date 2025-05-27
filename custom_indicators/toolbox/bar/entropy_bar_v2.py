@@ -5,24 +5,11 @@ from custom_indicators.utils.import_tools import ensure_package
 # 确保mpire包已安装
 ensure_package("mpire")
 from mpire import WorkerPool
-from numba import njit
 
 from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
+from custom_indicators.utils.math_tools import log_ret
 from custom_indicators.volitility_indicator.yang_zhang import yang_zhang_volatility
-
-
-@njit
-def log_ret(candles: np.ndarray, window_on_vol: np.ndarray) -> list[np.ndarray]:
-    log_ret_list = []
-    for idx, w_on_vol in enumerate(window_on_vol):
-        if np.isfinite(w_on_vol):
-            w_on_vol = round(w_on_vol)
-            if idx - w_on_vol >= 0:
-                log_ret_list.append(
-                    np.log(candles[idx, 2] / candles[idx - w_on_vol : idx, 2])
-                )
-    return log_ret_list
 
 
 class EntropyBarContainer:
