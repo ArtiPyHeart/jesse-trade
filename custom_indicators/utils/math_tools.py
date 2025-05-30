@@ -3,8 +3,16 @@ from numba import njit
 
 
 @njit
-def log_ret(candles: np.ndarray, window_on_vol: np.ndarray) -> list[np.ndarray]:
+def log_ret(
+    candles: np.ndarray, window_on_vol: np.ndarray | list[int] | int
+) -> list[np.ndarray]:
     log_ret_list = []
+
+    if isinstance(window_on_vol, (int, float)):
+        window_on_vol = [int(window_on_vol)] * len(candles)
+    else:
+        window_on_vol = np.array(window_on_vol)
+
     for idx, w_on_vol in enumerate(window_on_vol):
         if np.isfinite(w_on_vol):
             w_on_vol = round(w_on_vol)
