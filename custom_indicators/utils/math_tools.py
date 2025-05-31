@@ -112,6 +112,16 @@ def kurtosis(array: np.ndarray, n: int = 20) -> np.ndarray:
 
 
 @njit
+def np_shift(array: np.ndarray, n: int) -> np.ndarray:
+    res = np.full_like(array, np.nan)
+    if n > 0:
+        res[n:] = array[:-n]
+    elif n < 0:
+        res[:n] = array[-n:]
+    return res
+
+
+@njit
 def np_array_fill_nan(todo: np.ndarray, target: np.ndarray) -> np.ndarray:
     """
     在todo数组开头填充nan，使得todo和target数组长度相同
