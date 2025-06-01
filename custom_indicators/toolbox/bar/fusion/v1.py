@@ -10,6 +10,10 @@ from custom_indicators.utils.math_tools import log_ret
 
 
 class FusionBarContainerV1:
+    """
+    Only valid for BTC futures
+    """
+
     SHORT_N = 21
     LONG_N = 180
     ENTROPY_N = 34
