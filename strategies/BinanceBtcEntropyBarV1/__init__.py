@@ -4,46 +4,38 @@ from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
-from custom_indicators.toolbox.bar.entropy_bar_v2 import EntropyBarContainer
+from custom_indicators.toolbox.bar.fusion.v1 import FusionBarContainerV1
 
 from .config import (
-    ENTROPY_THRESHOLD,
     META_ALL,
     META_FEATURES,
     SIDE_LONG,
     SIDE_SHORT,
-    VOL_REF_WINDOW,
-    VOL_T_WINDOW,
-    WINDOW,
     get_meta_model,
     get_side_model,
 )
 
 META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
-STOP_LOSS_RATIO = 0.05
+STOP_LOSS_RATIO = 0.04
 ORDER_TIMEOUT = 300 * 1000
 
 
-class BinanceMLV2(Strategy):
+class BinanceBtcEntropyBarV1(Strategy):
     def __init__(self):
         super().__init__()
         self.meta_model = get_meta_model(self.is_livetrading)
         self.side_model_long = get_side_model(self.is_livetrading, "long")
         self.side_model_short = get_side_model(self.is_livetrading, "short")
 
-        self.main_bar_container = EntropyBarContainer(
-            window=WINDOW,
-            window_vol_t=VOL_T_WINDOW,
-            window_vol_ref=VOL_REF_WINDOW,
-            entropy_threshold=ENTROPY_THRESHOLD,
-        )
+        self.main_bar_container = FusionBarContainerV1()
 
-        self.entropy_bar_fc = FeatureCalculator()
+        self.fusion_bar_fc = FeatureCalculator()
 
     @property
-    def spot_candles(self):
-        candles = self.get_candles("Binance Spot", "BTC-USDT", "1m")
+    def cleaned_candles(self):
+        candles = self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
+        candles = candles[candles[:, 5] > 0]
         return candles
 
     def cancel_active_orders(self):
@@ -55,37 +47,37 @@ class BinanceMLV2(Strategy):
 
     ############################### dollar bar 预处理 ##############################
     def before(self):
-        self.main_bar_container.update_with_candle(self.spot_candles)
+        self.main_bar_container.update_with_candles(self.cleaned_candles)
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
         self.cancel_active_orders()
 
     @property
     def should_trade_main_bar(self) -> bool:
-        return self.main_bar_container.is_latest_bar_complete()
+        return self.main_bar_container.is_latest_bar_complete
 
     @property
-    def entropy_bar(self) -> np.ndarray:
-        return self.main_bar_container.get_entropy_bar()
+    def fusion_bar(self) -> np.ndarray:
+        return self.main_bar_container.get_fusion_bars()
 
     ############################ 机器学习模型 ############################
 
     @property
     @cached
-    def entropy_bar_features(self) -> dict:
-        self.entropy_bar_fc.load(self.entropy_bar)
+    def fusion_bar_features(self) -> dict:
+        self.fusion_bar_fc.load(self.fusion_bar)
         feature_names = SIDE_LONG + SIDE_SHORT + META_FEATURES
         feature_names = sorted(list(set(feature_names)))
-        features = self.entropy_bar_fc.get(feature_names)
+        features = self.fusion_bar_fc.get(feature_names)
         return features
 
     @property
     def side_model_long_features(self) -> pd.DataFrame:
-        side_long = {k: self.entropy_bar_features[k] for k in SIDE_LONG}
+        side_long = {k: self.fusion_bar_features[k] for k in SIDE_LONG}
         return pd.DataFrame(side_long)
 
     @property
     def side_model_short_features(self) -> pd.DataFrame:
-        side_short = {k: self.entropy_bar_features[k] for k in SIDE_SHORT}
+        side_short = {k: self.fusion_bar_features[k] for k in SIDE_SHORT}
         return pd.DataFrame(side_short)
 
     @property
@@ -101,7 +93,7 @@ class BinanceMLV2(Strategy):
     @property
     def meta_model_features(self) -> pd.DataFrame:
         all_features = {
-            **self.entropy_bar_features,
+            **self.fusion_bar_features,
             "model_long": self.side_model_long_pred,
             "model_short": self.side_model_short_pred,
         }
@@ -112,21 +104,6 @@ class BinanceMLV2(Strategy):
     @cached
     def meta_model_pred(self):
         return self.meta_model.predict(self.meta_model_features)[-1]
-
-    ############################ jesse 交易逻辑 ############################
-    # def z_score_filter(self) -> bool:
-    #     if not self.should_trade_main_bar:
-    #         return False
-    #     dollar_bar_close = helpers.get_candle_source(self.dollar_bar_mid_term, "close")
-    #     res = z_score_filter_np(
-    #         dollar_bar_close, mean_window=5, std_window=5, z_score=1
-    #     )
-    #     return res > 0.5
-
-    # def filters(self) -> list:
-    #     return [
-    #         self.z_score_filter,
-    #     ]
 
     def should_long(self) -> bool:
         if not self.should_trade_main_bar:

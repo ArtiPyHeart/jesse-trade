@@ -3,21 +3,15 @@ from pathlib import Path
 from custom_indicators.utils.import_tools import ensure_package
 
 ensure_package("lightgbm")
-import lightgbm as lgb
-
-MIN_WINDOW = 20
-MAX_WINDOW = 60 * 24
-WINDOW = 134
-VOL_T_WINDOW = 78
-VOL_REF_WINDOW = 1341
-ENTROPY_THRESHOLD = 26.96225407898441
+import lightgbm as lgb  # noqa: E402
 
 path_meta_model = Path(__file__).parent / "model" / "model_meta.txt"
+path_meta_model_prod = Path(__file__).parent / "model" / "model_meta_prod.txt"
 
 
 def get_meta_model(is_livetrading: bool):
     if is_livetrading:
-        meta_model_prod = lgb.Booster(model_file=path_meta_model)
+        meta_model_prod = lgb.Booster(model_file=path_meta_model_prod)
         return meta_model_prod
     else:
         meta_model = lgb.Booster(model_file=path_meta_model)
@@ -25,15 +19,19 @@ def get_meta_model(is_livetrading: bool):
 
 
 path_side_model_long = Path(__file__).parent / "model" / "model_side_long.txt"
+path_side_model_long_prod = Path(__file__).parent / "model" / "model_side_long_prod.txt"
 path_side_model_short = Path(__file__).parent / "model" / "model_side_short.txt"
+path_side_model_short_prod = (
+    Path(__file__).parent / "model" / "model_side_short_prod.txt"
+)
 
 
 def get_side_model(is_livetrading: bool, side: str):
     if is_livetrading:
         if side == "long":
-            side_model_prod = lgb.Booster(model_file=path_side_model_long)
+            side_model_prod = lgb.Booster(model_file=path_side_model_long_prod)
         elif side == "short":
-            side_model_prod = lgb.Booster(model_file=path_side_model_short)
+            side_model_prod = lgb.Booster(model_file=path_side_model_short_prod)
         else:
             raise ValueError(f"Invalid side: {side}")
         return side_model_prod
