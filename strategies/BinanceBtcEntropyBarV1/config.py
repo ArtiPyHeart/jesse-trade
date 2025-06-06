@@ -18,16 +18,16 @@ def get_meta_model(is_livetrading: bool):
         return meta_model
 
 
-path_side_model_long = Path(__file__).parent / "model" / "model_side_long.txt"
-path_side_model_long_prod = Path(__file__).parent / "model" / "model_side_long_prod.txt"
+path_side_model = Path(__file__).parent / "model" / "model_side.txt"
+path_side_model_prod = Path(__file__).parent / "model" / "model_side_prod.txt"
 
 
 def get_side_model(is_livetrading: bool):
     if is_livetrading:
-        side_model_prod = lgb.Booster(model_file=path_side_model_long_prod)
+        side_model_prod = lgb.Booster(model_file=path_side_model_prod)
         return side_model_prod
     else:
-        side_model = lgb.Booster(model_file=path_side_model_long)
+        side_model = lgb.Booster(model_file=path_side_model)
         return side_model
 
 
