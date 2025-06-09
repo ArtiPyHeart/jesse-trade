@@ -90,7 +90,7 @@ class BacktestPipeline:
 
     @property
     def trading_fee(self) -> float:
-        return 0.0002
+        return 0.05 / 100
 
     def init_bar_container(self, n1, n2, n_entropy, threshold=0.5):
         self.bar_container = TuningBarContainer(n1, n2, n_entropy, threshold)
