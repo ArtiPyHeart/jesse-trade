@@ -15,7 +15,7 @@ class FusionBarContainerV1(FusionBarContainerBase):
     Only valid for BTC futures
     """
 
-    def __init__(self, max_bars: int = 1000, threshold: float = 0.8548507667918396):
+    def __init__(self, max_bars: int = 1000, threshold: float = 0.5104635883587778):
         super().__init__(max_bars, threshold)
 
         self.SHORT_N = 21

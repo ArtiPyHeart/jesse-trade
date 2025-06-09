@@ -4,7 +4,7 @@ from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
 
 from custom_indicators.all_features import FeatureCalculator
-from custom_indicators.toolbox.bar.fusion.v2 import FusionBarContainerV2
+from custom_indicators.toolbox.bar.fusion.v1 import FusionBarContainerV1
 
 from .config import (
     META_ALL,
@@ -26,7 +26,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         self.meta_model = get_meta_model(self.is_livetrading)
         self.side_model = get_side_model(self.is_livetrading)
 
-        self.main_bar_container = FusionBarContainerV2()
+        self.main_bar_container = FusionBarContainerV1(max_bars=10000)
 
         self.fusion_bar_fc = FeatureCalculator()
 

@@ -41,7 +41,7 @@ class FusionBarContainerBase(ABC):
     @property
     @abstractmethod
     def max_lookback(self) -> int:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     @abstractmethod
     def get_thresholds(self, candles: np.ndarray) -> np.ndarray:
@@ -53,9 +53,15 @@ class FusionBarContainerBase(ABC):
         self.merged_bars = build_bar_by_cumsum(
             candles, thresholds, self.THRESHOLD, reverse=False
         )
-        timestamp_mask = candles[:, 0].astype(int) > self.merged_bars[-1, 0].astype(int)
-        self._unfinished_bars_timestamps = candles[:, 0].astype(int)[timestamp_mask]
-        self._unfinished_bars_thresholds = thresholds[timestamp_mask]
+        if len(self.merged_bars) > 0:
+            timestamp_mask = candles[:, 0].astype(int) > self.merged_bars[-1, 0].astype(
+                int
+            )
+            self._unfinished_bars_timestamps = candles[:, 0].astype(int)[timestamp_mask]
+            self._unfinished_bars_thresholds = thresholds[timestamp_mask]
+        else:
+            self._unfinished_bars_timestamps = candles[:, 0].astype(int)
+            self._unfinished_bars_thresholds = thresholds
 
     def _update_bars(self, candles: np.ndarray):
         # 1. 分离所有需要新增的candles
@@ -105,10 +111,12 @@ class FusionBarContainerBase(ABC):
 
     def update_with_candles(self, candles: np.ndarray):
         candles = candles[candles[:, 5] > 0]
+        if len(candles) < self.max_lookback:
+            return
         if len(candles) == 0:
             return
 
-        if self._unfinished_bars_timestamps is None:
+        if self._merged_bars is None or len(self._merged_bars) == 0:
             # 初始化
             self._init_bars(candles)
         else:
