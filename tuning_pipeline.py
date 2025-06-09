@@ -314,9 +314,9 @@ class BacktestPipeline:
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
-                        assert start_idx < end_idx, (
-                            "start_idx must be less than end_idx"
-                        )
+                        assert (
+                            start_idx < end_idx
+                        ), "start_idx must be less than end_idx"
                         meta_label[start_idx:end_idx] = 0
                     # 重置收益
                     cumsum_ret = 0
@@ -383,7 +383,7 @@ class BacktestPipeline:
 
         total_return = 0
         one_return = 0
-        max_drawdown = 0
+        log_ret_list = []
         for idx, (side, meta, ret) in enumerate(
             zip(side_pred_label, meta_pred_label, log_ret)
         ):
@@ -391,22 +391,30 @@ class BacktestPipeline:
                 if (idx == 0) or (meta_pred_label[idx - 1] == 0):
                     # 开始持仓
                     one_return -= self.trading_fee
+                    log_ret_list.append(-self.trading_fee)
                 else:
                     # 继续持仓
                     if side != side_pred_label[idx - 1]:
                         # 反方向调仓需要更多手续费
                         one_return -= self.trading_fee * 2
+                        log_ret_list.append(-self.trading_fee * 2)
                     one_return += ret * side
+                    log_ret_list.append(ret * side)
             else:
                 if (idx == 0) or (meta_pred_label[idx - 1] == 0):
                     continue
                 elif meta_pred_label[idx - 1] == 1:
                     # 结束持仓
                     one_return += ret * side - self.trading_fee
+                    log_ret_list.append(ret * side - self.trading_fee)
                     total_return += one_return
-                    if one_return < max_drawdown:
-                        max_drawdown = one_return
                     one_return = 0
+
+        log_ret_list = pd.Series(log_ret_list)
+        cumulative_returns = np.exp(np.cumsum(log_ret_list))
+        running_max = cumulative_returns.cummax()
+        drawdown = (cumulative_returns - running_max) / running_max
+        max_drawdown = drawdown.min()
 
         print(f"{total_return = :.2f}, {max_drawdown = :.2f}")
         calmar_ratio = total_return / abs(max_drawdown)
