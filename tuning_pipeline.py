@@ -306,9 +306,9 @@ class BacktestPipeline:
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
-                        assert start_idx < end_idx, (
-                            "start_idx must be less than end_idx"
-                        )
+                        assert (
+                            start_idx < end_idx
+                        ), "start_idx must be less than end_idx"
                         meta_label[start_idx:end_idx] = 0
                     # 重置收益
                     cumsum_ret = 0
@@ -385,6 +385,9 @@ class BacktestPipeline:
                     one_return -= self.trading_fee
                 else:
                     # 继续持仓
+                    if side != side_pred_label[idx - 1]:
+                        # 反方向调仓需要更多手续费
+                        one_return -= self.trading_fee * 2
                     one_return += ret * side
             else:
                 if (idx == 0) or (meta_pred_label[idx - 1] == 0):
@@ -397,8 +400,8 @@ class BacktestPipeline:
                         max_drawdown = one_return
                     one_return = 0
 
+        print(f"{total_return = :.2f}, {max_drawdown = :.2f}")
         calmar_ratio = total_return / abs(max_drawdown)
-        print(f"{total_return = :.2f}, {max_drawdown = :.2f}, {calmar_ratio = :.2f}")
         return calmar_ratio
 
 
