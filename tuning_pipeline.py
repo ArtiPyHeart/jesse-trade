@@ -80,7 +80,7 @@ class BacktestPipeline:
         raw_candles = np.load(raw_bar_path)
         self.raw_candles = raw_candles[raw_candles[:, 5] > 0]
         self.bar_container = None
-        self.merged_bar = None
+        self._merged_bar = None
         self.side_label = None
         self.df_feature = None
 
@@ -91,6 +91,14 @@ class BacktestPipeline:
     @property
     def trading_fee(self) -> float:
         return 0.05 / 100
+
+    @property
+    def merged_bar(self):
+        return self._merged_bar.copy()
+
+    @merged_bar.setter
+    def merged_bar(self, value):
+        self._merged_bar = value
 
     def init_bar_container(self, n1, n2, n_entropy, threshold=0.5):
         self.bar_container = TuningBarContainer(n1, n2, n_entropy, threshold)
@@ -306,9 +314,9 @@ class BacktestPipeline:
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
-                        assert (
-                            start_idx < end_idx
-                        ), "start_idx must be less than end_idx"
+                        assert start_idx < end_idx, (
+                            "start_idx must be less than end_idx"
+                        )
                         meta_label[start_idx:end_idx] = 0
                     # 重置收益
                     cumsum_ret = 0
