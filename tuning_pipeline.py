@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import lightgbm as lgb
 import numpy as np
 import optuna
@@ -11,6 +13,32 @@ from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
 from custom_indicators.toolbox.feature_selection.rfcq_selector import RFCQSelector
 from custom_indicators.utils.math_tools import log_ret
+
+
+class OptunaLogManager:
+    @staticmethod
+    @contextmanager
+    def silent_optimization():
+        """上下文管理器，在此范围内禁用日志"""
+        optuna.logging.disable_default_handler()
+        try:
+            yield
+        finally:
+            optuna.logging.enable_default_handler()
+
+    @staticmethod
+    @contextmanager
+    def verbose_optimization():
+        """上下文管理器，在此范围内启用详细日志"""
+        original_level = optuna.logging.get_verbosity()
+        optuna.logging.set_verbosity(optuna.logging.INFO)
+        try:
+            yield
+        finally:
+            optuna.logging.set_verbosity(original_level)
+
+
+optuna_log_manager = OptunaLogManager()
 
 
 class TuningBarContainer(FusionBarContainerBase):
@@ -129,13 +157,13 @@ class BacktestPipeline:
 
             return final_ret
 
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study = optuna.create_study(
-            direction="maximize",
-            sampler=optuna.samplers.TPESampler(),
-        )
-        study.optimize(objective, n_trials=30)
-        return study.best_params["random_state"]
+        with optuna_log_manager.silent_optimization():
+            study = optuna.create_study(
+                direction="maximize",
+                sampler=optuna.samplers.TPESampler(),
+            )
+            study.optimize(objective, n_trials=30)
+            return study.best_params["random_state"]
 
     def side_labeling(self):
         mix = 3  ### GMM mix参数
