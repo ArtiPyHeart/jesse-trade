@@ -7,6 +7,7 @@ import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
 from mpire import WorkerPool
+from sklearn.metrics import roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
 from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
@@ -139,16 +140,20 @@ class BacktestPipeline:
             assert len(datelist) == len(closeidx)
             assert len(datelist) == len(X)
 
-            gmm = GMMHMM(
-                n_components=2,
-                n_mix=mix,
-                covariance_type="diag",
-                n_iter=1000,
-                # weights_prior=2,
-                means_weight=0.5,
-                random_state=trial.suggest_int("random_state", 0, 1000),
-            )
-            gmm.fit(X)
+            try:
+                gmm = GMMHMM(
+                    n_components=2,
+                    n_mix=mix,
+                    covariance_type="diag",
+                    n_iter=1000,
+                    # weights_prior=2,
+                    means_weight=0.5,
+                    random_state=trial.suggest_int("random_state", 0, 1000),
+                )
+                gmm.fit(X)
+            except Exception:
+                return -100
+
             latent_states_sequence = gmm.predict(X)
             data = pd.DataFrame(
                 {
@@ -170,7 +175,7 @@ class BacktestPipeline:
                 direction="maximize",
                 sampler=optuna.samplers.TPESampler(),
             )
-            study.optimize(objective, n_trials=30)
+            study.optimize(objective, n_trials=20)
             return study.best_params["random_state"]
 
     def side_labeling(self):
@@ -244,7 +249,7 @@ class BacktestPipeline:
         ).sort_values(ascending=False)
         self.side_feature_names = side_res[side_res > 0].index.tolist()
 
-    def train_side_model(self):
+    def train_side_model(self) -> float:
         mask = self.df_feature.index < self.train_test_split_timestamp
         feature_masked = self.df_feature[self.side_feature_names][mask]
         label_masked = self.side_label[mask]
@@ -269,6 +274,13 @@ class BacktestPipeline:
         self.df_feature["model"] = self.side_model.predict(
             self.df_feature[self.side_feature_names]
         )
+
+        testset_mask = self.df_feature.index >= self.train_test_split_timestamp
+        test_auc = roc_auc_score(
+            self.side_label[testset_mask],
+            self.df_feature["model"][testset_mask],
+        )
+        return test_auc
 
     def meta_labeling(self):
         side_res = self.side_model.predict(self.df_feature[self.side_feature_names])
@@ -306,17 +318,17 @@ class BacktestPipeline:
                     start_idx = idx
                 else:
                     # 继续持仓
-                    cumsum_ret += ret * (1 if side == 1 else -1)
+                    cumsum_ret += ret * side
             elif meta == 0:
                 if idx > 0 and meta_label[idx - 1] == 1:
                     # 结束持仓
-                    cumsum_ret += ret * (1 if side == 1 else -1)
+                    cumsum_ret += ret * side
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
-                        assert (
-                            start_idx < end_idx
-                        ), "start_idx must be less than end_idx"
+                        assert start_idx < end_idx, (
+                            "start_idx must be less than end_idx"
+                        )
                         meta_label[start_idx:end_idx] = 0
                     # 重置收益
                     cumsum_ret = 0
@@ -428,8 +440,8 @@ def tune_pipeline(trial: optuna.Trial):
     n_entropy = trial.suggest_int("n_entropy", 30, 300)
     pipeline.init_bar_container(n1, n2, n_entropy)
     raw_threshold_array = pipeline.get_threshold_array()
-    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 30)
-    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 330)
+    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 120)
+    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 360)
     pipeline.set_threshold(
         trial.suggest_float("threshold", threshold_min, threshold_max)
     )
@@ -438,7 +450,10 @@ def tune_pipeline(trial: optuna.Trial):
     pipeline.side_labeling()
     pipeline.get_df_feature()
     pipeline.side_feature_selection()
-    pipeline.train_side_model()
+    side_auc = pipeline.train_side_model()
+    # 舍弃预测效果过于差的模型
+    if side_auc < 0.7:
+        return -100
 
     pipeline.meta_labeling()
     pipeline.meta_feature_selection()
