@@ -151,10 +151,10 @@ class BacktestPipeline:
                     random_state=trial.suggest_int("random_state", 0, 1000),
                 )
                 gmm.fit(X)
+                latent_states_sequence = gmm.predict(X)
             except Exception:
                 return -100
 
-            latent_states_sequence = gmm.predict(X)
             data = pd.DataFrame(
                 {
                     "datelist": datelist,
