@@ -7,7 +7,7 @@ import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
 from mpire import WorkerPool
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import f1_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
 from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
@@ -346,7 +346,7 @@ class BacktestPipeline:
         ).sort_values(ascending=False)
         self.meta_feature_names = meta_res[meta_res > 0].index.tolist()
 
-    def train_meta_model(self):
+    def train_meta_model(self) -> float:
         mask = self.df_feature.index < self.train_test_split_timestamp
         feature_masked = self.df_feature[self.meta_feature_names][mask]
         label_masked = self.meta_label[mask]
@@ -368,6 +368,13 @@ class BacktestPipeline:
         }
         dtrain = lgb.Dataset(feature_masked, label_masked)
         self.meta_model = lgb.train(params, dtrain)
+
+        testset_mask = self.df_feature.index >= self.train_test_split_timestamp
+        test_f1 = f1_score(
+            self.meta_label[testset_mask],
+            (self.df_feature["model"][testset_mask] > 0.5).astype(int),
+        )
+        return test_f1
 
     def backtest(self):
         log_ret = np.log(self.merged_bar[1:, 2] / self.merged_bar[:-1, 2])[:-1]
@@ -440,7 +447,7 @@ def tune_pipeline(trial: optuna.Trial):
     n_entropy = trial.suggest_int("n_entropy", 30, 300)
     pipeline.init_bar_container(n1, n2, n_entropy)
     raw_threshold_array = pipeline.get_threshold_array()
-    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 120)
+    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 60)
     threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 360)
     pipeline.set_threshold(
         trial.suggest_float("threshold", threshold_min, threshold_max)
@@ -453,11 +460,15 @@ def tune_pipeline(trial: optuna.Trial):
     side_auc = pipeline.train_side_model()
     # 舍弃预测效果过于差的模型
     if side_auc < 0.7:
+        print(f"side_auc = {side_auc}")
         return -100
 
     pipeline.meta_labeling()
     pipeline.meta_feature_selection()
-    pipeline.train_meta_model()
+    meta_f1 = pipeline.train_meta_model()
+    if meta_f1 < 0.58:
+        print(f"meta_f1 = {meta_f1}")
+        return -100
 
     calmar_ratio = pipeline.backtest()
     return calmar_ratio
