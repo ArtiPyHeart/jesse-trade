@@ -7,7 +7,7 @@ import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
 from mpire import WorkerPool
-from sklearn.metrics import f1_score, roc_auc_score
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
 from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
@@ -358,23 +358,33 @@ class BacktestPipeline:
             "is_unbalance": True,
             "extra_trees": False,
             "boosting": "dart",
-            "num_leaves": 377,
-            "max_depth": 133,
-            "min_gain_to_split": 0.07755900215445423,
-            "min_data_in_leaf": 186,
-            "lambda_l1": 3,
-            "lambda_l2": 88,
-            "num_boost_round": 1000,
+            "num_leaves": 300,
+            "max_depth": 100,
+            "min_gain_to_split": 0.03,
+            "min_data_in_leaf": 150,
+            "lambda_l1": 1,
+            "lambda_l2": 1,
+            "num_boost_round": 900,
         }
         dtrain = lgb.Dataset(feature_masked, label_masked)
         self.meta_model = lgb.train(params, dtrain)
 
         testset_mask = self.df_feature.index >= self.train_test_split_timestamp
+        test_precision = precision_score(
+            self.meta_label[testset_mask],
+            (self.df_feature["model"][testset_mask] > 0.5).astype(int),
+            zero_division=0,
+        )
+        test_recall = recall_score(
+            self.meta_label[testset_mask],
+            (self.df_feature["model"][testset_mask] > 0.5).astype(int),
+            zero_division=0,
+        )
         test_f1 = f1_score(
             self.meta_label[testset_mask],
             (self.df_feature["model"][testset_mask] > 0.5).astype(int),
         )
-        return test_f1
+        return test_f1, test_precision, test_recall
 
     def backtest(self):
         log_ret = np.log(self.merged_bar[1:, 2] / self.merged_bar[:-1, 2])[:-1]
@@ -460,15 +470,18 @@ def tune_pipeline(trial: optuna.Trial):
     side_auc = pipeline.train_side_model()
     # 舍弃预测效果过于差的模型
     if side_auc < 0.7:
-        print(f"side_auc = {side_auc}")
+        print(f"{side_auc = :.6f}")
         return -100
 
     pipeline.meta_labeling()
     pipeline.meta_feature_selection()
-    meta_f1 = pipeline.train_meta_model()
-    if meta_f1 < 0.58:
-        print(f"meta_f1 = {meta_f1}")
+    meta_f1, meta_precision, meta_recall = pipeline.train_meta_model()
+    if meta_f1 < 0.55:
+        print(f"{meta_f1 = :.6f}, {meta_precision = :.6f}, {meta_recall = :.6f}")
         return -100
 
     calmar_ratio = pipeline.backtest()
+    print(
+        f"{side_auc = :.6f}, {meta_f1 = :.6f}, {meta_precision = :.6f}, {meta_recall = :.6f}"
+    )
     return calmar_ratio
