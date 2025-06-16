@@ -32,7 +32,7 @@ import time
 
 import numpy as np
 import pandas as pd
-from jesse.helpers import slice_candles, get_candle_source
+from jesse.helpers import get_candle_source, slice_candles
 from numba import jit, prange
 from statsmodels.tsa.stattools import adfuller
 
@@ -180,6 +180,7 @@ def frac_diff_ffd(
 
     return output
 
+
 def frac_diff_ffd_candle(
     candles: np.ndarray,
     diff_amt: float,
@@ -204,6 +205,7 @@ def frac_diff_ffd_candle(
         return diff_series
     else:
         return diff_series[-1]
+
 
 def _frac_diff_ffd_original(
     array: np.ndarray, diff_amt: float = 0.5, thresh: float = 1e-5
