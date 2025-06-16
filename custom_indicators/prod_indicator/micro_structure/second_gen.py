@@ -31,7 +31,8 @@ def kyle_lambda(
     close_diff_sign = (
         close_diff.apply(np.sign)
         .reindex(close_diff.index)
-        .replace(0, method="pad")
+        .replace(0, np.nan)
+        .ffill()
         .fillna(0)
     )
     volume_mult_trade_signs = volume * close_diff_sign  # bt * Vt
@@ -99,7 +100,11 @@ def hasbrouck_lambda(
     log_ret = np.log(close / close.shift(1))
     # Ensure the sign series has the same index as log_ret before filling
     log_ret_sign = (
-        log_ret.apply(np.sign).reindex(log_ret.index).replace(0, method="pad").fillna(0)
+        log_ret.apply(np.sign)
+        .reindex(log_ret.index)
+        .replace(0, np.nan)
+        .ffill()
+        .fillna(0)
     )
 
     # Avoid issues with sqrt of zero or negative dollar volume (though unlikely)

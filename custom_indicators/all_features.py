@@ -44,6 +44,7 @@ from custom_indicators.dominant_cycle import (
     phase_accumulation,
 )
 from custom_indicators.prod_indicator.diff.frac import frac_diff_ffd_candle
+from custom_indicators.prod_indicator.emd.indicator import vmd_indicator
 from custom_indicators.prod_indicator.fti import FTIResult
 from custom_indicators.prod_indicator.micro_structure import (
     amihud_lambda,
@@ -55,6 +56,7 @@ from custom_indicators.prod_indicator.micro_structure import (
     roll_measure,
 )
 from custom_indicators.prod_indicator.nsb_entropy import entropy_for_jesse
+from custom_indicators.prod_indicator.wavelets.cwt_swt import cwt
 from custom_indicators.utils.math_tools import ddt, dt, lag
 
 LAG_MAX = 20
@@ -380,6 +382,16 @@ class FeatureCalculator:
             _, _, conv = ehlers_convolution(self.candles, sequential=True)
             for i in range(conv.shape[1]):
                 self.cache[f"conv_{i}"] = conv[:, i]
+
+    def cwt(self, **kwargs):
+        index = kwargs["index"]
+        if f"cwt_{index}" not in self.cache:
+            cwt_ = cwt(self.candles, sequential=True)
+            self.cache[f"cwt_{index}"] = cwt_[:, index]
+
+            self._process_transformations(
+                f"cwt_{index}", self.cache[f"cwt_{index}"], **kwargs
+            )
 
     def dft_dom_cycle(self, **kwargs):
         if "dft_dom_cycle" not in self.cache:
@@ -769,6 +781,16 @@ class FeatureCalculator:
 
         self._process_transformations("trendflex", self.cache["trendflex"], **kwargs)
 
+    def vmd(self, **kwargs):
+        index = kwargs["index"]
+        if f"vmd_{index}" not in self.cache:
+            vmd_ = vmd_indicator(self.candles, sequential=True)
+            self.cache[f"vmd_{index}"] = vmd_[:, index]
+
+            self._process_transformations(
+                f"vmd_{index}", self.cache[f"vmd_{index}"], **kwargs
+            )
+
     def voss(self, **kwargs):
         if "voss" not in self.cache:
             voss_filter_ = ta.voss(self.candles, sequential=True)
@@ -1056,6 +1078,17 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     _, _, conv = ehlers_convolution(candles, sequential=True)
     for i in range(conv.shape[1]):
         res_fe[f"conv_{i}"] = conv[:, i]
+
+    # wavelet cwt
+    cwt_ = cwt(candles, sequential=True)
+    for i in range(cwt_.shape[1]):
+        res_fe[f"cwt_{i}"] = cwt_[:, i]
+        res_fe[f"cwt_{i}_dt"] = dt(cwt_[:, i])
+        res_fe[f"cwt_{i}_ddt"] = ddt(cwt_[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"cwt_{i}_lag{lg}"] = lag(cwt_[:, i], lg)
+            res_fe[f"cwt_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_{i}_dt"], lg)
+            res_fe[f"cwt_{i}_ddt_lag{lg}"] = lag(res_fe[f"cwt_{i}_ddt"], lg)
 
     # dft
     dft_dom_cycle, spectrum = dft(candles, sequential=True)
@@ -1490,6 +1523,17 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"trendflex_dt_lag{lg}"] = lag(res_fe["trendflex_dt"], lg)
     for lg in range(1, LAG_MAX):
         res_fe[f"trendflex_ddt_lag{lg}"] = lag(res_fe["trendflex_ddt"], lg)
+
+    # VMD
+    vmd_ = vmd_indicator(candles, sequential=True)
+    for i in range(vmd_.shape[1]):
+        res_fe[f"vmd_{i}"] = vmd_[:, i]
+        res_fe[f"vmd_{i}_dt"] = dt(vmd_[:, i])
+        res_fe[f"vmd_{i}_ddt"] = ddt(vmd_[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"vmd_{i}_lag{lg}"] = lag(vmd_[:, i], lg)
+            res_fe[f"vmd_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_{i}_dt"], lg)
+            res_fe[f"vmd_{i}_ddt_lag{lg}"] = lag(res_fe[f"vmd_{i}_ddt"], lg)
 
     # Voss Filter
     voss_filter_ = ta.voss(candles, sequential=True)
