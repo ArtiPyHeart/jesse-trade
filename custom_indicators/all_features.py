@@ -43,7 +43,6 @@ from custom_indicators.dominant_cycle import (
     homodyne,
     phase_accumulation,
 )
-from custom_indicators.prod_indicator.diff.frac import frac_diff_ffd_candle
 from custom_indicators.prod_indicator.emd.indicator import vmd_indicator
 from custom_indicators.prod_indicator.fti import FTIResult
 from custom_indicators.prod_indicator.micro_structure import (
@@ -467,13 +466,6 @@ class FeatureCalculator:
             self.cache["fisher"] = fisher_ind.fisher
 
         self._process_transformations("fisher", self.cache["fisher"], **kwargs)
-
-    def frac_diff_ffd(self, **kwargs):
-        if "frac_diff_ffd" not in self.cache:
-            frac_diff_ffd_ = frac_diff_ffd_candle(
-                self.candles, diff_amt=0.15, sequential=True
-            )
-            self.cache["frac_diff_ffd"] = frac_diff_ffd_
 
     def fti(self, **kwargs):
         if "fti" not in self.cache:
@@ -1189,11 +1181,6 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"fisher_dt_lag{lg}"] = lag(res_fe["fisher_dt"], lg)
     for lg in range(1, LAG_MAX):
         res_fe[f"fisher_ddt_lag{lg}"] = lag(res_fe["fisher_ddt"], lg)
-
-    # frac diff ffd
-    res_fe["frac_diff_ffd"] = frac_diff_ffd_candle(
-        candles, diff_amt=0.15, sequential=True
-    )
 
     # forecast oscillator
     forecast_oscillator = ta.fosc(candles, sequential=True)

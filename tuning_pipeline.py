@@ -360,7 +360,7 @@ class BacktestPipeline:
             "boosting": "dart",
             "num_leaves": 300,
             "max_depth": 100,
-            "min_gain_to_split": 0.03,
+            "min_gain_to_split": 0.01,
             "min_data_in_leaf": 150,
             "lambda_l1": 1,
             "lambda_l2": 1,
@@ -476,12 +476,9 @@ def tune_pipeline(trial: optuna.Trial):
     pipeline.meta_labeling()
     pipeline.meta_feature_selection()
     meta_f1, meta_precision, meta_recall = pipeline.train_meta_model()
-    if meta_f1 < 0.55:
-        print(f"{meta_f1 = :.6f}, {meta_precision = :.6f}, {meta_recall = :.6f}")
-        return -100
 
     calmar_ratio = pipeline.backtest()
     print(
-        f"{side_auc = :.6f}, {meta_f1 = :.6f}, {meta_precision = :.6f}, {meta_recall = :.6f}"
+        f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f}"
     )
-    return calmar_ratio
+    return calmar_ratio * meta_f1
