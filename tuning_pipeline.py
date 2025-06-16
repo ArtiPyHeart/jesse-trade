@@ -370,19 +370,22 @@ class BacktestPipeline:
         self.meta_model = lgb.train(params, dtrain)
 
         testset_mask = self.df_feature.index >= self.train_test_split_timestamp
+        meta_pred_proba = self.meta_model.predict(
+            self.df_feature[self.meta_feature_names][testset_mask]
+        )
         test_precision = precision_score(
             self.meta_label[testset_mask],
-            (self.df_feature["model"][testset_mask] > 0.5).astype(int),
+            (meta_pred_proba > 0.5).astype(int),
             zero_division=0,
         )
         test_recall = recall_score(
             self.meta_label[testset_mask],
-            (self.df_feature["model"][testset_mask] > 0.5).astype(int),
+            (meta_pred_proba > 0.5).astype(int),
             zero_division=0,
         )
         test_f1 = f1_score(
             self.meta_label[testset_mask],
-            (self.df_feature["model"][testset_mask] > 0.5).astype(int),
+            (meta_pred_proba > 0.5).astype(int),
         )
         return test_f1, test_precision, test_recall
 
