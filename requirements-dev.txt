@@ -1,4 +1,3 @@
-tqdm
 plotly
 nbformat
 ipywidgets
