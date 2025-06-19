@@ -334,9 +334,9 @@ class BacktestPipeline:
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
-                        assert (
-                            start_idx < end_idx
-                        ), "start_idx must be less than end_idx"
+                        assert start_idx < end_idx, (
+                            "start_idx must be less than end_idx"
+                        )
                         meta_label[start_idx:end_idx] = 0
                     # 重置收益
                     cumsum_ret = 0
@@ -530,4 +530,4 @@ def tune_pipeline(trial: optuna.Trial):
     print(
         f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f}"
     )
-    return calmar_ratio * side_auc * meta_f1
+    return calmar_ratio
