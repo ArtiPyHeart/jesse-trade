@@ -6,7 +6,7 @@ import optuna
 import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
-from mpire import WorkerPool
+from mpire.pool import WorkerPool
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
@@ -289,23 +289,31 @@ class BacktestPipeline:
             -len(side_pred_label) :
         ]
         assert len(log_ret) == len(side_pred_label)
-        meta_label = np.full_like(side_pred_label, 0)
 
-        for idx, (i, r) in enumerate(zip(side_pred_label[:-1], log_ret[:-1])):
-            if i == 1:
-                # side模型做多
-                if log_ret[idx + 1] > 0:
-                    # 方向正确
-                    meta_label[idx] = 1
-                else:
-                    # 方向错误
-                    meta_label[idx] = 0
-            else:
-                # side模型做空
-                if log_ret[idx + 1] < 0:
-                    meta_label[idx] = 1
-                else:
-                    meta_label[idx] = 0
+        side_label = np.load("data/side_label.npy")
+        side_label = np.where(side_label == 1, 1, -1)
+        len_gap = len(side_label) - len(side_pred_label)
+        side_label = side_label[len_gap:]
+        assert len(side_label) == len(side_pred_label)
+        assert len(side_label) == len(log_ret)
+
+        meta_label = (side_label == side_pred_label).astype(int)
+
+        # for idx, (i, r) in enumerate(zip(side_pred_label[:-1], log_ret[:-1])):
+        #     if i == 1:
+        #         # side模型做多
+        #         if log_ret[idx + 1] > 0:
+        #             # 方向正确
+        #             meta_label[idx] = 1
+        #         else:
+        #             # 方向错误
+        #             meta_label[idx] = 0
+        #     else:
+        #         # side模型做空
+        #         if log_ret[idx + 1] < 0:
+        #             meta_label[idx] = 1
+        #         else:
+        #             meta_label[idx] = 0
 
         start_idx = 0
         cumsum_ret = 0
@@ -359,12 +367,12 @@ class BacktestPipeline:
             "extra_trees": False,
             "boosting": "dart",
             "num_leaves": 300,
-            "max_depth": 100,
-            "min_gain_to_split": 0.01,
-            "min_data_in_leaf": 150,
+            "max_depth": 200,
+            "min_gain_to_split": 0.001,
+            "min_data_in_leaf": 20,
             "lambda_l1": 1,
             "lambda_l2": 1,
-            "num_boost_round": 900,
+            "num_boost_round": 1000,
         }
         dtrain = lgb.Dataset(feature_masked, label_masked)
         self.meta_model = lgb.train(params, dtrain)
@@ -377,15 +385,18 @@ class BacktestPipeline:
             self.meta_label[testset_mask],
             (meta_pred_proba > 0.5).astype(int),
             zero_division=0,
+            average="macro",
         )
         test_recall = recall_score(
             self.meta_label[testset_mask],
             (meta_pred_proba > 0.5).astype(int),
             zero_division=0,
+            average="macro",
         )
         test_f1 = f1_score(
             self.meta_label[testset_mask],
             (meta_pred_proba > 0.5).astype(int),
+            average="macro",
         )
         return test_f1, test_precision, test_recall
 
@@ -471,10 +482,10 @@ def tune_pipeline(trial: optuna.Trial):
     pipeline.get_df_feature()
     pipeline.side_feature_selection()
     side_auc = pipeline.train_side_model()
-    # 舍弃预测效果过于差的模型
-    if side_auc < 0.7:
-        print(f"{side_auc = :.6f}")
-        return -100
+    # # 舍弃预测效果过于差的模型
+    # if side_auc < 0.7:
+    #     print(f"{side_auc = :.6f}")
+    #     return -100
 
     pipeline.meta_labeling()
     pipeline.meta_feature_selection()
@@ -484,4 +495,4 @@ def tune_pipeline(trial: optuna.Trial):
     print(
         f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f}"
     )
-    return calmar_ratio * meta_f1
+    return calmar_ratio * side_auc * meta_f1
