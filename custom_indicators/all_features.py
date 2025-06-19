@@ -70,11 +70,11 @@ class FeatureCalculator:
     """
 
     def __init__(self):
-        self.candles = None
+        self.candles: np.ndarray = None
         self.sequential = False
         self.cache = {}
 
-    def load(self, candles: np.array, sequential: bool = False):
+    def load(self, candles: np.ndarray, sequential: bool = False):
         self.candles = helpers.slice_candles(candles, sequential)
         self.sequential = sequential
         # 每次load后，缓存清空
@@ -388,16 +388,10 @@ class FeatureCalculator:
             cwt_ = cwt(self.candles, sequential=True)
             for i in range(cwt_.shape[1]):
                 self.cache[f"cwt_{i}"] = cwt_[:, i]
-                self.cache[f"cwt_{i}_dt"] = dt(self.cache[f"cwt_{i}"])
-                self.cache[f"cwt_{i}_ddt"] = ddt(self.cache[f"cwt_{i}"])
-                for lg in range(1, LAG_MAX):
-                    self.cache[f"cwt_{i}_lag{lg}"] = lag(self.cache[f"cwt_{i}"], lg)
-                    self.cache[f"cwt_{i}_dt_lag{lg}"] = lag(
-                        self.cache[f"cwt_{i}_dt"], lg
-                    )
-                    self.cache[f"cwt_{i}_ddt_lag{lg}"] = lag(
-                        self.cache[f"cwt_{i}_ddt"], lg
-                    )
+
+        self._process_transformations(
+            f"cwt_{index}", self.cache[f"cwt_{index}"], **kwargs
+        )
 
     def dft_dom_cycle(self, **kwargs):
         if "dft_dom_cycle" not in self.cache:
@@ -786,16 +780,10 @@ class FeatureCalculator:
             vmd_ = vmd_indicator(self.candles, sequential=True)
             for i in range(vmd_.shape[1]):
                 self.cache[f"vmd_{i}"] = vmd_[:, i]
-                self.cache[f"vmd_{i}_dt"] = dt(self.cache[f"vmd_{i}"])
-                self.cache[f"vmd_{i}_ddt"] = ddt(self.cache[f"vmd_{i}"])
-                for lg in range(1, LAG_MAX):
-                    self.cache[f"vmd_{i}_lag{lg}"] = lag(self.cache[f"vmd_{i}"], lg)
-                    self.cache[f"vmd_{i}_dt_lag{lg}"] = lag(
-                        self.cache[f"vmd_{i}_dt"], lg
-                    )
-                    self.cache[f"vmd_{i}_ddt_lag{lg}"] = lag(
-                        self.cache[f"vmd_{i}_ddt"], lg
-                    )
+
+        self._process_transformations(
+            f"vmd_{index}", self.cache[f"vmd_{index}"], **kwargs
+        )
 
     def voss(self, **kwargs):
         if "voss" not in self.cache:
@@ -1590,24 +1578,19 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
 
 
 if __name__ == "__main__":
-    from jesse import research
+    from pathlib import Path
 
-    warmup_1m, trading_1m = research.get_candles(
-        "Binance Perpetual Futures",
-        "BTC-USDT",
-        "1m",
-        helpers.date_to_timestamp("2024-12-01"),
-        helpers.date_to_timestamp("2024-12-31"),
-        warmup_candles_num=0,
-        caching=False,
-        is_for_jesse=False,
-    )
+    candles = np.load(Path(__file__).parent.parent / "data" / "btc_1m.npy")[-10_0000:]
+    check_features = [
+        "vmd_0_dt_lag3",
+        "cwt_1_ddt_lag1",
+        "vmd_0_lag1",
+        "cwt_1_lag1",
+        "vmd_0",
+        "cwt_3",
+    ]
 
-    fe = feature_bundle(trading_1m, sequential=True)
-    for k, v in fe.items():
-        assert len(v) == len(trading_1m), (
-            f"{k} has length {len(v)} but candles has length {len(trading_1m)}"
-        )
-    fe_last = feature_bundle(trading_1m, sequential=False)
-    for k, v in fe_last.items():
-        assert len(v) == 1, f"{k} has length {len(v)} not 1"
+    feature_calculator = FeatureCalculator()
+    feature_calculator.load(candles, sequential=False)
+    for feature in check_features:
+        print(feature, feature_calculator.get([feature]))
