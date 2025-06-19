@@ -8,10 +8,10 @@ from custom_indicators.utils.math_tools import log_ret
 
 class FusionBarContainerV0(FusionBarContainerBase):
     def __init__(self, max_bars=1000):
-        super().__init__(max_bars, 1.0495644289224937)
-        self.N_1 = 214
-        self.N_2 = 55
-        self.N_ENTROPY = 245
+        super().__init__(max_bars, 0.6204344631779585)
+        self.N_1 = 244
+        self.N_2 = 201
+        self.N_ENTROPY = 140
 
     @property
     def max_lookback(self) -> int:
