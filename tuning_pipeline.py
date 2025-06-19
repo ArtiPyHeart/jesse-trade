@@ -290,10 +290,10 @@ class BacktestPipeline:
         ]
         assert len(log_ret) == len(side_pred_label)
 
-        side_label = np.load("data/side_label.npy")
-        side_label = np.where(side_label == 1, 1, -1)
+        side_label = np.where(self.side_label == 1, 1, -1)
         len_gap = len(side_label) - len(side_pred_label)
-        side_label = side_label[len_gap:]
+        if len_gap > 0:
+            side_label = side_label[len_gap:]
         assert len(side_label) == len(side_pred_label)
         assert len(side_label) == len(log_ret)
 
@@ -334,9 +334,9 @@ class BacktestPipeline:
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
-                        assert start_idx < end_idx, (
-                            "start_idx must be less than end_idx"
-                        )
+                        assert (
+                            start_idx < end_idx
+                        ), "start_idx must be less than end_idx"
                         meta_label[start_idx:end_idx] = 0
                     # 重置收益
                     cumsum_ret = 0
@@ -354,25 +354,60 @@ class BacktestPipeline:
         ).sort_values(ascending=False)
         self.meta_feature_names = meta_res[meta_res > 0].index.tolist()
 
-    def train_meta_model(self) -> float:
+    def train_meta_model(self) -> tuple[float, float, float]:
         mask = self.df_feature.index < self.train_test_split_timestamp
         feature_masked = self.df_feature[self.meta_feature_names][mask]
         label_masked = self.meta_label[mask]
+
+        METRIC = "f1"
+
+        def eval_metric(preds, eval_dataset):
+            metric_name = METRIC
+            y_true = eval_dataset.get_label()
+            value = f1_score(y_true, preds > 0.5, average="macro")
+            higher_better = True
+            return metric_name, value, higher_better
+
+        def objective(trial: optuna.Trial):
+            params = {
+                "objective": "binary",
+                "is_unbalance": True,
+                "num_threads": -1,
+                "verbose": -1,
+                "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
+                "boosting": trial.suggest_categorical("boosting", ["gbdt", "dart"]),
+                "num_leaves": trial.suggest_int("num_leaves", 31, 500),
+                "max_depth": trial.suggest_int("max_depth", 30, 1000),
+                "min_gain_to_split": trial.suggest_float("min_gain_to_split", 1e-8, 1),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 300),
+                "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 100),
+                "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 100),
+            }
+            dtrain = lgb.Dataset(feature_masked, label_masked)
+            # dtest = lgb.Dataset(meta_features_test, meta_label_test)
+            model_res = lgb.cv(
+                params,
+                dtrain,
+                num_boost_round=trial.suggest_int("num_boost_round", 100, 1500),
+                stratified=True,
+                feval=eval_metric,
+            )
+            return model_res[f"valid {METRIC}-mean"][-1]
+
+        with optuna_log_manager.silent_optimization():
+            study = optuna.create_study(
+                direction="maximize",
+                pruner=optuna.pruners.HyperbandPruner(),
+                sampler=optuna.samplers.TPESampler(),
+            )
+            study.optimize(objective, n_trials=20, n_jobs=1)
+
         params = {
             "objective": "binary",
-            "metric": "auc",
             "num_threads": -1,
             "verbose": -1,
             "is_unbalance": True,
-            "extra_trees": False,
-            "boosting": "dart",
-            "num_leaves": 300,
-            "max_depth": 200,
-            "min_gain_to_split": 0.001,
-            "min_data_in_leaf": 20,
-            "lambda_l1": 1,
-            "lambda_l2": 1,
-            "num_boost_round": 1000,
+            **study.best_params,
         }
         dtrain = lgb.Dataset(feature_masked, label_masked)
         self.meta_model = lgb.train(params, dtrain)
