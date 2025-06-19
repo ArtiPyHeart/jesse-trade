@@ -784,11 +784,18 @@ class FeatureCalculator:
         index = kwargs["index"]
         if f"vmd_{index}" not in self.cache:
             vmd_ = vmd_indicator(self.candles, sequential=True)
-            self.cache[f"vmd_{index}"] = vmd_[:, index]
-
-            self._process_transformations(
-                f"vmd_{index}", self.cache[f"vmd_{index}"], **kwargs
-            )
+            for i in range(vmd_.shape[1]):
+                self.cache[f"vmd_{i}"] = vmd_[:, i]
+                self.cache[f"vmd_{i}_dt"] = dt(self.cache[f"vmd_{i}"])
+                self.cache[f"vmd_{i}_ddt"] = ddt(self.cache[f"vmd_{i}"])
+                for lg in range(1, LAG_MAX):
+                    self.cache[f"vmd_{i}_lag{lg}"] = lag(self.cache[f"vmd_{i}"], lg)
+                    self.cache[f"vmd_{i}_dt_lag{lg}"] = lag(
+                        self.cache[f"vmd_{i}_dt"], lg
+                    )
+                    self.cache[f"vmd_{i}_ddt_lag{lg}"] = lag(
+                        self.cache[f"vmd_{i}_ddt"], lg
+                    )
 
     def voss(self, **kwargs):
         if "voss" not in self.cache:
