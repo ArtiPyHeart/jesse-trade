@@ -388,10 +388,16 @@ class FeatureCalculator:
             cwt_ = cwt(self.candles, sequential=True)
             for i in range(cwt_.shape[1]):
                 self.cache[f"cwt_{i}"] = cwt_[:, i]
-
-                self._process_transformations(
-                    f"cwt_{index}", self.cache[f"cwt_{index}"], **kwargs
-                )
+                self.cache[f"cwt_{i}_dt"] = dt(self.cache[f"cwt_{i}"])
+                self.cache[f"cwt_{i}_ddt"] = ddt(self.cache[f"cwt_{i}"])
+                for lg in range(1, LAG_MAX):
+                    self.cache[f"cwt_{i}_lag{lg}"] = lag(self.cache[f"cwt_{i}"], lg)
+                    self.cache[f"cwt_{i}_dt_lag{lg}"] = lag(
+                        self.cache[f"cwt_{i}_dt"], lg
+                    )
+                    self.cache[f"cwt_{i}_ddt_lag{lg}"] = lag(
+                        self.cache[f"cwt_{i}_ddt"], lg
+                    )
 
     def dft_dom_cycle(self, **kwargs):
         if "dft_dom_cycle" not in self.cache:
