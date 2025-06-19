@@ -144,7 +144,7 @@ class FeatureCalculator:
         else:
             return {k: v[-1:] for k, v in res_fe.items()}
 
-    def _process_transformations(self, base_key: str, base_value: np.array, **kwargs):
+    def _process_transformations(self, base_key: str, base_value: np.ndarray, **kwargs):
         """处理特征的变换操作：dt, ddt, lag等"""
         feature_name = base_key
         feature_value = base_value
@@ -386,11 +386,12 @@ class FeatureCalculator:
         index = kwargs["index"]
         if f"cwt_{index}" not in self.cache:
             cwt_ = cwt(self.candles, sequential=True)
-            self.cache[f"cwt_{index}"] = cwt_[:, index]
+            for i in range(cwt_.shape[1]):
+                self.cache[f"cwt_{i}"] = cwt_[:, i]
 
-            self._process_transformations(
-                f"cwt_{index}", self.cache[f"cwt_{index}"], **kwargs
-            )
+                self._process_transformations(
+                    f"cwt_{index}", self.cache[f"cwt_{index}"], **kwargs
+                )
 
     def dft_dom_cycle(self, **kwargs):
         if "dft_dom_cycle" not in self.cache:
