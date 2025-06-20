@@ -315,6 +315,8 @@ class BacktestPipeline:
         #         else:
         #             meta_label[idx] = 0
 
+        TRADE_FEE = 0.05 / 100
+
         start_idx = 0
         cumsum_ret = 0
         for idx, (meta, side, ret) in enumerate(
@@ -324,13 +326,14 @@ class BacktestPipeline:
                 if idx > 0 and meta_label[idx - 1] == 0:
                     # 开始持仓
                     start_idx = idx
+                    cumsum_ret -= TRADE_FEE
                 else:
                     # 继续持仓
                     cumsum_ret += ret * side
             elif meta == 0:
                 if idx > 0 and meta_label[idx - 1] == 1:
                     # 结束持仓
-                    cumsum_ret += ret * side
+                    cumsum_ret += ret * side - TRADE_FEE
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
@@ -530,4 +533,4 @@ def tune_pipeline(trial: optuna.Trial):
     print(
         f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f}"
     )
-    return calmar_ratio
+    return calmar_ratio * side_auc * meta_f1
