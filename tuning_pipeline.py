@@ -401,9 +401,9 @@ class BacktestPipeline:
             study = optuna.create_study(
                 direction="maximize",
                 pruner=optuna.pruners.HyperbandPruner(),
-                sampler=optuna.samplers.TPESampler(),
+                sampler=optuna.samplers.TPESampler(n_startup_trials=5),
             )
-            study.optimize(objective, n_trials=20, n_jobs=1)
+            study.optimize(objective, n_trials=10, n_jobs=1)
 
         params = {
             "objective": "binary",
@@ -533,4 +533,4 @@ def tune_pipeline(trial: optuna.Trial):
     print(
         f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f}"
     )
-    return calmar_ratio * side_auc * meta_f1
+    return calmar_ratio * side_auc * meta_f1**2

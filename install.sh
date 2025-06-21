@@ -40,5 +40,10 @@ else
   python -m pip install -r requirements.txt
 fi
 
+# 检查是否为 Linux 系统
+if [[ "$(uname)" == "Linux" ]]; then
+    systemctl restart pgbouncer
+fi
+
 echo ""
 echo ">>> 安装成功完成！"
