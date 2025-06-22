@@ -296,46 +296,32 @@ class BacktestPipeline:
         len_gap = len(side_label) - len(side_pred_label)
         if len_gap > 0:
             side_label = side_label[len_gap:]
-
         assert len(side_label) == len(side_pred_label)
 
         meta_label = ((side_pred_label * log_ret) > 0).astype(int)
-
-        # for idx, (i, r) in enumerate(zip(side_pred_label[:-1], log_ret[:-1])):
-        #     if i == 1:
-        #         # side模型做多
-        #         if log_ret[idx + 1] > 0:
-        #             # 方向正确
-        #             meta_label[idx] = 1
-        #         else:
-        #             # 方向错误
-        #             meta_label[idx] = 0
-        #     else:
-        #         # side模型做空
-        #         if log_ret[idx + 1] < 0:
-        #             meta_label[idx] = 1
-        #         else:
-        #             meta_label[idx] = 0
 
         TRADE_FEE = 0.05 / 100
 
         start_idx = 0
         cumsum_ret = 0
         for idx, (meta, side, ret) in enumerate(
-            zip(meta_label, side_pred_label, log_ret)
+            zip(
+                meta_label, side_pred_label, log_ret
+            )  # 还原log_ret的错位情况，预测时log ret是下一位的log ret
         ):
             if meta == 1:
                 if idx > 0 and meta_label[idx - 1] == 0:
                     # 开始持仓
                     start_idx = idx
                     cumsum_ret -= TRADE_FEE
+                    cumsum_ret += ret * side
                 else:
                     # 继续持仓
                     cumsum_ret += ret * side
             elif meta == 0:
                 if idx > 0 and meta_label[idx - 1] == 1:
                     # 结束持仓
-                    cumsum_ret += ret * side - TRADE_FEE
+                    cumsum_ret -= TRADE_FEE
                     end_idx = idx
                     if cumsum_ret < 0:
                         # 如果收益为负，则认为判断错误
@@ -405,7 +391,7 @@ class BacktestPipeline:
                 pruner=optuna.pruners.HyperbandPruner(),
                 sampler=optuna.samplers.TPESampler(n_startup_trials=5),
             )
-            study.optimize(objective, n_trials=5, n_jobs=1)
+            study.optimize(objective, n_trials=10, n_jobs=1)
 
         params = {
             "objective": "binary",
@@ -535,4 +521,4 @@ def tune_pipeline(trial: optuna.Trial):
     print(
         f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f}"
     )
-    return calmar_ratio * side_auc * meta_f1**2
+    return calmar_ratio * side_auc * meta_f1
