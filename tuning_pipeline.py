@@ -286,65 +286,59 @@ class BacktestPipeline:
         side_res = self.side_model.predict(self.df_feature[self.side_feature_names])
         side_pred_label = np.where(side_res > 0.5, 1, -1)
 
-        log_ret = np.log(self.merged_bar[1:, 2] / self.merged_bar[:-1, 2])
-        len_gap = len(log_ret) - len(side_pred_label)
+        close_prices = self.merged_bar[:, 2]
+        len_gap = len(close_prices) - len(side_pred_label)
         if len_gap > 0:
-            log_ret = log_ret[len_gap:]
-        assert len(log_ret) == len(side_pred_label)
-
-        side_label = np.where(self.side_label == 1, 1, -1)
-        len_gap = len(side_label) - len(side_pred_label)
-        if len_gap > 0:
-            side_label = side_label[len_gap:]
-        assert len(side_label) == len(side_pred_label)
+            close_prices = close_prices[len_gap - 1 : -1]
+        assert len(close_prices) == len(side_pred_label)
 
         meta_label = np.zeros(len(side_pred_label))
 
-        TRADE_FEE = 0.05 / 100
-
         start_idx = 0
         cumsum_ret = 0
-        for idx, (i, r) in enumerate(zip(side_pred_label, log_ret)):
-            if i == 1:
+        start_price = 0
+        for idx, (i, p) in enumerate(zip(side_pred_label, close_prices)):
+            if i == 1 or i == -1:
                 if idx == 0:
                     # 开始持仓
                     start_idx = idx
-                    cumsum_ret += r * i
-                    cumsum_ret -= TRADE_FEE
-                elif side_pred_label[idx - 1] == -1:
+                    start_price = p
+                    cumsum_ret -= self.trading_fee
+                elif side_pred_label[idx - 1] != i:
                     # 反向持仓，先结算收益
-                    cumsum_ret -= TRADE_FEE
+                    cumsum_ret -= self.trading_fee
+                    cumsum_ret += np.log(p / start_price) * side_pred_label[idx - 1]
                     if cumsum_ret > 0:
                         meta_label[start_idx:idx] = 1
                     cumsum_ret = 0
+                    start_price = p
                     start_idx = idx
-                    cumsum_ret += r * i
-                    cumsum_ret -= TRADE_FEE
+                    cumsum_ret -= self.trading_fee
                 else:
                     # 继续持仓
-                    cumsum_ret += r * i
-            elif i == -1:
-                if idx == 0:
-                    # 开始持仓
-                    start_idx = idx
-                    cumsum_ret += r * i
-                    cumsum_ret -= TRADE_FEE
-                elif side_pred_label[idx - 1] == 1:
-                    # 反向持仓，先结算收益
-                    cumsum_ret -= TRADE_FEE
-                    if cumsum_ret < 0:
-                        meta_label[start_idx:idx] = 1
-                    cumsum_ret = 0
-                    start_idx = idx
-                    cumsum_ret += r * i
-                    cumsum_ret -= TRADE_FEE
-                else:
-                    # 继续持仓
-                    cumsum_ret += r * i
+                    continue
             else:
                 raise ValueError(f"side_pred_label[{idx}] = {i} is not valid")
+        else:
+            last_price = self.merged_bar[-1, 2]
+            # 结算最后一根bar的持仓, 可能还没有结算，所以先不加trade fee
+            if i == side_pred_label[idx - 1]:
+                # 已经开仓，结算
+                cumsum_ret += (
+                    np.log(last_price / start_price) * side_pred_label[idx - 1]
+                )
+            else:
+                # 反向开仓
+                cumsum_ret -= self.trading_fee
+                cumsum_ret += (
+                    np.log(last_price / start_price) * side_pred_label[idx - 1]
+                )
+
+            if cumsum_ret > 0:
+                meta_label[start_idx:] = 1
 
         self.meta_label = meta_label
+        return meta_label
 
     def meta_feature_selection(self):
         selector = RFCQSelector(verbose=False)
@@ -364,7 +358,7 @@ class BacktestPipeline:
         def eval_metric(preds, eval_dataset):
             metric_name = METRIC
             y_true = eval_dataset.get_label()
-            value = f1_score(y_true, preds > 0.5, average="macro")
+            value = f1_score(y_true, preds > 0.5, average="weighted")
             higher_better = True
             return metric_name, value, higher_better
 
@@ -398,9 +392,9 @@ class BacktestPipeline:
             study = optuna.create_study(
                 direction="maximize",
                 pruner=optuna.pruners.HyperbandPruner(),
-                sampler=optuna.samplers.TPESampler(n_startup_trials=5),
+                sampler=optuna.samplers.TPESampler(n_startup_trials=8),
             )
-            study.optimize(objective, n_trials=10, n_jobs=1)
+            study.optimize(objective, n_trials=15, n_jobs=1)
 
         params = {
             "objective": "binary",
@@ -420,28 +414,22 @@ class BacktestPipeline:
             self.meta_label[testset_mask],
             (meta_pred_proba > 0.5).astype(int),
             zero_division=0,
-            average="macro",
+            average="weighted",
         )
         test_recall = recall_score(
             self.meta_label[testset_mask],
             (meta_pred_proba > 0.5).astype(int),
             zero_division=0,
-            average="macro",
+            average="weighted",
         )
         test_f1 = f1_score(
             self.meta_label[testset_mask],
             (meta_pred_proba > 0.5).astype(int),
-            average="macro",
+            average="weighted",
         )
         return test_f1, test_precision, test_recall
 
     def backtest(self):
-        log_ret = np.log(self.merged_bar[1:, 2] / self.merged_bar[:-1, 2])[:-1]
-        test_bars = self.merged_bar[
-            self.merged_bar[:, 0] >= self.train_test_split_timestamp
-        ][:-1]
-        log_ret = log_ret[-len(test_bars) :]
-
         side_features = self.df_feature[self.side_feature_names]
         side_features = side_features[
             side_features.index >= self.train_test_split_timestamp
@@ -456,43 +444,75 @@ class BacktestPipeline:
         meta_pred = self.meta_model.predict(meta_features)
         meta_pred_label = np.where(meta_pred > 0.5, 1, 0)
 
-        assert len(log_ret) == len(side_pred_label)
-        assert len(log_ret) == len(meta_pred_label)
+        close_prices = self.merged_bar[:, 2]
+        len_gap = len(close_prices) - len(side_pred_label)
+        if len_gap > 0:
+            close_prices = close_prices[len_gap - 1 : -1]
+        assert len(close_prices) == len(side_pred_label)
 
-        total_return = 0
         one_return = 0
+        start_price = 0
         log_ret_list = []
-        for idx, (side, meta, ret) in enumerate(
-            zip(side_pred_label, meta_pred_label, log_ret)
+        for idx, (side, meta, p) in enumerate(
+            zip(side_pred_label, meta_pred_label, close_prices)
         ):
             if meta == 1:
                 if (idx == 0) or (meta_pred_label[idx - 1] == 0):
                     # 开始持仓
+                    start_price = p
+                    one_return -= self.trading_fee
+                    log_ret_list.append(-self.trading_fee)
+                elif side_pred_label[idx - 1] != side:
+                    # 反向调仓
+                    # 先结算
+                    one_return -= self.trading_fee
+                    one_return += np.log(p / start_price) * side_pred_label[idx - 1]
+                    log_ret_list.append(one_return)
+
+                    # 再开仓
+                    one_return = 0
+                    start_price = p
                     one_return -= self.trading_fee
                     log_ret_list.append(-self.trading_fee)
                 else:
                     # 继续持仓
-                    if side != side_pred_label[idx - 1]:
-                        # 反方向调仓需要更多手续费
-                        one_return -= self.trading_fee * 2
-                        log_ret_list.append(-self.trading_fee * 2)
-                    one_return += ret * side
-                    log_ret_list.append(ret * side)
+                    continue
             else:
                 if (idx == 0) or (meta_pred_label[idx - 1] == 0):
                     continue
                 elif meta_pred_label[idx - 1] == 1:
-                    # 结束持仓
-                    one_return += ret * side - self.trading_fee
-                    log_ret_list.append(ret * side - self.trading_fee)
-                    total_return += one_return
+                    # 结算持仓
+                    one_return -= self.trading_fee
+                    one_return += np.log(p / start_price) * side_pred_label[idx - 1]
+                    log_ret_list.append(one_return)
                     one_return = 0
+                    start_price = 0
+        else:
+            last_price = self.merged_bar[-1, 2]
+            # 结算最后一根bar的持仓
+            if meta == 1:
+                if meta_pred_label[idx - 1] == 1:  # 上一根已经开仓，假设持仓继续延续
+                    if side == side_pred_label[idx - 1]:
+                        one_return += np.log(last_price / start_price) * side
+                    else:
+                        one_return -= self.trading_fee
+                        one_return += (
+                            np.log(last_price / start_price) * side_pred_label[idx - 1]
+                        )
+
+                    log_ret_list.append(one_return)
+                else:
+                    # 上一根没有开仓，只结算手续费
+                    one_return = -self.trading_fee
+                    log_ret_list.append(one_return)
 
         log_ret_list = pd.Series(log_ret_list)
         cumulative_returns = np.exp(np.cumsum(log_ret_list))
         running_max = cumulative_returns.cummax()
         drawdown = (cumulative_returns - running_max) / running_max
         max_drawdown = drawdown.min()
+
+        total_return = log_ret_list.sum()
 
         print(f"{total_return = :.2f}, {max_drawdown = :.2f}")
         calmar_ratio = total_return / abs(max_drawdown)
@@ -522,12 +542,19 @@ def tune_pipeline(trial: optuna.Trial):
     #     print(f"{side_auc = :.6f}")
     #     return -100
 
-    pipeline.meta_labeling()
+    meta_label = pipeline.meta_labeling()
     pipeline.meta_feature_selection()
     meta_f1, meta_precision, meta_recall = pipeline.train_meta_model()
 
     calmar_ratio = pipeline.backtest()
+
+    mask_train = pipeline.df_feature.index < pipeline.train_test_split_timestamp
+    mask_test = pipeline.df_feature.index >= pipeline.train_test_split_timestamp
+
+    meta_label_train_count = np.unique(meta_label[mask_train], return_counts=True)
+    meta_label_test_count = np.unique(meta_label[mask_test], return_counts=True)
+
     print(
-        f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f}"
+        f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f} {meta_label_train_count = } {meta_label_test_count = }"
     )
-    return calmar_ratio * side_auc * meta_f1
+    return calmar_ratio * side_auc * meta_f1**2
