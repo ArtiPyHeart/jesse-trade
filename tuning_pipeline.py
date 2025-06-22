@@ -340,7 +340,7 @@ class BacktestPipeline:
                     cumsum_ret -= TRADE_FEE
                 else:
                     # 继续持仓
-                    cumsum_ret += r
+                    cumsum_ret += r * i
             else:
                 raise ValueError(f"side_pred_label[{idx}] = {i} is not valid")
 
