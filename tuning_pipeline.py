@@ -86,7 +86,11 @@ class BacktestPipeline:
         self.df_feature = None
 
     @property
-    def train_test_split_timestamp(self):
+    def side_model_split_timestamp(self):
+        return helpers.date_to_timestamp("2024-09-01")
+
+    @property
+    def meta_model_split_timestamp(self):
         return helpers.date_to_timestamp("2025-01-01")
 
     @property
@@ -250,7 +254,7 @@ class BacktestPipeline:
         self.side_feature_names = side_res[side_res > 0].index.tolist()
 
     def train_side_model(self) -> float:
-        mask = self.df_feature.index < self.train_test_split_timestamp
+        mask = self.df_feature.index < self.side_model_split_timestamp
         feature_masked = self.df_feature[self.side_feature_names][mask]
         label_masked = self.side_label[mask]
         params = {
@@ -275,7 +279,7 @@ class BacktestPipeline:
             self.df_feature[self.side_feature_names]
         )
 
-        testset_mask = self.df_feature.index >= self.train_test_split_timestamp
+        testset_mask = self.df_feature.index >= self.side_model_split_timestamp
         test_auc = roc_auc_score(
             self.side_label[testset_mask],
             self.df_feature["model"][testset_mask],
@@ -349,7 +353,7 @@ class BacktestPipeline:
         self.meta_feature_names = meta_res[meta_res > 0].index.tolist()
 
     def train_meta_model(self) -> tuple[float, float, float]:
-        mask = self.df_feature.index < self.train_test_split_timestamp
+        mask = self.df_feature.index < self.meta_model_split_timestamp
         feature_masked = self.df_feature[self.meta_feature_names][mask]
         label_masked = self.meta_label[mask]
 
@@ -382,7 +386,7 @@ class BacktestPipeline:
             model_res = lgb.cv(
                 params,
                 dtrain,
-                num_boost_round=trial.suggest_int("num_boost_round", 100, 1500),
+                num_boost_round=trial.suggest_int("num_boost_round", 100, 1000),
                 stratified=True,
                 feval=eval_metric,
             )
@@ -392,9 +396,9 @@ class BacktestPipeline:
             study = optuna.create_study(
                 direction="maximize",
                 pruner=optuna.pruners.HyperbandPruner(),
-                sampler=optuna.samplers.TPESampler(n_startup_trials=8),
+                sampler=optuna.samplers.TPESampler(n_startup_trials=5),
             )
-            study.optimize(objective, n_trials=15, n_jobs=1)
+            study.optimize(objective, n_trials=10, n_jobs=1)
 
         params = {
             "objective": "binary",
@@ -406,7 +410,7 @@ class BacktestPipeline:
         dtrain = lgb.Dataset(feature_masked, label_masked)
         self.meta_model = lgb.train(params, dtrain)
 
-        testset_mask = self.df_feature.index >= self.train_test_split_timestamp
+        testset_mask = self.df_feature.index >= self.meta_model_split_timestamp
         meta_pred_proba = self.meta_model.predict(
             self.df_feature[self.meta_feature_names][testset_mask]
         )
@@ -432,14 +436,14 @@ class BacktestPipeline:
     def backtest(self):
         side_features = self.df_feature[self.side_feature_names]
         side_features = side_features[
-            side_features.index >= self.train_test_split_timestamp
+            side_features.index >= self.meta_model_split_timestamp
         ]
         side_pred = self.side_model.predict(side_features)
         side_pred_label = np.where(side_pred > 0.5, 1, -1)
 
         meta_features = self.df_feature[self.meta_feature_names]
         meta_features = meta_features[
-            meta_features.index >= self.train_test_split_timestamp
+            meta_features.index >= self.meta_model_split_timestamp
         ]
         meta_pred = self.meta_model.predict(meta_features)
         meta_pred_label = np.where(meta_pred > 0.5, 1, 0)
@@ -548,8 +552,8 @@ def tune_pipeline(trial: optuna.Trial):
 
     calmar_ratio = pipeline.backtest()
 
-    mask_train = pipeline.df_feature.index < pipeline.train_test_split_timestamp
-    mask_test = pipeline.df_feature.index >= pipeline.train_test_split_timestamp
+    mask_train = pipeline.df_feature.index < pipeline.meta_model_split_timestamp
+    mask_test = pipeline.df_feature.index >= pipeline.meta_model_split_timestamp
 
     meta_label_train_count = np.unique(meta_label[mask_train], return_counts=True)
     meta_label_test_count = np.unique(meta_label[mask_test], return_counts=True)
