@@ -298,42 +298,51 @@ class BacktestPipeline:
             side_label = side_label[len_gap:]
         assert len(side_label) == len(side_pred_label)
 
-        meta_label = ((side_pred_label * log_ret) > 0).astype(int)
+        meta_label = np.zeros(len(side_pred_label))
 
         TRADE_FEE = 0.05 / 100
 
         start_idx = 0
         cumsum_ret = 0
-        for idx, (meta, side, ret) in enumerate(
-            zip(
-                meta_label, side_pred_label, log_ret
-            )  # 还原log_ret的错位情况，预测时log ret是下一位的log ret
-        ):
-            if meta == 1:
-                if idx > 0 and meta_label[idx - 1] == 0:
+        for idx, (i, r) in enumerate(zip(side_pred_label, log_ret)):
+            if i == 1:
+                if idx == 0:
                     # 开始持仓
                     start_idx = idx
+                    cumsum_ret += r * i
                     cumsum_ret -= TRADE_FEE
-                    cumsum_ret += ret * side
+                elif side_pred_label[idx - 1] == -1:
+                    # 反向持仓，先结算收益
+                    cumsum_ret -= TRADE_FEE
+                    if cumsum_ret > 0:
+                        meta_label[start_idx:idx] = 1
+                    cumsum_ret = 0
+                    start_idx = idx
+                    cumsum_ret += r * i
+                    cumsum_ret -= TRADE_FEE
                 else:
                     # 继续持仓
-                    cumsum_ret += ret * side
-            elif meta == 0:
-                if idx > 0 and meta_label[idx - 1] == 1:
-                    # 结束持仓
+                    cumsum_ret += r * i
+            elif i == -1:
+                if idx == 0:
+                    # 开始持仓
+                    start_idx = idx
+                    cumsum_ret += r * i
                     cumsum_ret -= TRADE_FEE
-                    end_idx = idx
+                elif side_pred_label[idx - 1] == 1:
+                    # 反向持仓，先结算收益
+                    cumsum_ret -= TRADE_FEE
                     if cumsum_ret < 0:
-                        # 如果收益为负，则认为判断错误
-                        assert start_idx < end_idx, (
-                            "start_idx must be less than end_idx"
-                        )
-                        meta_label[start_idx:end_idx] = 0
-                    # 重置收益
+                        meta_label[start_idx:idx] = 1
                     cumsum_ret = 0
-                    start_idx = 0
+                    start_idx = idx
+                    cumsum_ret += r * i
+                    cumsum_ret -= TRADE_FEE
                 else:
-                    continue
+                    # 继续持仓
+                    cumsum_ret += r
+            else:
+                raise ValueError(f"side_pred_label[{idx}] = {i} is not valid")
 
         self.meta_label = meta_label
 
