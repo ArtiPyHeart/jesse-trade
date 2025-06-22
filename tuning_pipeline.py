@@ -173,9 +173,9 @@ class BacktestPipeline:
         with optuna_log_manager.silent_optimization():
             study = optuna.create_study(
                 direction="maximize",
-                sampler=optuna.samplers.TPESampler(),
+                sampler=optuna.samplers.TPESampler(n_startup_trials=5),
             )
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials=10)
             return study.best_params["random_state"]
 
     def side_labeling(self):
@@ -285,19 +285,21 @@ class BacktestPipeline:
     def meta_labeling(self):
         side_res = self.side_model.predict(self.df_feature[self.side_feature_names])
         side_pred_label = np.where(side_res > 0.5, 1, -1)
-        log_ret = np.log(self.merged_bar[1:, 2] / self.merged_bar[:-1, 2])[
-            -len(side_pred_label) :
-        ]
+
+        log_ret = np.log(self.merged_bar[1:, 2] / self.merged_bar[:-1, 2])
+        len_gap = len(log_ret) - len(side_pred_label)
+        if len_gap > 0:
+            log_ret = log_ret[len_gap:]
         assert len(log_ret) == len(side_pred_label)
 
         side_label = np.where(self.side_label == 1, 1, -1)
         len_gap = len(side_label) - len(side_pred_label)
         if len_gap > 0:
             side_label = side_label[len_gap:]
-        assert len(side_label) == len(side_pred_label)
-        assert len(side_label) == len(log_ret)
 
-        meta_label = (side_label == side_pred_label).astype(int)
+        assert len(side_label) == len(side_pred_label)
+
+        meta_label = ((side_pred_label * log_ret) > 0).astype(int)
 
         # for idx, (i, r) in enumerate(zip(side_pred_label[:-1], log_ret[:-1])):
         #     if i == 1:
@@ -403,7 +405,7 @@ class BacktestPipeline:
                 pruner=optuna.pruners.HyperbandPruner(),
                 sampler=optuna.samplers.TPESampler(n_startup_trials=5),
             )
-            study.optimize(objective, n_trials=10, n_jobs=1)
+            study.optimize(objective, n_trials=5, n_jobs=1)
 
         params = {
             "objective": "binary",
