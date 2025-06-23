@@ -382,15 +382,59 @@ class FeatureCalculator:
             for i in range(conv.shape[1]):
                 self.cache[f"conv_{i}"] = conv[:, i]
 
-    def cwt(self, **kwargs):
+    def cwt_win32(self, **kwargs):
         index = kwargs["index"]
-        if f"cwt_{index}" not in self.cache:
-            cwt_ = cwt(self.candles, sequential=True)
-            for i in range(cwt_.shape[1]):
-                self.cache[f"cwt_{i}"] = cwt_[:, i]
+        if f"cwt_win32_{index}" not in self.cache:
+            cwt_win32 = cwt(self.candles, 32, sequential=True)
+            for i in range(cwt_win32.shape[1]):
+                self.cache[f"cwt_win32_{i}"] = cwt_win32[:, i]
 
         self._process_transformations(
-            f"cwt_{index}", self.cache[f"cwt_{index}"], **kwargs
+            f"cwt_win32_{index}", self.cache[f"cwt_win32_{index}"], **kwargs
+        )
+
+    def cwt_win64(self, **kwargs):
+        index = kwargs["index"]
+        if f"cwt_win64_{index}" not in self.cache:
+            cwt_win64 = cwt(self.candles, 64, sequential=True)
+            for i in range(cwt_win64.shape[1]):
+                self.cache[f"cwt_win64_{i}"] = cwt_win64[:, i]
+
+        self._process_transformations(
+            f"cwt_win64_{index}", self.cache[f"cwt_win64_{index}"], **kwargs
+        )
+
+    def cwt_win128(self, **kwargs):
+        index = kwargs["index"]
+        if f"cwt_win128_{index}" not in self.cache:
+            cwt_win128 = cwt(self.candles, 128, sequential=True)
+            for i in range(cwt_win128.shape[1]):
+                self.cache[f"cwt_win128_{i}"] = cwt_win128[:, i]
+
+        self._process_transformations(
+            f"cwt_win128_{index}", self.cache[f"cwt_win128_{index}"], **kwargs
+        )
+
+    def cwt_win256(self, **kwargs):
+        index = kwargs["index"]
+        if f"cwt_win256_{index}" not in self.cache:
+            cwt_win256 = cwt(self.candles, 256, sequential=True)
+            for i in range(cwt_win256.shape[1]):
+                self.cache[f"cwt_win256_{i}"] = cwt_win256[:, i]
+
+        self._process_transformations(
+            f"cwt_win256_{index}", self.cache[f"cwt_win256_{index}"], **kwargs
+        )
+
+    def cwt_win512(self, **kwargs):
+        index = kwargs["index"]
+        if f"cwt_win512_{index}" not in self.cache:
+            cwt_win512 = cwt(self.candles, 512, sequential=True)
+            for i in range(cwt_win512.shape[1]):
+                self.cache[f"cwt_win512_{i}"] = cwt_win512[:, i]
+
+        self._process_transformations(
+            f"cwt_win512_{index}", self.cache[f"cwt_win512_{index}"], **kwargs
         )
 
     def dft_dom_cycle(self, **kwargs):
@@ -774,15 +818,59 @@ class FeatureCalculator:
 
         self._process_transformations("trendflex", self.cache["trendflex"], **kwargs)
 
-    def vmd(self, **kwargs):
+    def vmd_win32(self, **kwargs):
         index = kwargs["index"]
-        if f"vmd_{index}" not in self.cache:
-            vmd_ = vmd_indicator(self.candles, sequential=True)
-            for i in range(vmd_.shape[1]):
-                self.cache[f"vmd_{i}"] = vmd_[:, i]
+        if f"vmd_win32_{index}" not in self.cache:
+            vmd_win32 = vmd_indicator(self.candles, 32, sequential=True)
+            for i in range(vmd_win32.shape[1]):
+                self.cache[f"vmd_win32_{i}"] = vmd_win32[:, i]
 
         self._process_transformations(
-            f"vmd_{index}", self.cache[f"vmd_{index}"], **kwargs
+            f"vmd_win32_{index}", self.cache[f"vmd_win32_{index}"], **kwargs
+        )
+
+    def vmd_win64(self, **kwargs):
+        index = kwargs["index"]
+        if f"vmd_win64_{index}" not in self.cache:
+            vmd_win64 = vmd_indicator(self.candles, 64, sequential=True)
+            for i in range(vmd_win64.shape[1]):
+                self.cache[f"vmd_win64_{i}"] = vmd_win64[:, i]
+
+        self._process_transformations(
+            f"vmd_win64_{index}", self.cache[f"vmd_win64_{index}"], **kwargs
+        )
+
+    def vmd_win128(self, **kwargs):
+        index = kwargs["index"]
+        if f"vmd_win128_{index}" not in self.cache:
+            vmd_win128 = vmd_indicator(self.candles, 128, sequential=True)
+            for i in range(vmd_win128.shape[1]):
+                self.cache[f"vmd_win128_{i}"] = vmd_win128[:, i]
+
+        self._process_transformations(
+            f"vmd_win128_{index}", self.cache[f"vmd_win128_{index}"], **kwargs
+        )
+
+    def vmd_win256(self, **kwargs):
+        index = kwargs["index"]
+        if f"vmd_win256_{index}" not in self.cache:
+            vmd_win256 = vmd_indicator(self.candles, 256, sequential=True)
+            for i in range(vmd_win256.shape[1]):
+                self.cache[f"vmd_win256_{i}"] = vmd_win256[:, i]
+
+        self._process_transformations(
+            f"vmd_win256_{index}", self.cache[f"vmd_win256_{index}"], **kwargs
+        )
+
+    def vmd_win512(self, **kwargs):
+        index = kwargs["index"]
+        if f"vmd_win512_{index}" not in self.cache:
+            vmd_win512 = vmd_indicator(self.candles, 512, sequential=True)
+            for i in range(vmd_win512.shape[1]):
+                self.cache[f"vmd_win512_{i}"] = vmd_win512[:, i]
+
+        self._process_transformations(
+            f"vmd_win512_{index}", self.cache[f"vmd_win512_{index}"], **kwargs
         )
 
     def voss(self, **kwargs):
@@ -1074,15 +1162,61 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"conv_{i}"] = conv[:, i]
 
     # wavelet cwt
-    cwt_ = cwt(candles, sequential=True)
-    for i in range(cwt_.shape[1]):
-        res_fe[f"cwt_{i}"] = cwt_[:, i]
-        res_fe[f"cwt_{i}_dt"] = dt(cwt_[:, i])
-        res_fe[f"cwt_{i}_ddt"] = ddt(cwt_[:, i])
+    cwt_win32 = cwt(candles, 32, sequential=True)
+    for i in range(cwt_win32.shape[1]):
+        res_fe[f"cwt_win32_{i}"] = cwt_win32[:, i]
+        res_fe[f"cwt_win32_{i}_dt"] = dt(cwt_win32[:, i])
+        res_fe[f"cwt_win32_{i}_ddt"] = ddt(cwt_win32[:, i])
         for lg in range(1, LAG_MAX):
-            res_fe[f"cwt_{i}_lag{lg}"] = lag(cwt_[:, i], lg)
-            res_fe[f"cwt_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_{i}_dt"], lg)
-            res_fe[f"cwt_{i}_ddt_lag{lg}"] = lag(res_fe[f"cwt_{i}_ddt"], lg)
+            res_fe[f"cwt_win32_{i}_lag{lg}"] = lag(cwt_win32[:, i], lg)
+            res_fe[f"cwt_win32_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win32_{i}_dt"], lg)
+            res_fe[f"cwt_win32_{i}_ddt_lag{lg}"] = lag(res_fe[f"cwt_win32_{i}_ddt"], lg)
+
+    cwt_win64 = cwt(candles, 64, sequential=True)
+    for i in range(cwt_win64.shape[1]):
+        res_fe[f"cwt_win64_{i}"] = cwt_win64[:, i]
+        res_fe[f"cwt_win64_{i}_dt"] = dt(cwt_win64[:, i])
+        res_fe[f"cwt_win64_{i}_ddt"] = ddt(cwt_win64[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"cwt_win64_{i}_lag{lg}"] = lag(cwt_win64[:, i], lg)
+            res_fe[f"cwt_win64_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win64_{i}_dt"], lg)
+            res_fe[f"cwt_win64_{i}_ddt_lag{lg}"] = lag(res_fe[f"cwt_win64_{i}_ddt"], lg)
+
+    cwt_win128 = cwt(candles, 128, sequential=True)
+    for i in range(cwt_win128.shape[1]):
+        res_fe[f"cwt_win128_{i}"] = cwt_win128[:, i]
+        res_fe[f"cwt_win128_{i}_dt"] = dt(cwt_win128[:, i])
+        res_fe[f"cwt_win128_{i}_ddt"] = ddt(cwt_win128[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"cwt_win128_{i}_lag{lg}"] = lag(cwt_win128[:, i], lg)
+            res_fe[f"cwt_win128_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win128_{i}_dt"], lg)
+            res_fe[f"cwt_win128_{i}_ddt_lag{lg}"] = lag(
+                res_fe[f"cwt_win128_{i}_ddt"], lg
+            )
+
+    cwt_win256 = cwt(candles, 256, sequential=True)
+    for i in range(cwt_win256.shape[1]):
+        res_fe[f"cwt_win256_{i}"] = cwt_win256[:, i]
+        res_fe[f"cwt_win256_{i}_dt"] = dt(cwt_win256[:, i])
+        res_fe[f"cwt_win256_{i}_ddt"] = ddt(cwt_win256[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"cwt_win256_{i}_lag{lg}"] = lag(cwt_win256[:, i], lg)
+            res_fe[f"cwt_win256_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win256_{i}_dt"], lg)
+            res_fe[f"cwt_win256_{i}_ddt_lag{lg}"] = lag(
+                res_fe[f"cwt_win256_{i}_ddt"], lg
+            )
+
+    cwt_win512 = cwt(candles, 512, sequential=True)
+    for i in range(cwt_win512.shape[1]):
+        res_fe[f"cwt_win512_{i}"] = cwt_win512[:, i]
+        res_fe[f"cwt_win512_{i}_dt"] = dt(cwt_win512[:, i])
+        res_fe[f"cwt_win512_{i}_ddt"] = ddt(cwt_win512[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"cwt_win512_{i}_lag{lg}"] = lag(cwt_win512[:, i], lg)
+            res_fe[f"cwt_win512_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win512_{i}_dt"], lg)
+            res_fe[f"cwt_win512_{i}_ddt_lag{lg}"] = lag(
+                res_fe[f"cwt_win512_{i}_ddt"], lg
+            )
 
     # dft
     dft_dom_cycle, spectrum = dft(candles, sequential=True)
@@ -1514,15 +1648,61 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"trendflex_ddt_lag{lg}"] = lag(res_fe["trendflex_ddt"], lg)
 
     # VMD
-    vmd_ = vmd_indicator(candles, sequential=True)
-    for i in range(vmd_.shape[1]):
-        res_fe[f"vmd_{i}"] = vmd_[:, i]
-        res_fe[f"vmd_{i}_dt"] = dt(vmd_[:, i])
-        res_fe[f"vmd_{i}_ddt"] = ddt(vmd_[:, i])
+    vmd_win32 = vmd_indicator(candles, 32, sequential=True)
+    for i in range(vmd_win32.shape[1]):
+        res_fe[f"vmd_win32_{i}"] = vmd_win32[:, i]
+        res_fe[f"vmd_win32_{i}_dt"] = dt(vmd_win32[:, i])
+        res_fe[f"vmd_win32_{i}_ddt"] = ddt(vmd_win32[:, i])
         for lg in range(1, LAG_MAX):
-            res_fe[f"vmd_{i}_lag{lg}"] = lag(vmd_[:, i], lg)
-            res_fe[f"vmd_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_{i}_dt"], lg)
-            res_fe[f"vmd_{i}_ddt_lag{lg}"] = lag(res_fe[f"vmd_{i}_ddt"], lg)
+            res_fe[f"vmd_win32_{i}_lag{lg}"] = lag(vmd_win32[:, i], lg)
+            res_fe[f"vmd_win32_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win32_{i}_dt"], lg)
+            res_fe[f"vmd_win32_{i}_ddt_lag{lg}"] = lag(res_fe[f"vmd_win32_{i}_ddt"], lg)
+
+    vmd_win64 = vmd_indicator(candles, 64, sequential=True)
+    for i in range(vmd_win64.shape[1]):
+        res_fe[f"vmd_win64_{i}"] = vmd_win64[:, i]
+        res_fe[f"vmd_win64_{i}_dt"] = dt(vmd_win64[:, i])
+        res_fe[f"vmd_win64_{i}_ddt"] = ddt(vmd_win64[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"vmd_win64_{i}_lag{lg}"] = lag(vmd_win64[:, i], lg)
+            res_fe[f"vmd_win64_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win64_{i}_dt"], lg)
+            res_fe[f"vmd_win64_{i}_ddt_lag{lg}"] = lag(res_fe[f"vmd_win64_{i}_ddt"], lg)
+
+    vmd_win128 = vmd_indicator(candles, 128, sequential=True)
+    for i in range(vmd_win128.shape[1]):
+        res_fe[f"vmd_win128_{i}"] = vmd_win128[:, i]
+        res_fe[f"vmd_win128_{i}_dt"] = dt(vmd_win128[:, i])
+        res_fe[f"vmd_win128_{i}_ddt"] = ddt(vmd_win128[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"vmd_win128_{i}_lag{lg}"] = lag(vmd_win128[:, i], lg)
+            res_fe[f"vmd_win128_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win128_{i}_dt"], lg)
+            res_fe[f"vmd_win128_{i}_ddt_lag{lg}"] = lag(
+                res_fe[f"vmd_win128_{i}_ddt"], lg
+            )
+
+    vmd_win256 = vmd_indicator(candles, 256, sequential=True)
+    for i in range(vmd_win256.shape[1]):
+        res_fe[f"vmd_win256_{i}"] = vmd_win256[:, i]
+        res_fe[f"vmd_win256_{i}_dt"] = dt(vmd_win256[:, i])
+        res_fe[f"vmd_win256_{i}_ddt"] = ddt(vmd_win256[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"vmd_win256_{i}_lag{lg}"] = lag(vmd_win256[:, i], lg)
+            res_fe[f"vmd_win256_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win256_{i}_dt"], lg)
+            res_fe[f"vmd_win256_{i}_ddt_lag{lg}"] = lag(
+                res_fe[f"vmd_win256_{i}_ddt"], lg
+            )
+
+    vmd_win512 = vmd_indicator(candles, 512, sequential=True)
+    for i in range(vmd_win512.shape[1]):
+        res_fe[f"vmd_win512_{i}"] = vmd_win512[:, i]
+        res_fe[f"vmd_win512_{i}_dt"] = dt(vmd_win512[:, i])
+        res_fe[f"vmd_win512_{i}_ddt"] = ddt(vmd_win512[:, i])
+        for lg in range(1, LAG_MAX):
+            res_fe[f"vmd_win512_{i}_lag{lg}"] = lag(vmd_win512[:, i], lg)
+            res_fe[f"vmd_win512_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win512_{i}_dt"], lg)
+            res_fe[f"vmd_win512_{i}_ddt_lag{lg}"] = lag(
+                res_fe[f"vmd_win512_{i}_ddt"], lg
+            )
 
     # Voss Filter
     voss_filter_ = ta.voss(candles, sequential=True)

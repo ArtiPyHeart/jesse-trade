@@ -12,24 +12,32 @@ INIT = 1  ###  初始化中心频率
 TOL = 1e-7  ### 收敛容忍度
 
 
+def _calc_vmd_nrbo(src: np.ndarray):
+    u, u_hat, omega = VMD(src, ALPHA, TAU, K, DC, INIT, TOL)
+    u = u[2:]
+    u_nrbo = np.zeros_like(u)
+    for i in range(u.shape[0]):
+        u_nrbo[i] = nrbo(u[i])
+    return u_nrbo.T[-1]
+
+
 def vmd_indicator(
     candles: np.ndarray,
+    window: int,
     source_type: str = "close",
     sequential: bool = False,
 ):
     candles = slice_candles(candles, sequential)
     src = get_candle_source(candles, source_type)
 
-    u, u_hat, omega = VMD(src, ALPHA, TAU, K, DC, INIT, TOL)
-    # 排除前两行u
-    u = u[2:]
-
-    u_nrbo = np.zeros_like(u)
-
-    for i in range(u.shape[0]):
-        u_nrbo[i] = nrbo(u[i])
-
     if sequential:
-        return u_nrbo.T  # (row, 3)
+        res = []
+        for idx in range(window, len(src)):
+            res.append(_calc_vmd_nrbo(src[idx - window : idx]))
+        res = np.asarray(res)
+        columns = res.shape[1]
+        # padding res with nan (window, columns)
+        res = np.vstack([np.full((window, columns), np.nan), res])
+        return res
     else:
-        return u_nrbo.T[-1, :]  # (3,)
+        return _calc_vmd_nrbo(src[-window:])
