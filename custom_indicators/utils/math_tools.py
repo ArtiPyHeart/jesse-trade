@@ -48,7 +48,7 @@ def dt(array: np.ndarray) -> np.ndarray:
     # 第一个元素设为nan
     res[0] = np.nan
     # 计算差分
-    res[1:] = np.diff(array)
+    res[1:] = array[1:] - array[:-1]
     return res
 
 
@@ -56,7 +56,8 @@ def dt(array: np.ndarray) -> np.ndarray:
 def ddt(array: np.ndarray) -> np.ndarray:
     res = np.empty_like(array)
     res[0] = np.nan
-    res[1:] = np.diff(dt(array))
+    dt_array = dt(array)
+    res[1:] = dt_array[1:] - dt_array[:-1]
     return res
 
 
