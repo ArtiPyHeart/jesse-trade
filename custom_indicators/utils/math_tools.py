@@ -2,8 +2,8 @@ import numpy as np
 from numba import njit
 
 
-@njit
-def log_ret(
+@njit(cache=True)
+def log_ret_from_candles(
     candles: np.ndarray, window_on_vol: np.ndarray | list[int] | int
 ) -> list[np.ndarray]:
     log_ret_list = []
@@ -23,25 +23,70 @@ def log_ret(
     return log_ret_list
 
 
-@njit
+@njit(cache=True)
+def log_ret_from_current_price(
+    price_arr: np.ndarray, window_on_vol: np.ndarray | list[int] | int
+) -> list[np.ndarray]:
+    log_ret_list = []
+
+    if isinstance(window_on_vol, (int, float)):
+        window_on_vol = [int(window_on_vol)] * len(price_arr)
+    else:
+        window_on_vol = np.array(window_on_vol)
+
+    for idx, w_on_vol in enumerate(window_on_vol):
+        if np.isfinite(w_on_vol):
+            w_on_vol = round(w_on_vol)
+            if idx - w_on_vol >= 0:
+                log_ret_list.append(
+                    np.log(price_arr[idx] / price_arr[idx - w_on_vol : idx])
+                )
+    return log_ret_list
+
+
+@njit(cache=True)
+def log_ret_from_array_price(
+    price_arr: np.ndarray, window_on_vol: np.ndarray | list[int] | int
+) -> list[np.ndarray]:
+    log_ret_list = []
+
+    if isinstance(window_on_vol, (int, float)):
+        window_on_vol = [int(window_on_vol)] * len(price_arr)
+    else:
+        window_on_vol = np.array(window_on_vol)
+
+    for idx, w_on_vol in enumerate(window_on_vol):
+        if np.isfinite(w_on_vol):
+            w_on_vol = round(w_on_vol)
+            if idx - w_on_vol >= 0:
+                log_ret_list.append(
+                    np.log(
+                        price_arr[idx - w_on_vol + 1 : idx]
+                        / price_arr[idx - w_on_vol : idx - 1]
+                    )
+                )
+    return log_ret_list
+
+
+@njit(cache=True)
 def deg_sin(degrees: float) -> float:
     res = np.sin(np.deg2rad(degrees))
     return res
 
 
-@njit
+@njit(cache=True)
 def deg_cos(degrees: float) -> float:
     res = np.cos(np.deg2rad(degrees))
     return res
 
 
-@njit
+@njit(cache=True)
 def deg_tan(degrees: float) -> float:
     res = np.tan(np.deg2rad(degrees))
     return res
 
 
-@njit
+@njit(cache=True)
 def dt(array: np.ndarray) -> np.ndarray:
     # 创建结果数组，与输入数组大小相同
     res = np.empty_like(array)
@@ -52,7 +97,7 @@ def dt(array: np.ndarray) -> np.ndarray:
     return res
 
 
-@njit
+@njit(cache=True)
 def ddt(array: np.ndarray) -> np.ndarray:
     res = np.empty_like(array)
     res[0] = np.nan
@@ -61,7 +106,7 @@ def ddt(array: np.ndarray) -> np.ndarray:
     return res
 
 
-@njit
+@njit(cache=True)
 def lag(array: np.ndarray, n: int) -> np.ndarray:
     result = np.full_like(array, np.nan)
     if n > 0:
@@ -73,7 +118,7 @@ def lag(array: np.ndarray, n: int) -> np.ndarray:
     return result
 
 
-@njit
+@njit(cache=True)
 def std(array: np.ndarray, n: int = 20) -> np.ndarray:
     # 使用cumsum方法创建rolling window
     ret = np.full_like(array, np.nan)
@@ -84,7 +129,7 @@ def std(array: np.ndarray, n: int = 20) -> np.ndarray:
     return ret
 
 
-@njit
+@njit(cache=True)
 def skew(array: np.ndarray, n: int = 20) -> np.ndarray:
     ret = np.full_like(array, np.nan)
 
@@ -98,7 +143,7 @@ def skew(array: np.ndarray, n: int = 20) -> np.ndarray:
     return ret
 
 
-@njit
+@njit(cache=True)
 def kurtosis(array: np.ndarray, n: int = 20) -> np.ndarray:
     ret = np.full_like(array, np.nan)
 
@@ -112,7 +157,7 @@ def kurtosis(array: np.ndarray, n: int = 20) -> np.ndarray:
     return ret
 
 
-@njit
+@njit(cache=True)
 def np_shift(array: np.ndarray, n: int) -> np.ndarray:
     res = np.full_like(array, np.nan)
     if n > 0:
@@ -122,7 +167,7 @@ def np_shift(array: np.ndarray, n: int) -> np.ndarray:
     return res
 
 
-@njit
+@njit(cache=True)
 def np_array_fill_nan(todo: np.ndarray, target: np.ndarray) -> np.ndarray:
     """
     在todo数组开头填充nan，使得todo和target数组长度相同
@@ -131,7 +176,7 @@ def np_array_fill_nan(todo: np.ndarray, target: np.ndarray) -> np.ndarray:
     return res
 
 
-@njit
+@njit(cache=True)
 def rolling_sum_with_nan(arr: np.ndarray, window: int) -> np.ndarray:
     if window > len(arr):
         # 窗口大于数组长度时，全部返回nan

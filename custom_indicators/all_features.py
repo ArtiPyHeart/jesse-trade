@@ -43,7 +43,12 @@ from custom_indicators.dominant_cycle import (
     homodyne,
     phase_accumulation,
 )
+from custom_indicators.prod_indicator.diff.frac_ffd import frac_diff_ffd_candle
 from custom_indicators.prod_indicator.emd.indicator import vmd_indicator
+from custom_indicators.prod_indicator.entropy.appr_en import (
+    approximate_entropy_indicator,
+)
+from custom_indicators.prod_indicator.entropy.samp_en import sample_entropy_indicator
 from custom_indicators.prod_indicator.fti import FTIResult
 from custom_indicators.prod_indicator.micro_structure import (
     amihud_lambda,
@@ -142,7 +147,10 @@ class FeatureCalculator:
         if self.sequential:
             return res_fe
         else:
-            return {k: v[-1:] for k, v in res_fe.items()}
+            return {
+                k: v[-1:] if isinstance(v, (np.ndarray, list)) else np.array([v])
+                for k, v in res_fe.items()
+            }
 
     def _process_transformations(self, base_key: str, base_value: np.ndarray, **kwargs):
         """处理特征的变换操作：dt, ddt, lag等"""
@@ -385,57 +393,56 @@ class FeatureCalculator:
     def cwt_win32(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win32_{index}" not in self.cache:
-            cwt_win32 = cwt(self.candles, 32, sequential=True)
+            cwt_win32 = cwt(self.candles, 32, sequential=self.sequential)
+            if cwt_win32.ndim == 1:
+                cwt_win32 = cwt_win32.reshape(-1, 1)
             for i in range(cwt_win32.shape[1]):
                 self.cache[f"cwt_win32_{i}"] = cwt_win32[:, i]
-
-        self._process_transformations(
-            f"cwt_win32_{index}", self.cache[f"cwt_win32_{index}"], **kwargs
-        )
 
     def cwt_win64(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win64_{index}" not in self.cache:
-            cwt_win64 = cwt(self.candles, 64, sequential=True)
+            cwt_win64 = cwt(self.candles, 64, sequential=self.sequential)
+            if cwt_win64.ndim == 1:
+                cwt_win64 = cwt_win64.reshape(-1, 1)
             for i in range(cwt_win64.shape[1]):
                 self.cache[f"cwt_win64_{i}"] = cwt_win64[:, i]
-
-        self._process_transformations(
-            f"cwt_win64_{index}", self.cache[f"cwt_win64_{index}"], **kwargs
-        )
 
     def cwt_win128(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win128_{index}" not in self.cache:
-            cwt_win128 = cwt(self.candles, 128, sequential=True)
+            cwt_win128 = cwt(self.candles, 128, sequential=self.sequential)
+            if cwt_win128.ndim == 1:
+                cwt_win128 = cwt_win128.reshape(-1, 1)
             for i in range(cwt_win128.shape[1]):
                 self.cache[f"cwt_win128_{i}"] = cwt_win128[:, i]
-
-        self._process_transformations(
-            f"cwt_win128_{index}", self.cache[f"cwt_win128_{index}"], **kwargs
-        )
 
     def cwt_win256(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win256_{index}" not in self.cache:
-            cwt_win256 = cwt(self.candles, 256, sequential=True)
+            cwt_win256 = cwt(self.candles, 256, sequential=self.sequential)
+            if cwt_win256.ndim == 1:
+                cwt_win256 = cwt_win256.reshape(-1, 1)
             for i in range(cwt_win256.shape[1]):
                 self.cache[f"cwt_win256_{i}"] = cwt_win256[:, i]
-
-        self._process_transformations(
-            f"cwt_win256_{index}", self.cache[f"cwt_win256_{index}"], **kwargs
-        )
 
     def cwt_win512(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win512_{index}" not in self.cache:
-            cwt_win512 = cwt(self.candles, 512, sequential=True)
+            cwt_win512 = cwt(self.candles, 512, sequential=self.sequential)
+            if cwt_win512.ndim == 1:
+                cwt_win512 = cwt_win512.reshape(-1, 1)
             for i in range(cwt_win512.shape[1]):
                 self.cache[f"cwt_win512_{i}"] = cwt_win512[:, i]
 
-        self._process_transformations(
-            f"cwt_win512_{index}", self.cache[f"cwt_win512_{index}"], **kwargs
-        )
+    def cwt_win1024(self, **kwargs):
+        index = kwargs["index"]
+        if f"cwt_win1024_{index}" not in self.cache:
+            cwt_win1024 = cwt(self.candles, 1024, sequential=self.sequential)
+            if cwt_win1024.ndim == 1:
+                cwt_win1024 = cwt_win1024.reshape(-1, 1)
+            for i in range(cwt_win1024.shape[1]):
+                self.cache[f"cwt_win1024_{i}"] = cwt_win1024[:, i]
 
     def dft_dom_cycle(self, **kwargs):
         if "dft_dom_cycle" not in self.cache:
@@ -474,6 +481,196 @@ class FeatureCalculator:
             "ehlers_early_onset_trend", self.cache["ehlers_early_onset_trend"], **kwargs
         )
 
+    def sample_entropy_win32_spot(self, **kwargs):
+        if "sample_entropy_win32_spot" not in self.cache:
+            sample_entropy_win32_spot_ = sample_entropy_indicator(
+                self.candles, period=32, sequential=self.sequential
+            )
+            self.cache["sample_entropy_win32_spot"] = sample_entropy_win32_spot_
+
+    def sample_entropy_win32_array(self, **kwargs):
+        if "sample_entropy_win32_array" not in self.cache:
+            sample_entropy_win32_array_ = sample_entropy_indicator(
+                self.candles,
+                period=32,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["sample_entropy_win32_array"] = sample_entropy_win32_array_
+
+    def sample_entropy_win64_spot(self, **kwargs):
+        if "sample_entropy_win64_spot" not in self.cache:
+            sample_entropy_win64_spot_ = sample_entropy_indicator(
+                self.candles, period=64, sequential=self.sequential
+            )
+            self.cache["sample_entropy_win64_spot"] = sample_entropy_win64_spot_
+
+    def sample_entropy_win64_array(self, **kwargs):
+        if "sample_entropy_win64_array" not in self.cache:
+            sample_entropy_win64_array_ = sample_entropy_indicator(
+                self.candles,
+                period=64,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["sample_entropy_win64_array"] = sample_entropy_win64_array_
+
+    def sample_entropy_win128_spot(self, **kwargs):
+        if "sample_entropy_win128_spot" not in self.cache:
+            sample_entropy_win128_spot_ = sample_entropy_indicator(
+                self.candles, period=128, sequential=self.sequential
+            )
+            self.cache["sample_entropy_win128_spot"] = sample_entropy_win128_spot_
+
+    def sample_entropy_win128_array(self, **kwargs):
+        if "sample_entropy_win128_array" not in self.cache:
+            sample_entropy_win128_array_ = sample_entropy_indicator(
+                self.candles,
+                period=128,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["sample_entropy_win128_array"] = sample_entropy_win128_array_
+
+    def sample_entropy_win256_spot(self, **kwargs):
+        if "sample_entropy_win256_spot" not in self.cache:
+            sample_entropy_win256_spot_ = sample_entropy_indicator(
+                self.candles, period=256, sequential=self.sequential
+            )
+            self.cache["sample_entropy_win256_spot"] = sample_entropy_win256_spot_
+
+    def sample_entropy_win256_array(self, **kwargs):
+        if "sample_entropy_win256_array" not in self.cache:
+            sample_entropy_win256_array_ = sample_entropy_indicator(
+                self.candles,
+                period=256,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["sample_entropy_win256_array"] = sample_entropy_win256_array_
+
+    def sample_entropy_win512_spot(self, **kwargs):
+        if "sample_entropy_win512_spot" not in self.cache:
+            sample_entropy_win512_spot_ = sample_entropy_indicator(
+                self.candles, period=512, sequential=self.sequential
+            )
+            self.cache["sample_entropy_win512_spot"] = sample_entropy_win512_spot_
+
+    def sample_entropy_win512_array(self, **kwargs):
+        if "sample_entropy_win512_array" not in self.cache:
+            sample_entropy_win512_array_ = sample_entropy_indicator(
+                self.candles,
+                period=512,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["sample_entropy_win512_array"] = sample_entropy_win512_array_
+
+    def approximate_entropy_win32_spot(self, **kwargs):
+        if "approximate_entropy_win32_spot" not in self.cache:
+            approximate_entropy_win32_spot_ = approximate_entropy_indicator(
+                self.candles, period=32, sequential=self.sequential
+            )
+            self.cache["approximate_entropy_win32_spot"] = (
+                approximate_entropy_win32_spot_
+            )
+
+    def approximate_entropy_win32_array(self, **kwargs):
+        if "approximate_entropy_win32_array" not in self.cache:
+            approximate_entropy_win32_array_ = approximate_entropy_indicator(
+                self.candles,
+                period=32,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["approximate_entropy_win32_array"] = (
+                approximate_entropy_win32_array_
+            )
+
+    def approximate_entropy_win64_spot(self, **kwargs):
+        if "approximate_entropy_win64_spot" not in self.cache:
+            approximate_entropy_win64_spot_ = approximate_entropy_indicator(
+                self.candles, period=64, sequential=self.sequential
+            )
+            self.cache["approximate_entropy_win64_spot"] = (
+                approximate_entropy_win64_spot_
+            )
+
+    def approximate_entropy_win64_array(self, **kwargs):
+        if "approximate_entropy_win64_array" not in self.cache:
+            approximate_entropy_win64_array_ = approximate_entropy_indicator(
+                self.candles,
+                period=64,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["approximate_entropy_win64_array"] = (
+                approximate_entropy_win64_array_
+            )
+
+    def approximate_entropy_win128_spot(self, **kwargs):
+        if "approximate_entropy_win128_spot" not in self.cache:
+            approximate_entropy_win128_spot_ = approximate_entropy_indicator(
+                self.candles, period=128, sequential=self.sequential
+            )
+            self.cache["approximate_entropy_win128_spot"] = (
+                approximate_entropy_win128_spot_
+            )
+
+    def approximate_entropy_win128_array(self, **kwargs):
+        if "approximate_entropy_win128_array" not in self.cache:
+            approximate_entropy_win128_array_ = approximate_entropy_indicator(
+                self.candles,
+                period=128,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["approximate_entropy_win128_array"] = (
+                approximate_entropy_win128_array_
+            )
+
+    def approximate_entropy_win256_spot(self, **kwargs):
+        if "approximate_entropy_win256_spot" not in self.cache:
+            approximate_entropy_win256_spot_ = approximate_entropy_indicator(
+                self.candles, period=256, sequential=self.sequential
+            )
+            self.cache["approximate_entropy_win256_spot"] = (
+                approximate_entropy_win256_spot_
+            )
+
+    def approximate_entropy_win256_array(self, **kwargs):
+        if "approximate_entropy_win256_array" not in self.cache:
+            approximate_entropy_win256_array_ = approximate_entropy_indicator(
+                self.candles,
+                period=256,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["approximate_entropy_win256_array"] = (
+                approximate_entropy_win256_array_
+            )
+
+    def approximate_entropy_win512_spot(self, **kwargs):
+        if "approximate_entropy_win512_spot" not in self.cache:
+            approximate_entropy_win512_spot_ = approximate_entropy_indicator(
+                self.candles, period=512, sequential=self.sequential
+            )
+            self.cache["approximate_entropy_win512_spot"] = (
+                approximate_entropy_win512_spot_
+            )
+
+    def approximate_entropy_win512_array(self, **kwargs):
+        if "approximate_entropy_win512_array" not in self.cache:
+            approximate_entropy_win512_array_ = approximate_entropy_indicator(
+                self.candles,
+                period=512,
+                use_array_price=True,
+                sequential=self.sequential,
+            )
+            self.cache["approximate_entropy_win512_array"] = (
+                approximate_entropy_win512_array_
+            )
+
     def entropy_for_jesse(self, **kwargs):
         if "entropy_for_jesse" not in self.cache:
             entropy_for_jesse_ = entropy_for_jesse(self.candles, sequential=True)
@@ -511,6 +708,17 @@ class FeatureCalculator:
             self.cache["fisher"] = fisher_ind.fisher
 
         self._process_transformations("fisher", self.cache["fisher"], **kwargs)
+
+    def frac_diff_ffd(self, **kwargs):
+        if "frac_diff_ffd" not in self.cache:
+            frac_diff_ffd_ = frac_diff_ffd_candle(
+                self.candles, diff_amt=0.35, sequential=True
+            )
+            self.cache["frac_diff_ffd"] = frac_diff_ffd_
+
+        self._process_transformations(
+            "frac_diff_ffd", self.cache["frac_diff_ffd"], **kwargs
+        )
 
     def fti(self, **kwargs):
         if "fti" not in self.cache:
@@ -821,57 +1029,56 @@ class FeatureCalculator:
     def vmd_win32(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win32_{index}" not in self.cache:
-            vmd_win32 = vmd_indicator(self.candles, 32, sequential=True)
+            vmd_win32 = vmd_indicator(self.candles, 32, sequential=self.sequential)
+            if vmd_win32.ndim == 1:
+                vmd_win32 = vmd_win32.reshape(-1, 1)
             for i in range(vmd_win32.shape[1]):
                 self.cache[f"vmd_win32_{i}"] = vmd_win32[:, i]
-
-        self._process_transformations(
-            f"vmd_win32_{index}", self.cache[f"vmd_win32_{index}"], **kwargs
-        )
 
     def vmd_win64(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win64_{index}" not in self.cache:
-            vmd_win64 = vmd_indicator(self.candles, 64, sequential=True)
+            vmd_win64 = vmd_indicator(self.candles, 64, sequential=self.sequential)
+            if vmd_win64.ndim == 1:
+                vmd_win64 = vmd_win64.reshape(-1, 1)
             for i in range(vmd_win64.shape[1]):
                 self.cache[f"vmd_win64_{i}"] = vmd_win64[:, i]
-
-        self._process_transformations(
-            f"vmd_win64_{index}", self.cache[f"vmd_win64_{index}"], **kwargs
-        )
 
     def vmd_win128(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win128_{index}" not in self.cache:
-            vmd_win128 = vmd_indicator(self.candles, 128, sequential=True)
+            vmd_win128 = vmd_indicator(self.candles, 128, sequential=self.sequential)
+            if vmd_win128.ndim == 1:
+                vmd_win128 = vmd_win128.reshape(-1, 1)
             for i in range(vmd_win128.shape[1]):
                 self.cache[f"vmd_win128_{i}"] = vmd_win128[:, i]
-
-        self._process_transformations(
-            f"vmd_win128_{index}", self.cache[f"vmd_win128_{index}"], **kwargs
-        )
 
     def vmd_win256(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win256_{index}" not in self.cache:
-            vmd_win256 = vmd_indicator(self.candles, 256, sequential=True)
+            vmd_win256 = vmd_indicator(self.candles, 256, sequential=self.sequential)
+            if vmd_win256.ndim == 1:
+                vmd_win256 = vmd_win256.reshape(-1, 1)
             for i in range(vmd_win256.shape[1]):
                 self.cache[f"vmd_win256_{i}"] = vmd_win256[:, i]
-
-        self._process_transformations(
-            f"vmd_win256_{index}", self.cache[f"vmd_win256_{index}"], **kwargs
-        )
 
     def vmd_win512(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win512_{index}" not in self.cache:
-            vmd_win512 = vmd_indicator(self.candles, 512, sequential=True)
+            vmd_win512 = vmd_indicator(self.candles, 512, sequential=self.sequential)
+            if vmd_win512.ndim == 1:
+                vmd_win512 = vmd_win512.reshape(-1, 1)
             for i in range(vmd_win512.shape[1]):
                 self.cache[f"vmd_win512_{i}"] = vmd_win512[:, i]
 
-        self._process_transformations(
-            f"vmd_win512_{index}", self.cache[f"vmd_win512_{index}"], **kwargs
-        )
+    def vmd_win1024(self, **kwargs):
+        index = kwargs["index"]
+        if f"vmd_win1024_{index}" not in self.cache:
+            vmd_win1024 = vmd_indicator(self.candles, 1024, sequential=self.sequential)
+            if vmd_win1024.ndim == 1:
+                vmd_win1024 = vmd_win1024.reshape(-1, 1)
+            for i in range(vmd_win1024.shape[1]):
+                self.cache[f"vmd_win1024_{i}"] = vmd_win1024[:, i]
 
     def voss(self, **kwargs):
         if "voss" not in self.cache:
@@ -902,7 +1109,9 @@ class FeatureCalculator:
         self._process_transformations("williams_r", self.cache["williams_r"], **kwargs)
 
 
-def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.array]:
+def feature_bundle(
+    candles: np.ndarray, sequential: bool = False
+) -> dict[str, np.ndarray]:
     candles = helpers.slice_candles(candles, sequential)
     res_fe = {}
 
@@ -1161,62 +1370,30 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     for i in range(conv.shape[1]):
         res_fe[f"conv_{i}"] = conv[:, i]
 
-    # wavelet cwt
+    # cwt wavelet
     cwt_win32 = cwt(candles, 32, sequential=True)
     for i in range(cwt_win32.shape[1]):
         res_fe[f"cwt_win32_{i}"] = cwt_win32[:, i]
-        res_fe[f"cwt_win32_{i}_dt"] = dt(cwt_win32[:, i])
-        res_fe[f"cwt_win32_{i}_ddt"] = ddt(cwt_win32[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"cwt_win32_{i}_lag{lg}"] = lag(cwt_win32[:, i], lg)
-            res_fe[f"cwt_win32_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win32_{i}_dt"], lg)
-            res_fe[f"cwt_win32_{i}_ddt_lag{lg}"] = lag(res_fe[f"cwt_win32_{i}_ddt"], lg)
 
     cwt_win64 = cwt(candles, 64, sequential=True)
     for i in range(cwt_win64.shape[1]):
         res_fe[f"cwt_win64_{i}"] = cwt_win64[:, i]
-        res_fe[f"cwt_win64_{i}_dt"] = dt(cwt_win64[:, i])
-        res_fe[f"cwt_win64_{i}_ddt"] = ddt(cwt_win64[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"cwt_win64_{i}_lag{lg}"] = lag(cwt_win64[:, i], lg)
-            res_fe[f"cwt_win64_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win64_{i}_dt"], lg)
-            res_fe[f"cwt_win64_{i}_ddt_lag{lg}"] = lag(res_fe[f"cwt_win64_{i}_ddt"], lg)
 
     cwt_win128 = cwt(candles, 128, sequential=True)
     for i in range(cwt_win128.shape[1]):
         res_fe[f"cwt_win128_{i}"] = cwt_win128[:, i]
-        res_fe[f"cwt_win128_{i}_dt"] = dt(cwt_win128[:, i])
-        res_fe[f"cwt_win128_{i}_ddt"] = ddt(cwt_win128[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"cwt_win128_{i}_lag{lg}"] = lag(cwt_win128[:, i], lg)
-            res_fe[f"cwt_win128_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win128_{i}_dt"], lg)
-            res_fe[f"cwt_win128_{i}_ddt_lag{lg}"] = lag(
-                res_fe[f"cwt_win128_{i}_ddt"], lg
-            )
 
     cwt_win256 = cwt(candles, 256, sequential=True)
     for i in range(cwt_win256.shape[1]):
         res_fe[f"cwt_win256_{i}"] = cwt_win256[:, i]
-        res_fe[f"cwt_win256_{i}_dt"] = dt(cwt_win256[:, i])
-        res_fe[f"cwt_win256_{i}_ddt"] = ddt(cwt_win256[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"cwt_win256_{i}_lag{lg}"] = lag(cwt_win256[:, i], lg)
-            res_fe[f"cwt_win256_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win256_{i}_dt"], lg)
-            res_fe[f"cwt_win256_{i}_ddt_lag{lg}"] = lag(
-                res_fe[f"cwt_win256_{i}_ddt"], lg
-            )
 
     cwt_win512 = cwt(candles, 512, sequential=True)
     for i in range(cwt_win512.shape[1]):
         res_fe[f"cwt_win512_{i}"] = cwt_win512[:, i]
-        res_fe[f"cwt_win512_{i}_dt"] = dt(cwt_win512[:, i])
-        res_fe[f"cwt_win512_{i}_ddt"] = ddt(cwt_win512[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"cwt_win512_{i}_lag{lg}"] = lag(cwt_win512[:, i], lg)
-            res_fe[f"cwt_win512_{i}_dt_lag{lg}"] = lag(res_fe[f"cwt_win512_{i}_dt"], lg)
-            res_fe[f"cwt_win512_{i}_ddt_lag{lg}"] = lag(
-                res_fe[f"cwt_win512_{i}_ddt"], lg
-            )
+
+    cwt_win1024 = cwt(candles, 1024, sequential=True)
+    for i in range(cwt_win1024.shape[1]):
+        res_fe[f"cwt_win1024_{i}"] = cwt_win1024[:, i]
 
     # dft
     dft_dom_cycle, spectrum = dft(candles, sequential=True)
@@ -1259,6 +1436,110 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
         res_fe[f"ehlers_early_onset_trend_ddt_lag{lg}"] = lag(
             res_fe["ehlers_early_onset_trend_ddt"], lg
         )
+
+    # entropy sample
+    sample_entropy_win32_spot = sample_entropy_indicator(
+        candles, period=32, use_array_price=False, sequential=True
+    )
+    res_fe["sample_entropy_win32_spot"] = sample_entropy_win32_spot
+
+    sample_entropy_win32_array = sample_entropy_indicator(
+        candles, period=32, use_array_price=True, sequential=True
+    )
+    res_fe["sample_entropy_win32_array"] = sample_entropy_win32_array
+
+    sample_entropy_win64_spot = sample_entropy_indicator(
+        candles, period=64, use_array_price=False, sequential=True
+    )
+    res_fe["sample_entropy_win64_spot"] = sample_entropy_win64_spot
+
+    sample_entropy_win64_array = sample_entropy_indicator(
+        candles, period=64, use_array_price=True, sequential=True
+    )
+    res_fe["sample_entropy_win64_array"] = sample_entropy_win64_array
+
+    sample_entropy_win128_spot = sample_entropy_indicator(
+        candles, period=128, use_array_price=False, sequential=True
+    )
+    res_fe["sample_entropy_win128_spot"] = sample_entropy_win128_spot
+
+    sample_entropy_win128_array = sample_entropy_indicator(
+        candles, period=128, use_array_price=True, sequential=True
+    )
+    res_fe["sample_entropy_win128_array"] = sample_entropy_win128_array
+
+    sample_entropy_win256_spot = sample_entropy_indicator(
+        candles, period=256, use_array_price=False, sequential=True
+    )
+    res_fe["sample_entropy_win256_spot"] = sample_entropy_win256_spot
+
+    sample_entropy_win256_array = sample_entropy_indicator(
+        candles, period=256, use_array_price=True, sequential=True
+    )
+    res_fe["sample_entropy_win256_array"] = sample_entropy_win256_array
+
+    sample_entropy_win512_spot = sample_entropy_indicator(
+        candles, period=512, use_array_price=False, sequential=True
+    )
+    res_fe["sample_entropy_win512_spot"] = sample_entropy_win512_spot
+
+    sample_entropy_win512_array = sample_entropy_indicator(
+        candles, period=512, use_array_price=True, sequential=True
+    )
+    res_fe["sample_entropy_win512_array"] = sample_entropy_win512_array
+
+    # entropy approximate
+    approximate_entropy_win32_spot = approximate_entropy_indicator(
+        candles, period=32, use_array_price=False, sequential=True
+    )
+    res_fe["approximate_entropy_win32_spot"] = approximate_entropy_win32_spot
+
+    approximate_entropy_indicator_win32_array = approximate_entropy_indicator(
+        candles, period=32, use_array_price=True, sequential=True
+    )
+    res_fe["approximate_entropy_indicator_win32_array"] = (
+        approximate_entropy_indicator_win32_array
+    )
+
+    approximate_entropy_win64_spot = approximate_entropy_indicator(
+        candles, period=64, use_array_price=False, sequential=True
+    )
+    res_fe["approximate_entropy_win64_spot"] = approximate_entropy_win64_spot
+
+    approximate_entropy_win64_array = approximate_entropy_indicator(
+        candles, period=64, use_array_price=True, sequential=True
+    )
+    res_fe["approximate_entropy_win64_array"] = approximate_entropy_win64_array
+
+    approximate_entropy_win128_spot = approximate_entropy_indicator(
+        candles, period=128, use_array_price=False, sequential=True
+    )
+    res_fe["approximate_entropy_win128_spot"] = approximate_entropy_win128_spot
+
+    approximate_entropy_win128_array = approximate_entropy_indicator(
+        candles, period=128, use_array_price=True, sequential=True
+    )
+    res_fe["approximate_entropy_win128_array"] = approximate_entropy_win128_array
+
+    approximate_entropy_win256_spot = approximate_entropy_indicator(
+        candles, period=256, use_array_price=False, sequential=True
+    )
+    res_fe["approximate_entropy_win256_spot"] = approximate_entropy_win256_spot
+
+    approximate_entropy_win256_array = approximate_entropy_indicator(
+        candles, period=256, use_array_price=True, sequential=True
+    )
+    res_fe["approximate_entropy_win256_array"] = approximate_entropy_win256_array
+
+    approximate_entropy_win512_spot = approximate_entropy_indicator(
+        candles, period=512, use_array_price=False, sequential=True
+    )
+    res_fe["approximate_entropy_win512_spot"] = approximate_entropy_win512_spot
+
+    approximate_entropy_win512_array = approximate_entropy_indicator(
+        candles, period=512, use_array_price=True, sequential=True
+    )
+    res_fe["approximate_entropy_win512_array"] = approximate_entropy_win512_array
 
     # entropy for jesse
     entropy_for_jesse_ = entropy_for_jesse(candles, sequential=True)
@@ -1323,6 +1604,12 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     res_fe["forecast_oscillator"] = forecast_oscillator
     for lg in range(1, LAG_MAX):
         res_fe[f"forecast_oscillator_lag{lg}"] = lag(forecast_oscillator, lg)
+
+    # frac diff ffd
+    frac_diff_ffd_ = frac_diff_ffd_candle(candles, diff_amt=0.35, sequential=True)
+    res_fe["frac_diff_ffd"] = frac_diff_ffd_
+    for lg in range(1, LAG_MAX):
+        res_fe[f"frac_diff_ffd_lag{lg}"] = lag(frac_diff_ffd_, lg)
 
     # fti
     fti_: FTIResult = fti(candles, sequential=True)
@@ -1651,58 +1938,26 @@ def feature_bundle(candles: np.array, sequential: bool = False) -> dict[str, np.
     vmd_win32 = vmd_indicator(candles, 32, sequential=True)
     for i in range(vmd_win32.shape[1]):
         res_fe[f"vmd_win32_{i}"] = vmd_win32[:, i]
-        res_fe[f"vmd_win32_{i}_dt"] = dt(vmd_win32[:, i])
-        res_fe[f"vmd_win32_{i}_ddt"] = ddt(vmd_win32[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"vmd_win32_{i}_lag{lg}"] = lag(vmd_win32[:, i], lg)
-            res_fe[f"vmd_win32_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win32_{i}_dt"], lg)
-            res_fe[f"vmd_win32_{i}_ddt_lag{lg}"] = lag(res_fe[f"vmd_win32_{i}_ddt"], lg)
 
     vmd_win64 = vmd_indicator(candles, 64, sequential=True)
     for i in range(vmd_win64.shape[1]):
         res_fe[f"vmd_win64_{i}"] = vmd_win64[:, i]
-        res_fe[f"vmd_win64_{i}_dt"] = dt(vmd_win64[:, i])
-        res_fe[f"vmd_win64_{i}_ddt"] = ddt(vmd_win64[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"vmd_win64_{i}_lag{lg}"] = lag(vmd_win64[:, i], lg)
-            res_fe[f"vmd_win64_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win64_{i}_dt"], lg)
-            res_fe[f"vmd_win64_{i}_ddt_lag{lg}"] = lag(res_fe[f"vmd_win64_{i}_ddt"], lg)
 
     vmd_win128 = vmd_indicator(candles, 128, sequential=True)
     for i in range(vmd_win128.shape[1]):
         res_fe[f"vmd_win128_{i}"] = vmd_win128[:, i]
-        res_fe[f"vmd_win128_{i}_dt"] = dt(vmd_win128[:, i])
-        res_fe[f"vmd_win128_{i}_ddt"] = ddt(vmd_win128[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"vmd_win128_{i}_lag{lg}"] = lag(vmd_win128[:, i], lg)
-            res_fe[f"vmd_win128_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win128_{i}_dt"], lg)
-            res_fe[f"vmd_win128_{i}_ddt_lag{lg}"] = lag(
-                res_fe[f"vmd_win128_{i}_ddt"], lg
-            )
 
     vmd_win256 = vmd_indicator(candles, 256, sequential=True)
     for i in range(vmd_win256.shape[1]):
         res_fe[f"vmd_win256_{i}"] = vmd_win256[:, i]
-        res_fe[f"vmd_win256_{i}_dt"] = dt(vmd_win256[:, i])
-        res_fe[f"vmd_win256_{i}_ddt"] = ddt(vmd_win256[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"vmd_win256_{i}_lag{lg}"] = lag(vmd_win256[:, i], lg)
-            res_fe[f"vmd_win256_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win256_{i}_dt"], lg)
-            res_fe[f"vmd_win256_{i}_ddt_lag{lg}"] = lag(
-                res_fe[f"vmd_win256_{i}_ddt"], lg
-            )
 
     vmd_win512 = vmd_indicator(candles, 512, sequential=True)
     for i in range(vmd_win512.shape[1]):
         res_fe[f"vmd_win512_{i}"] = vmd_win512[:, i]
-        res_fe[f"vmd_win512_{i}_dt"] = dt(vmd_win512[:, i])
-        res_fe[f"vmd_win512_{i}_ddt"] = ddt(vmd_win512[:, i])
-        for lg in range(1, LAG_MAX):
-            res_fe[f"vmd_win512_{i}_lag{lg}"] = lag(vmd_win512[:, i], lg)
-            res_fe[f"vmd_win512_{i}_dt_lag{lg}"] = lag(res_fe[f"vmd_win512_{i}_dt"], lg)
-            res_fe[f"vmd_win512_{i}_ddt_lag{lg}"] = lag(
-                res_fe[f"vmd_win512_{i}_ddt"], lg
-            )
+
+    vmd_win1024 = vmd_indicator(candles, 1024, sequential=True)
+    for i in range(vmd_win1024.shape[1]):
+        res_fe[f"vmd_win1024_{i}"] = vmd_win1024[:, i]
 
     # Voss Filter
     voss_filter_ = ta.voss(candles, sequential=True)

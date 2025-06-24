@@ -4,11 +4,11 @@ from custom_indicators.utils.import_tools import ensure_package
 
 # 确保mpire包已安装
 ensure_package("mpire")
-from mpire import WorkerPool
+from mpire.pool import WorkerPool
 
 from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
-from custom_indicators.utils.math_tools import log_ret
+from custom_indicators.utils.math_tools import log_ret_from_candles
 from custom_indicators.volitility_indicator.yang_zhang import yang_zhang_volatility
 
 
@@ -67,7 +67,7 @@ class EntropyBarContainer:
 
         window_on_vol = self.window * vol_ref / (vol_t + 1e-10)
         window_on_vol = np.clip(window_on_vol, self.MIN_WINDOW, self.MAX_WINDOW)
-        log_ret_list = log_ret(candle_for_vol, window_on_vol)
+        log_ret_list = log_ret_from_candles(candle_for_vol, window_on_vol)
         with WorkerPool() as pool:
             entropy_array = pool.map(sample_entropy_numba, log_ret_list)
         # 统一处理长度
