@@ -19,7 +19,7 @@ def _calc_vmd_nrbo(src: np.ndarray):
     u_nrbo = np.zeros_like(u)
     for i in range(u.shape[0]):
         u_nrbo[i] = nrbo(u[i])
-    return u_nrbo.T[-1]
+    return u_nrbo.T[-1].tolist()
 
 
 def vmd_indicator(

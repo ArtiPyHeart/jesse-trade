@@ -34,7 +34,7 @@ def _cwt(src: np.ndarray):
     )
     cwtmat = cwtmat[:, _pad_width:-_pad_width]
     cwt_dB = np.log10(np.abs(cwtmat) + 1e-12).T
-    return cwt_dB[-1]
+    return cwt_dB[-1].tolist()
 
 
 def cwt(
