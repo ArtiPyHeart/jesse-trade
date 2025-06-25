@@ -1371,27 +1371,27 @@ def feature_bundle(
         res_fe[f"conv_{i}"] = conv[:, i]
 
     # cwt wavelet
-    cwt_win32 = cwt(candles, 32, sequential=True)
+    cwt_win32 = cwt(candles, 32, sequential=True, parallel=True)
     for i in range(cwt_win32.shape[1]):
         res_fe[f"cwt_win32_{i}"] = cwt_win32[:, i]
 
-    cwt_win64 = cwt(candles, 64, sequential=True)
+    cwt_win64 = cwt(candles, 64, sequential=True, parallel=True)
     for i in range(cwt_win64.shape[1]):
         res_fe[f"cwt_win64_{i}"] = cwt_win64[:, i]
 
-    cwt_win128 = cwt(candles, 128, sequential=True)
+    cwt_win128 = cwt(candles, 128, sequential=True, parallel=True)
     for i in range(cwt_win128.shape[1]):
         res_fe[f"cwt_win128_{i}"] = cwt_win128[:, i]
 
-    cwt_win256 = cwt(candles, 256, sequential=True)
+    cwt_win256 = cwt(candles, 256, sequential=True, parallel=True)
     for i in range(cwt_win256.shape[1]):
         res_fe[f"cwt_win256_{i}"] = cwt_win256[:, i]
 
-    cwt_win512 = cwt(candles, 512, sequential=True)
+    cwt_win512 = cwt(candles, 512, sequential=True, parallel=True)
     for i in range(cwt_win512.shape[1]):
         res_fe[f"cwt_win512_{i}"] = cwt_win512[:, i]
 
-    cwt_win1024 = cwt(candles, 1024, sequential=True)
+    cwt_win1024 = cwt(candles, 1024, sequential=True, parallel=True)
     for i in range(cwt_win1024.shape[1]):
         res_fe[f"cwt_win1024_{i}"] = cwt_win1024[:, i]
 
@@ -1935,27 +1935,27 @@ def feature_bundle(
         res_fe[f"trendflex_ddt_lag{lg}"] = lag(res_fe["trendflex_ddt"], lg)
 
     # VMD
-    vmd_win32 = vmd_indicator(candles, 32, sequential=True)
+    vmd_win32 = vmd_indicator(candles, 32, sequential=True, parallel=True)
     for i in range(vmd_win32.shape[1]):
         res_fe[f"vmd_win32_{i}"] = vmd_win32[:, i]
 
-    vmd_win64 = vmd_indicator(candles, 64, sequential=True)
+    vmd_win64 = vmd_indicator(candles, 64, sequential=True, parallel=True)
     for i in range(vmd_win64.shape[1]):
         res_fe[f"vmd_win64_{i}"] = vmd_win64[:, i]
 
-    vmd_win128 = vmd_indicator(candles, 128, sequential=True)
+    vmd_win128 = vmd_indicator(candles, 128, sequential=True, parallel=True)
     for i in range(vmd_win128.shape[1]):
         res_fe[f"vmd_win128_{i}"] = vmd_win128[:, i]
 
-    vmd_win256 = vmd_indicator(candles, 256, sequential=True)
+    vmd_win256 = vmd_indicator(candles, 256, sequential=True, parallel=True)
     for i in range(vmd_win256.shape[1]):
         res_fe[f"vmd_win256_{i}"] = vmd_win256[:, i]
 
-    vmd_win512 = vmd_indicator(candles, 512, sequential=True)
+    vmd_win512 = vmd_indicator(candles, 512, sequential=True, parallel=True)
     for i in range(vmd_win512.shape[1]):
         res_fe[f"vmd_win512_{i}"] = vmd_win512[:, i]
 
-    vmd_win1024 = vmd_indicator(candles, 1024, sequential=True)
+    vmd_win1024 = vmd_indicator(candles, 1024, sequential=True, parallel=True)
     for i in range(vmd_win1024.shape[1]):
         res_fe[f"vmd_win1024_{i}"] = vmd_win1024[:, i]
 

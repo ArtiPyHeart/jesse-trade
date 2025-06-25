@@ -1,6 +1,7 @@
 import numpy as np
 import pywt
 from jesse.helpers import get_candle_source, slice_candles
+from mpire.pool import WorkerPool
 
 SAMPLING_HOURS = 0.5
 MIN_SCALE = 8
@@ -39,6 +40,7 @@ def _cwt(src: np.ndarray):
 def cwt(
     candles: np.ndarray,
     window: int,
+    parallel: bool = False,
     source_type: str = "close",
     sequential: bool = False,
 ):
@@ -46,9 +48,14 @@ def cwt(
     src = get_candle_source(candles, source_type)
 
     if sequential:
-        res = []
-        for idx in range(window, len(src)):
-            res.append(_cwt(src[idx - window : idx]))
+        if parallel:
+            res = [src[idx - window : idx] for idx in range(window, len(src))]
+            with WorkerPool() as pool:
+                res = pool.map(_cwt, res)
+        else:
+            res = []
+            for idx in range(window, len(src)):
+                res.append(_cwt(src[idx - window : idx]))
         res = np.asarray(res)
         columns = res.shape[1]
         # padding res with nan (window, columns)

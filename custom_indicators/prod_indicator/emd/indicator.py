@@ -1,5 +1,6 @@
 import numpy as np
 from jesse.helpers import get_candle_source, slice_candles
+from mpire.pool import WorkerPool
 
 from custom_indicators.prod_indicator.emd.nrbo import nrbo
 from custom_indicators.prod_indicator.emd.vmdpy import VMD
@@ -24,6 +25,7 @@ def _calc_vmd_nrbo(src: np.ndarray):
 def vmd_indicator(
     candles: np.ndarray,
     window: int,
+    parallel: bool = False,
     source_type: str = "close",
     sequential: bool = False,
 ):
@@ -31,9 +33,14 @@ def vmd_indicator(
     src = get_candle_source(candles, source_type)
 
     if sequential:
-        res = []
-        for idx in range(window, len(src)):
-            res.append(_calc_vmd_nrbo(src[idx - window : idx]))
+        if parallel:
+            res = [src[idx - window : idx] for idx in range(window, len(src))]
+            with WorkerPool() as pool:
+                res = pool.map(_calc_vmd_nrbo, res)
+        else:
+            res = []
+            for idx in range(window, len(src)):
+                res.append(_calc_vmd_nrbo(src[idx - window : idx]))
         res = np.asarray(res)
         columns = res.shape[1]
         # padding res with nan (window, columns)
