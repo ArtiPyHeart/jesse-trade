@@ -1,0 +1,83 @@
+%   filename: DDS_harris_IEEE.m
+%
+%  Low phase noise DDS modeling.
+%  MATLAB script by fred harris of San Diego State Univ.
+%  See the July 2007 IEEE Signal Processing magazine's 
+%   "DSP Tips & Tricks" column, or conference paper, f. harris,  
+%  C. Dick, and R. Jekel, "An Ultra Low Noise DDS", Software  
+%  Defined Radio Conference (SDR-2006), Orlando Florida, 13-15 November 2006
+
+clear
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+N_CORD = 10; % Number of Cordic Iterations   (try 6)
+N_BITS = 20; % Number of bits in multiplier   (try 16)
+FREQ = 0.072; % Frequency (0->0.5) of sinusoid  (try 0.022)
+N_DAT = 1024; % Length of signal data sequence  (try 1024)
+SD_ON = 1; % Sig-Del Dither ON (1), or OFF (0)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+reg1=1;
+reg2=0;
+del1=0;
+del2=0;
+accum=0;
+
+tan_phi=(2.^-(0:N_CORD-1));
+phi=atan(2.^-(0:N_CORD-1))/(2*pi);
+
+scl2=prod(cos(2*pi*phi));
+
+% number of bits in product
+scl=2^N_BITS-1;
+
+% normalized frequency f_c/f_s 
+theta=FREQ;
+
+for nn=1:N_DAT
+    vv(nn)=reg1+j*reg2;
+        accum=-theta;
+    % 5-stages of standard cordic        
+        for kk=1:length(phi)
+            sum1=(reg1+reg2*tan_phi(kk)*sign(accum));
+            sum2=(reg2-reg1*tan_phi(kk)*sign(accum));
+            reg1=sum1;
+            reg2=sum2;
+            accum=accum-phi(kk)*sign(accum);
+        end
+% standard cordic gain correction        
+    reg1=reg1*scl2;
+    reg2=reg2*scl2;
+    
+% small angle correction folded into cordic    
+    sum1=(reg1+reg2*accum*2*pi*sign(accum));
+    sum2=(reg2-reg1*accum*2*pi*sign(accum));
+    
+% gain correction matched to small angle correction term
+    gn=(3-(sum1*sum1+sum2*sum2))/2;
+    gain(nn)=gn;
+    
+% sigma-delta quantizer at output of gain correction I(n)
+    reg1=floor((del1+sum1*gn)*scl)/scl;
+    del1=SD_ON*(sum1*gn+del1-reg1);
+
+    % sigma-delta quantizer at output of gain correction Q(n)
+    reg2=floor((del2+sum2*gn)*scl)/scl;
+    del2=SD_ON*(sum2*gn+del2-reg2);
+end
+
+figure(1), clf
+subplot(2,1,1)
+ww=kaiser(N_DAT,20)';
+ww=ww/sum(ww);
+
+plot(-0.5:1/N_DAT:0.5-1/N_DAT,fftshift(20*log10(abs(fft(vv(1:N_DAT).*ww)))));
+grid on
+axis([-0.5 0.5 -150 5])
+title('Spectrum of DDS : 5-Stage CORDIC and 1-Stage Small Angle Correction with AGC Gain Correction')
+
+subplot(2,1,2)
+plot(gain(1:256)-1)
+grid on
+qq=axis;
+axis([0, 256, qq(3), qq(4)]) 
+title('Gain Correction tracking small angle correction and finite arithmetic')

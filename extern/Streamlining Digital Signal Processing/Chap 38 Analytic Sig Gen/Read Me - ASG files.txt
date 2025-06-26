@@ -1,0 +1,17 @@
+
+
+Filename:                            Function
+
+
+"ASG Notes Ver-1.1.doc"            Mathematical Derivations
+
+"AnalyticSignalGenerator.mcd"      MathCAD code
+
+QuadFilterCoeffs_Turner_test.m:	   MATLAB Main routine for testing.  
+                                   Run this first.
+QuadFilterCoeffs_Turner.m          MATLAB: Generates complex filter's coefficients. 
+
+QuadFilterCoeffs_Turner_plots.m	   MATLAB: Generates complex filter's coefficients 
+                                   plus many plots showing the performance
+                                   of the filters.
+                                                           

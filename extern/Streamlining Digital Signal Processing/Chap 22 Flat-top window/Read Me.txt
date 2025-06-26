@@ -1,0 +1,16 @@
+
+Software files associated with the March 2011 
+IEEE "Tips & Tricks" article "Reducing FFT Scalloping 
+Loss Errors Without Multiplication".
+
+File: "FlattopWind_Interbin_Resp.m"
+    Matlab code provided by R. Lyons.
+
+File: "main.cpp"
+    "C" code provided by Clay Turner.
+
+File: "Chart.csv"
+    Data file in "comma separated" format that 
+    can be opened, for example by Microsoft Excel,
+    provided by Clay Turner.
+
