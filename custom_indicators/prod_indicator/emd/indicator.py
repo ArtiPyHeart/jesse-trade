@@ -47,4 +47,4 @@ def vmd_indicator(
         res = np.vstack([np.full((window, columns), np.nan), res])
         return res
     else:
-        return _calc_vmd_nrbo(src[-window:])
+        return np.asarray(_calc_vmd_nrbo(src[-window:]))

@@ -62,4 +62,4 @@ def cwt(
         res = np.vstack([np.full((window, columns), np.nan), res])
         return res
     else:
-        return _cwt(src[-window:])
+        return np.asarray(_cwt(src[-window:]))
