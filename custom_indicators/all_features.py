@@ -395,54 +395,54 @@ class FeatureCalculator:
         if f"cwt_win32_{index}" not in self.cache:
             cwt_win32 = cwt(self.candles, 32, sequential=self.sequential)
             if cwt_win32.ndim == 1:
-                cwt_win32 = cwt_win32.reshape(-1, 1)
-            for i in range(cwt_win32.shape[0]):
-                self.cache[f"cwt_win32_{i}"] = cwt_win32[i, :]
+                cwt_win32 = cwt_win32.reshape(1, -1)
+            for i in range(cwt_win32.shape[1]):
+                self.cache[f"cwt_win32_{i}"] = cwt_win32[:, i]
 
     def cwt_win64(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win64_{index}" not in self.cache:
             cwt_win64 = cwt(self.candles, 64, sequential=self.sequential)
             if cwt_win64.ndim == 1:
-                cwt_win64 = cwt_win64.reshape(-1, 1)
-            for i in range(cwt_win64.shape[0]):
-                self.cache[f"cwt_win64_{i}"] = cwt_win64[i, :]
+                cwt_win64 = cwt_win64.reshape(1, -1)
+            for i in range(cwt_win64.shape[1]):
+                self.cache[f"cwt_win64_{i}"] = cwt_win64[:, i]
 
     def cwt_win128(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win128_{index}" not in self.cache:
             cwt_win128 = cwt(self.candles, 128, sequential=self.sequential)
             if cwt_win128.ndim == 1:
-                cwt_win128 = cwt_win128.reshape(-1, 1)
-            for i in range(cwt_win128.shape[0]):
-                self.cache[f"cwt_win128_{i}"] = cwt_win128[i, :]
+                cwt_win128 = cwt_win128.reshape(1, -1)
+            for i in range(cwt_win128.shape[1]):
+                self.cache[f"cwt_win128_{i}"] = cwt_win128[:, i]
 
     def cwt_win256(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win256_{index}" not in self.cache:
             cwt_win256 = cwt(self.candles, 256, sequential=self.sequential)
             if cwt_win256.ndim == 1:
-                cwt_win256 = cwt_win256.reshape(-1, 1)
-            for i in range(cwt_win256.shape[0]):
-                self.cache[f"cwt_win256_{i}"] = cwt_win256[i, :]
+                cwt_win256 = cwt_win256.reshape(1, -1)
+            for i in range(cwt_win256.shape[1]):
+                self.cache[f"cwt_win256_{i}"] = cwt_win256[:, i]
 
     def cwt_win512(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win512_{index}" not in self.cache:
             cwt_win512 = cwt(self.candles, 512, sequential=self.sequential)
             if cwt_win512.ndim == 1:
-                cwt_win512 = cwt_win512.reshape(-1, 1)
-            for i in range(cwt_win512.shape[0]):
-                self.cache[f"cwt_win512_{i}"] = cwt_win512[i, :]
+                cwt_win512 = cwt_win512.reshape(1, -1)
+            for i in range(cwt_win512.shape[1]):
+                self.cache[f"cwt_win512_{i}"] = cwt_win512[:, i]
 
     def cwt_win1024(self, **kwargs):
         index = kwargs["index"]
         if f"cwt_win1024_{index}" not in self.cache:
             cwt_win1024 = cwt(self.candles, 1024, sequential=self.sequential)
             if cwt_win1024.ndim == 1:
-                cwt_win1024 = cwt_win1024.reshape(-1, 1)
-            for i in range(cwt_win1024.shape[0]):
-                self.cache[f"cwt_win1024_{i}"] = cwt_win1024[i, :]
+                cwt_win1024 = cwt_win1024.reshape(1, -1)
+            for i in range(cwt_win1024.shape[1]):
+                self.cache[f"cwt_win1024_{i}"] = cwt_win1024[:, i]
 
     def dft_dom_cycle(self, **kwargs):
         if "dft_dom_cycle" not in self.cache:
@@ -1031,54 +1031,54 @@ class FeatureCalculator:
         if f"vmd_win32_{index}" not in self.cache:
             vmd_win32 = vmd_indicator(self.candles, 32, sequential=self.sequential)
             if vmd_win32.ndim == 1:
-                vmd_win32 = vmd_win32.reshape(-1, 1)
-            for i in range(vmd_win32.shape[0]):
-                self.cache[f"vmd_win32_{i}"] = vmd_win32[i, :]
+                vmd_win32 = vmd_win32.reshape(1, -1)
+            for i in range(vmd_win32.shape[1]):
+                self.cache[f"vmd_win32_{i}"] = vmd_win32[:, i]
 
     def vmd_win64(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win64_{index}" not in self.cache:
             vmd_win64 = vmd_indicator(self.candles, 64, sequential=self.sequential)
             if vmd_win64.ndim == 1:
-                vmd_win64 = vmd_win64.reshape(-1, 1)
-            for i in range(vmd_win64.shape[0]):
-                self.cache[f"vmd_win64_{i}"] = vmd_win64[i, :]
+                vmd_win64 = vmd_win64.reshape(1, -1)
+            for i in range(vmd_win64.shape[1]):
+                self.cache[f"vmd_win64_{i}"] = vmd_win64[:, i]
 
     def vmd_win128(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win128_{index}" not in self.cache:
             vmd_win128 = vmd_indicator(self.candles, 128, sequential=self.sequential)
             if vmd_win128.ndim == 1:
-                vmd_win128 = vmd_win128.reshape(-1, 1)
-            for i in range(vmd_win128.shape[0]):
-                self.cache[f"vmd_win128_{i}"] = vmd_win128[i, :]
+                vmd_win128 = vmd_win128.reshape(1, -1)
+            for i in range(vmd_win128.shape[1]):
+                self.cache[f"vmd_win128_{i}"] = vmd_win128[:, i]
 
     def vmd_win256(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win256_{index}" not in self.cache:
             vmd_win256 = vmd_indicator(self.candles, 256, sequential=self.sequential)
             if vmd_win256.ndim == 1:
-                vmd_win256 = vmd_win256.reshape(-1, 1)
-            for i in range(vmd_win256.shape[0]):
-                self.cache[f"vmd_win256_{i}"] = vmd_win256[i, :]
+                vmd_win256 = vmd_win256.reshape(1, -1)
+            for i in range(vmd_win256.shape[1]):
+                self.cache[f"vmd_win256_{i}"] = vmd_win256[:, i]
 
     def vmd_win512(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win512_{index}" not in self.cache:
             vmd_win512 = vmd_indicator(self.candles, 512, sequential=self.sequential)
             if vmd_win512.ndim == 1:
-                vmd_win512 = vmd_win512.reshape(-1, 1)
-            for i in range(vmd_win512.shape[0]):
-                self.cache[f"vmd_win512_{i}"] = vmd_win512[i, :]
+                vmd_win512 = vmd_win512.reshape(1, -1)
+            for i in range(vmd_win512.shape[1]):
+                self.cache[f"vmd_win512_{i}"] = vmd_win512[:, i]
 
     def vmd_win1024(self, **kwargs):
         index = kwargs["index"]
         if f"vmd_win1024_{index}" not in self.cache:
             vmd_win1024 = vmd_indicator(self.candles, 1024, sequential=self.sequential)
             if vmd_win1024.ndim == 1:
-                vmd_win1024 = vmd_win1024.reshape(-1, 1)
-            for i in range(vmd_win1024.shape[0]):
-                self.cache[f"vmd_win1024_{i}"] = vmd_win1024[i, :]
+                vmd_win1024 = vmd_win1024.reshape(1, -1)
+            for i in range(vmd_win1024.shape[1]):
+                self.cache[f"vmd_win1024_{i}"] = vmd_win1024[:, i]
 
     def voss(self, **kwargs):
         if "voss" not in self.cache:
