@@ -561,4 +561,4 @@ def tune_pipeline(trial: optuna.Trial):
     print(
         f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f} {meta_label_train_count = } {meta_label_test_count = }"
     )
-    return calmar_ratio * side_auc * meta_f1**2
+    return calmar_ratio * side_auc**3 * meta_f1**2

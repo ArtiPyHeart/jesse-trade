@@ -1,3 +1,4 @@
+catboost-extensions
 plotly
 nbformat
 ipywidgets

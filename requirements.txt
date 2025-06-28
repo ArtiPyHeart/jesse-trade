@@ -1,4 +1,5 @@
 lightgbm
+catboost
 jesse
 mpire
 tqdm
