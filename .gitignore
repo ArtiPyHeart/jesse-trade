@@ -344,3 +344,4 @@ custom_indicators/toolbox/feature_selection/fcq_selector_cython.c
 custom_indicators/toolbox/feature_selection/docs/fcq_selector_cython.html
 .vscode/settings.json
 optuna_storage/optuna_study.db
+/catboost_info/
