@@ -44,7 +44,7 @@ from custom_indicators.dominant_cycle import (
     phase_accumulation,
 )
 from custom_indicators.prod_indicator.diff.frac_ffd import frac_diff_ffd_candle
-from custom_indicators.prod_indicator.emd.indicator import vmd_indicator
+from custom_indicators.prod_indicator.emd.cls_vmd_indicator import VMD_NRBO
 from custom_indicators.prod_indicator.entropy.appr_en import (
     approximate_entropy_indicator,
 )
@@ -60,7 +60,7 @@ from custom_indicators.prod_indicator.micro_structure import (
     roll_measure,
 )
 from custom_indicators.prod_indicator.nsb_entropy import entropy_for_jesse
-from custom_indicators.prod_indicator.wavelets.cwt_swt import cwt
+from custom_indicators.prod_indicator.wavelets.cls_cwt_swt import CWT_SWT
 from custom_indicators.utils.math_tools import ddt, dt, lag
 
 LAG_MAX = 20
@@ -392,57 +392,311 @@ class FeatureCalculator:
 
     def cwt_win32(self, **kwargs):
         index = kwargs["index"]
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+        lag_value = kwargs["lag"] if "lag" in kwargs else None
+
+        cwt_win32 = CWT_SWT(self.candles, 32, sequential=self.sequential)
         if f"cwt_win32_{index}" not in self.cache:
-            cwt_win32 = cwt(self.candles, 32, sequential=self.sequential)
-            if cwt_win32.ndim == 1:
-                cwt_win32 = cwt_win32.reshape(1, -1)
-            for i in range(cwt_win32.shape[1]):
-                self.cache[f"cwt_win32_{i}"] = cwt_win32[:, i]
+            cwt_win32_res = cwt_win32.res()
+            for i in range(cwt_win32_res.shape[1]):
+                self.cache[f"cwt_win32_{i}"] = cwt_win32_res[:, i]
+
+        if lag_value is not None:
+            feature_name = f"cwt_win32_{index}_lag{lag_value}"
+            if feature_name not in self.cache:
+                cwt_win32_lag = cwt_win32.res(lag=lag_value)
+                for i in range(cwt_win32_lag.shape[1]):
+                    self.cache[f"cwt_win32_{i}_lag{lag_value}"] = cwt_win32_lag[:, i]
+
+        if dt:
+            feature_name = f"cwt_win32_{index}_dt"
+            if feature_name not in self.cache:
+                cwt_win32_dt = cwt_win32.res(dt=True)
+                for i in range(cwt_win32_dt.shape[1]):
+                    self.cache[f"cwt_win32_{i}_dt"] = cwt_win32_dt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win32_{index}_dt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win32_dt_lag = cwt_win32.res(dt=True, lag=lag_value)
+                    for i in range(cwt_win32_dt_lag.shape[1]):
+                        self.cache[f"cwt_win32_{i}_dt_lag{lag_value}"] = (
+                            cwt_win32_dt_lag[:, i]
+                        )
+
+        if ddt:
+            feature_name = f"cwt_win32_{index}_ddt"
+            if feature_name not in self.cache:
+                cwt_win32_ddt = cwt_win32.res(ddt=True)
+                for i in range(cwt_win32_ddt.shape[1]):
+                    self.cache[f"cwt_win32_{i}_ddt"] = cwt_win32_ddt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win32_{index}_ddt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win32_ddt_lag = cwt_win32.res(ddt=True, lag=lag_value)
+                    for i in range(cwt_win32_ddt_lag.shape[1]):
+                        self.cache[f"cwt_win32_{i}_ddt_lag{lag_value}"] = (
+                            cwt_win32_ddt_lag[:, i]
+                        )
 
     def cwt_win64(self, **kwargs):
         index = kwargs["index"]
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+        lag_value = kwargs["lag"] if "lag" in kwargs else None
+
+        cwt_win64 = CWT_SWT(self.candles, 64, sequential=self.sequential)
         if f"cwt_win64_{index}" not in self.cache:
-            cwt_win64 = cwt(self.candles, 64, sequential=self.sequential)
-            if cwt_win64.ndim == 1:
-                cwt_win64 = cwt_win64.reshape(1, -1)
-            for i in range(cwt_win64.shape[1]):
-                self.cache[f"cwt_win64_{i}"] = cwt_win64[:, i]
+            cwt_win64_res = cwt_win64.res()
+            for i in range(cwt_win64_res.shape[1]):
+                self.cache[f"cwt_win64_{i}"] = cwt_win64_res[:, i]
+
+        if lag_value is not None:
+            feature_name = f"cwt_win64_{index}_lag{lag_value}"
+            if feature_name not in self.cache:
+                cwt_win64_lag = cwt_win64.res(lag=lag_value)
+                for i in range(cwt_win64_lag.shape[1]):
+                    self.cache[f"cwt_win64_{i}_lag{lag_value}"] = cwt_win64_lag[:, i]
+
+        if dt:
+            feature_name = f"cwt_win64_{index}_dt"
+            if feature_name not in self.cache:
+                cwt_win64_dt = cwt_win64.res(dt=True)
+                for i in range(cwt_win64_dt.shape[1]):
+                    self.cache[f"cwt_win64_{i}_dt"] = cwt_win64_dt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win64_{index}_dt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win64_dt_lag = cwt_win64.res(dt=True, lag=lag_value)
+                    for i in range(cwt_win64_dt_lag.shape[1]):
+                        self.cache[f"cwt_win64_{i}_dt_lag{lag_value}"] = (
+                            cwt_win64_dt_lag[:, i]
+                        )
+
+        if ddt:
+            feature_name = f"cwt_win64_{index}_ddt"
+            if feature_name not in self.cache:
+                cwt_win64_ddt = cwt_win64.res(ddt=True)
+                for i in range(cwt_win64_ddt.shape[1]):
+                    self.cache[f"cwt_win64_{i}_ddt"] = cwt_win64_ddt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win64_{index}_ddt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win64_ddt_lag = cwt_win64.res(ddt=True, lag=lag_value)
+                    for i in range(cwt_win64_ddt_lag.shape[1]):
+                        self.cache[f"cwt_win64_{i}_ddt_lag{lag_value}"] = (
+                            cwt_win64_ddt_lag[:, i]
+                        )
 
     def cwt_win128(self, **kwargs):
         index = kwargs["index"]
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+        lag_value = kwargs["lag"] if "lag" in kwargs else None
+
+        cwt_win128 = CWT_SWT(self.candles, 128, sequential=self.sequential)
         if f"cwt_win128_{index}" not in self.cache:
-            cwt_win128 = cwt(self.candles, 128, sequential=self.sequential)
-            if cwt_win128.ndim == 1:
-                cwt_win128 = cwt_win128.reshape(1, -1)
-            for i in range(cwt_win128.shape[1]):
-                self.cache[f"cwt_win128_{i}"] = cwt_win128[:, i]
+            cwt_win128_res = cwt_win128.res()
+            for i in range(cwt_win128_res.shape[1]):
+                self.cache[f"cwt_win128_{i}"] = cwt_win128_res[:, i]
+
+        if lag_value is not None:
+            feature_name = f"cwt_win128_{index}_lag{lag_value}"
+            if feature_name not in self.cache:
+                cwt_win128_lag = cwt_win128.res(lag=lag_value)
+                for i in range(cwt_win128_lag.shape[1]):
+                    self.cache[f"cwt_win128_{i}_lag{lag_value}"] = cwt_win128_lag[:, i]
+
+        if dt:
+            feature_name = f"cwt_win128_{index}_dt"
+            if feature_name not in self.cache:
+                cwt_win128_dt = cwt_win128.res(dt=True)
+                for i in range(cwt_win128_dt.shape[1]):
+                    self.cache[f"cwt_win128_{i}_dt"] = cwt_win128_dt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win128_{index}_dt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win128_dt_lag = cwt_win128.res(dt=True, lag=lag_value)
+                    for i in range(cwt_win128_dt_lag.shape[1]):
+                        self.cache[f"cwt_win128_{i}_dt_lag{lag_value}"] = (
+                            cwt_win128_dt_lag[:, i]
+                        )
+
+        if ddt:
+            feature_name = f"cwt_win128_{index}_ddt"
+            if feature_name not in self.cache:
+                cwt_win128_ddt = cwt_win128.res(ddt=True)
+                for i in range(cwt_win128_ddt.shape[1]):
+                    self.cache[f"cwt_win128_{i}_ddt"] = cwt_win128_ddt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win128_{index}_ddt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win128_ddt_lag = cwt_win128.res(ddt=True, lag=lag_value)
+                    for i in range(cwt_win128_ddt_lag.shape[1]):
+                        self.cache[f"cwt_win128_{i}_ddt_lag{lag_value}"] = (
+                            cwt_win128_ddt_lag[:, i]
+                        )
 
     def cwt_win256(self, **kwargs):
         index = kwargs["index"]
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+        lag_value = kwargs["lag"] if "lag" in kwargs else None
+
+        cwt_win256 = CWT_SWT(self.candles, 256, sequential=self.sequential)
         if f"cwt_win256_{index}" not in self.cache:
-            cwt_win256 = cwt(self.candles, 256, sequential=self.sequential)
-            if cwt_win256.ndim == 1:
-                cwt_win256 = cwt_win256.reshape(1, -1)
-            for i in range(cwt_win256.shape[1]):
-                self.cache[f"cwt_win256_{i}"] = cwt_win256[:, i]
+            cwt_win256_res = cwt_win256.res()
+            for i in range(cwt_win256_res.shape[1]):
+                self.cache[f"cwt_win256_{i}"] = cwt_win256_res[:, i]
+
+        if lag_value is not None:
+            feature_name = f"cwt_win256_{index}_lag{lag_value}"
+            if feature_name not in self.cache:
+                cwt_win256_lag = cwt_win256.res(lag=lag_value)
+                for i in range(cwt_win256_lag.shape[1]):
+                    self.cache[f"cwt_win256_{i}_lag{lag_value}"] = cwt_win256_lag[:, i]
+
+        if dt:
+            feature_name = f"cwt_win256_{index}_dt"
+            if feature_name not in self.cache:
+                cwt_win256_dt = cwt_win256.res(dt=True)
+                for i in range(cwt_win256_dt.shape[1]):
+                    self.cache[f"cwt_win256_{i}_dt"] = cwt_win256_dt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win256_{index}_dt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win256_dt_lag = cwt_win256.res(dt=True, lag=lag_value)
+                    for i in range(cwt_win256_dt_lag.shape[1]):
+                        self.cache[f"cwt_win256_{i}_dt_lag{lag_value}"] = (
+                            cwt_win256_dt_lag[:, i]
+                        )
+
+        if ddt:
+            feature_name = f"cwt_win256_{index}_ddt"
+            if feature_name not in self.cache:
+                cwt_win256_ddt = cwt_win256.res(ddt=True)
+                for i in range(cwt_win256_ddt.shape[1]):
+                    self.cache[f"cwt_win256_{i}_ddt"] = cwt_win256_ddt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win256_{index}_ddt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win256_ddt_lag = cwt_win256.res(ddt=True, lag=lag_value)
+                    for i in range(cwt_win256_ddt_lag.shape[1]):
+                        self.cache[f"cwt_win256_{i}_ddt_lag{lag_value}"] = (
+                            cwt_win256_ddt_lag[:, i]
+                        )
 
     def cwt_win512(self, **kwargs):
         index = kwargs["index"]
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+        lag_value = kwargs["lag"] if "lag" in kwargs else None
+
+        cwt_win512 = CWT_SWT(self.candles, 512, sequential=self.sequential)
         if f"cwt_win512_{index}" not in self.cache:
-            cwt_win512 = cwt(self.candles, 512, sequential=self.sequential)
-            if cwt_win512.ndim == 1:
-                cwt_win512 = cwt_win512.reshape(1, -1)
-            for i in range(cwt_win512.shape[1]):
-                self.cache[f"cwt_win512_{i}"] = cwt_win512[:, i]
+            cwt_win512_res = cwt_win512.res()
+            for i in range(cwt_win512_res.shape[1]):
+                self.cache[f"cwt_win512_{i}"] = cwt_win512_res[:, i]
+
+        if lag_value is not None:
+            feature_name = f"cwt_win512_{index}_lag{lag_value}"
+            if feature_name not in self.cache:
+                cwt_win512_lag = cwt_win512.res(lag=lag_value)
+                for i in range(cwt_win512_lag.shape[1]):
+                    self.cache[f"cwt_win512_{i}_lag{lag_value}"] = cwt_win512_lag[:, i]
+
+        if dt:
+            feature_name = f"cwt_win512_{index}_dt"
+            if feature_name not in self.cache:
+                cwt_win512_dt = cwt_win512.res(dt=True)
+                for i in range(cwt_win512_dt.shape[1]):
+                    self.cache[f"cwt_win512_{i}_dt"] = cwt_win512_dt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win512_{index}_dt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win512_dt_lag = cwt_win512.res(dt=True, lag=lag_value)
+                    for i in range(cwt_win512_dt_lag.shape[1]):
+                        self.cache[f"cwt_win512_{i}_dt_lag{lag_value}"] = (
+                            cwt_win512_dt_lag[:, i]
+                        )
+
+        if ddt:
+            feature_name = f"cwt_win512_{index}_ddt"
+            if feature_name not in self.cache:
+                cwt_win512_ddt = cwt_win512.res(ddt=True)
+                for i in range(cwt_win512_ddt.shape[1]):
+                    self.cache[f"cwt_win512_{i}_ddt"] = cwt_win512_ddt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win512_{index}_ddt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win512_ddt_lag = cwt_win512.res(ddt=True, lag=lag_value)
+                    for i in range(cwt_win512_ddt_lag.shape[1]):
+                        self.cache[f"cwt_win512_{i}_ddt_lag{lag_value}"] = (
+                            cwt_win512_ddt_lag[:, i]
+                        )
 
     def cwt_win1024(self, **kwargs):
         index = kwargs["index"]
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+        lag_value = kwargs["lag"] if "lag" in kwargs else None
+
+        cwt_win1024 = CWT_SWT(self.candles, 1024, sequential=self.sequential)
         if f"cwt_win1024_{index}" not in self.cache:
-            cwt_win1024 = cwt(self.candles, 1024, sequential=self.sequential)
-            if cwt_win1024.ndim == 1:
-                cwt_win1024 = cwt_win1024.reshape(1, -1)
-            for i in range(cwt_win1024.shape[1]):
-                self.cache[f"cwt_win1024_{i}"] = cwt_win1024[:, i]
+            cwt_win1024_res = cwt_win1024.res()
+            for i in range(cwt_win1024_res.shape[1]):
+                self.cache[f"cwt_win1024_{i}"] = cwt_win1024_res[:, i]
+
+        if lag_value is not None:
+            feature_name = f"cwt_win1024_{index}_lag{lag_value}"
+            if feature_name not in self.cache:
+                cwt_win1024_lag = cwt_win1024.res(lag=lag_value)
+                for i in range(cwt_win1024_lag.shape[1]):
+                    self.cache[f"cwt_win1024_{i}_lag{lag_value}"] = cwt_win1024_lag[
+                        :, i
+                    ]
+
+        if dt:
+            feature_name = f"cwt_win1024_{index}_dt"
+            if feature_name not in self.cache:
+                cwt_win1024_dt = cwt_win1024.res(dt=True)
+                for i in range(cwt_win1024_dt.shape[1]):
+                    self.cache[f"cwt_win1024_{i}_dt"] = cwt_win1024_dt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win1024_{index}_dt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win1024_dt_lag = cwt_win1024.res(dt=True, lag=lag_value)
+                    for i in range(cwt_win1024_dt_lag.shape[1]):
+                        self.cache[f"cwt_win1024_{i}_dt_lag{lag_value}"] = (
+                            cwt_win1024_dt_lag[:, i]
+                        )
+
+        if ddt:
+            feature_name = f"cwt_win1024_{index}_ddt"
+            if feature_name not in self.cache:
+                cwt_win1024_ddt = cwt_win1024.res(ddt=True)
+                for i in range(cwt_win1024_ddt.shape[1]):
+                    self.cache[f"cwt_win1024_{i}_ddt"] = cwt_win1024_ddt[:, i]
+
+            if lag_value is not None:
+                feature_name = f"cwt_win1024_{index}_ddt_lag{lag_value}"
+                if feature_name not in self.cache:
+                    cwt_win1024_ddt_lag = cwt_win1024.res(ddt=True, lag=lag_value)
+                    for i in range(cwt_win1024_ddt_lag.shape[1]):
+                        self.cache[f"cwt_win1024_{i}_ddt_lag{lag_value}"] = (
+                            cwt_win1024_ddt_lag[:, i]
+                        )
 
     def dft_dom_cycle(self, **kwargs):
         if "dft_dom_cycle" not in self.cache:
@@ -1028,57 +1282,309 @@ class FeatureCalculator:
 
     def vmd_win32(self, **kwargs):
         index = kwargs["index"]
+        lag = kwargs["lag"] if "lag" in kwargs else None
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+
+        vmd_win32 = VMD_NRBO(self.candles, 32, sequential=self.sequential)
         if f"vmd_win32_{index}" not in self.cache:
-            vmd_win32 = vmd_indicator(self.candles, 32, sequential=self.sequential)
-            if vmd_win32.ndim == 1:
-                vmd_win32 = vmd_win32.reshape(1, -1)
-            for i in range(vmd_win32.shape[1]):
-                self.cache[f"vmd_win32_{i}"] = vmd_win32[:, i]
+            vmd_win32_res = vmd_win32.res()
+            for i in range(vmd_win32_res.shape[1]):
+                self.cache[f"vmd_win32_{i}"] = vmd_win32_res[:, i]
+
+        if lag is not None:
+            feature_name = f"vmd_win32_{index}_lag{lag}"
+            if feature_name not in self.cache:
+                vmd_win32_lag = vmd_win32.res(lag=lag)
+                for i in range(vmd_win32_lag.shape[1]):
+                    self.cache[f"vmd_win32_{i}_lag{lag}"] = vmd_win32_lag[:, i]
+
+        if dt:
+            feature_name = f"vmd_win32_{index}_dt"
+            if feature_name not in self.cache:
+                vmd_win32_dt = vmd_win32.res(dt=True)
+                for i in range(vmd_win32_dt.shape[1]):
+                    self.cache[f"vmd_win32_{i}_dt"] = vmd_win32_dt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win32_{index}_dt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win32_dt_lag = vmd_win32.res(dt=True, lag=lag)
+                    for i in range(vmd_win32_dt_lag.shape[1]):
+                        self.cache[f"vmd_win32_{i}_dt_lag{lag}"] = vmd_win32_dt_lag[
+                            :, i
+                        ]
+
+        if ddt:
+            feature_name = f"vmd_win32_{index}_ddt"
+            if feature_name not in self.cache:
+                vmd_win32_ddt = vmd_win32.res(ddt=True)
+                for i in range(vmd_win32_ddt.shape[1]):
+                    self.cache[f"vmd_win32_{i}_ddt"] = vmd_win32_ddt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win32_{index}_ddt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win32_ddt_lag = vmd_win32.res(ddt=True, lag=lag)
+                    for i in range(vmd_win32_ddt_lag.shape[1]):
+                        self.cache[f"vmd_win32_{i}_ddt_lag{lag}"] = vmd_win32_ddt_lag[
+                            :, i
+                        ]
 
     def vmd_win64(self, **kwargs):
         index = kwargs["index"]
+        lag = kwargs["lag"] if "lag" in kwargs else None
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+
+        vmd_win64 = VMD_NRBO(self.candles, 64, sequential=self.sequential)
         if f"vmd_win64_{index}" not in self.cache:
-            vmd_win64 = vmd_indicator(self.candles, 64, sequential=self.sequential)
-            if vmd_win64.ndim == 1:
-                vmd_win64 = vmd_win64.reshape(1, -1)
-            for i in range(vmd_win64.shape[1]):
-                self.cache[f"vmd_win64_{i}"] = vmd_win64[:, i]
+            vmd_win64_res = vmd_win64.res()
+            for i in range(vmd_win64_res.shape[1]):
+                self.cache[f"vmd_win64_{i}"] = vmd_win64_res[:, i]
+
+        if lag is not None:
+            feature_name = f"vmd_win64_{index}_lag{lag}"
+            if feature_name not in self.cache:
+                vmd_win64_lag = vmd_win64.res(lag=lag)
+                for i in range(vmd_win64_lag.shape[1]):
+                    self.cache[f"vmd_win64_{i}_lag{lag}"] = vmd_win64_lag[:, i]
+
+        if dt:
+            feature_name = f"vmd_win64_{index}_dt"
+            if feature_name not in self.cache:
+                vmd_win64_dt = vmd_win64.res(dt=True)
+                for i in range(vmd_win64_dt.shape[1]):
+                    self.cache[f"vmd_win64_{i}_dt"] = vmd_win64_dt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win64_{index}_dt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win64_dt_lag = vmd_win64.res(dt=True, lag=lag)
+                    for i in range(vmd_win64_dt_lag.shape[1]):
+                        self.cache[f"vmd_win64_{i}_dt_lag{lag}"] = vmd_win64_dt_lag[
+                            :, i
+                        ]
+
+        if ddt:
+            feature_name = f"vmd_win64_{index}_ddt"
+            if feature_name not in self.cache:
+                vmd_win64_ddt = vmd_win64.res(ddt=True)
+                for i in range(vmd_win64_ddt.shape[1]):
+                    self.cache[f"vmd_win64_{i}_ddt"] = vmd_win64_ddt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win64_{index}_ddt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win64_ddt_lag = vmd_win64.res(ddt=True, lag=lag)
+                    for i in range(vmd_win64_ddt_lag.shape[1]):
+                        self.cache[f"vmd_win64_{i}_ddt_lag{lag}"] = vmd_win64_ddt_lag[
+                            :, i
+                        ]
 
     def vmd_win128(self, **kwargs):
         index = kwargs["index"]
+        lag = kwargs["lag"] if "lag" in kwargs else None
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+
+        vmd_win128 = VMD_NRBO(self.candles, 128, sequential=self.sequential)
         if f"vmd_win128_{index}" not in self.cache:
-            vmd_win128 = vmd_indicator(self.candles, 128, sequential=self.sequential)
-            if vmd_win128.ndim == 1:
-                vmd_win128 = vmd_win128.reshape(1, -1)
-            for i in range(vmd_win128.shape[1]):
-                self.cache[f"vmd_win128_{i}"] = vmd_win128[:, i]
+            vmd_win128_res = vmd_win128.res()
+            for i in range(vmd_win128_res.shape[1]):
+                self.cache[f"vmd_win128_{i}"] = vmd_win128_res[:, i]
+
+        if lag is not None:
+            feature_name = f"vmd_win128_{index}_lag{lag}"
+            if feature_name not in self.cache:
+                vmd_win128_lag = vmd_win128.res(lag=lag)
+                for i in range(vmd_win128_lag.shape[1]):
+                    self.cache[f"vmd_win128_{i}_lag{lag}"] = vmd_win128_lag[:, i]
+
+        if dt:
+            feature_name = f"vmd_win128_{index}_dt"
+            if feature_name not in self.cache:
+                vmd_win128_dt = vmd_win128.res(dt=True)
+                for i in range(vmd_win128_dt.shape[1]):
+                    self.cache[f"vmd_win128_{i}_dt"] = vmd_win128_dt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win128_{index}_dt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win128_dt_lag = vmd_win128.res(dt=True, lag=lag)
+                    for i in range(vmd_win128_dt_lag.shape[1]):
+                        self.cache[f"vmd_win128_{i}_dt_lag{lag}"] = vmd_win128_dt_lag[
+                            :, i
+                        ]
+
+        if ddt:
+            feature_name = f"vmd_win128_{index}_ddt"
+            if feature_name not in self.cache:
+                vmd_win128_ddt = vmd_win128.res(ddt=True)
+                for i in range(vmd_win128_ddt.shape[1]):
+                    self.cache[f"vmd_win128_{i}_ddt"] = vmd_win128_ddt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win128_{index}_ddt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win128_ddt_lag = vmd_win128.res(ddt=True, lag=lag)
+                    for i in range(vmd_win128_ddt_lag.shape[1]):
+                        self.cache[f"vmd_win128_{i}_ddt_lag{lag}"] = vmd_win128_ddt_lag[
+                            :, i
+                        ]
 
     def vmd_win256(self, **kwargs):
         index = kwargs["index"]
+        lag = kwargs["lag"] if "lag" in kwargs else None
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+
+        vmd_win256 = VMD_NRBO(self.candles, 256, sequential=self.sequential)
         if f"vmd_win256_{index}" not in self.cache:
-            vmd_win256 = vmd_indicator(self.candles, 256, sequential=self.sequential)
-            if vmd_win256.ndim == 1:
-                vmd_win256 = vmd_win256.reshape(1, -1)
-            for i in range(vmd_win256.shape[1]):
-                self.cache[f"vmd_win256_{i}"] = vmd_win256[:, i]
+            vmd_win256_res = vmd_win256.res()
+            for i in range(vmd_win256_res.shape[1]):
+                self.cache[f"vmd_win256_{i}"] = vmd_win256_res[:, i]
+
+        if lag is not None:
+            feature_name = f"vmd_win256_{index}_lag{lag}"
+            if feature_name not in self.cache:
+                vmd_win256_lag = vmd_win256.res(lag=lag)
+                for i in range(vmd_win256_lag.shape[1]):
+                    self.cache[f"vmd_win256_{i}_lag{lag}"] = vmd_win256_lag[:, i]
+
+        if dt:
+            feature_name = f"vmd_win256_{index}_dt"
+            if feature_name not in self.cache:
+                vmd_win256_dt = vmd_win256.res(dt=True)
+                for i in range(vmd_win256_dt.shape[1]):
+                    self.cache[f"vmd_win256_{i}_dt"] = vmd_win256_dt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win256_{index}_dt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win256_dt_lag = vmd_win256.res(dt=True, lag=lag)
+                    for i in range(vmd_win256_dt_lag.shape[1]):
+                        self.cache[f"vmd_win256_{i}_dt_lag{lag}"] = vmd_win256_dt_lag[
+                            :, i
+                        ]
+
+        if ddt:
+            feature_name = f"vmd_win256_{index}_ddt"
+            if feature_name not in self.cache:
+                vmd_win256_ddt = vmd_win256.res(ddt=True)
+                for i in range(vmd_win256_ddt.shape[1]):
+                    self.cache[f"vmd_win256_{i}_ddt"] = vmd_win256_ddt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win256_{index}_ddt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win256_ddt_lag = vmd_win256.res(ddt=True, lag=lag)
+                    for i in range(vmd_win256_ddt_lag.shape[1]):
+                        self.cache[f"vmd_win256_{i}_ddt_lag{lag}"] = vmd_win256_ddt_lag[
+                            :, i
+                        ]
 
     def vmd_win512(self, **kwargs):
         index = kwargs["index"]
+        lag = kwargs["lag"] if "lag" in kwargs else None
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+
+        vmd_win512 = VMD_NRBO(self.candles, 512, sequential=self.sequential)
         if f"vmd_win512_{index}" not in self.cache:
-            vmd_win512 = vmd_indicator(self.candles, 512, sequential=self.sequential)
-            if vmd_win512.ndim == 1:
-                vmd_win512 = vmd_win512.reshape(1, -1)
-            for i in range(vmd_win512.shape[1]):
-                self.cache[f"vmd_win512_{i}"] = vmd_win512[:, i]
+            vmd_win512_res = vmd_win512.res()
+            for i in range(vmd_win512_res.shape[1]):
+                self.cache[f"vmd_win512_{i}"] = vmd_win512_res[:, i]
+
+        if lag is not None:
+            feature_name = f"vmd_win512_{index}_lag{lag}"
+            if feature_name not in self.cache:
+                vmd_win512_lag = vmd_win512.res(lag=lag)
+                for i in range(vmd_win512_lag.shape[1]):
+                    self.cache[f"vmd_win512_{i}_lag{lag}"] = vmd_win512_lag[:, i]
+
+        if dt:
+            feature_name = f"vmd_win512_{index}_dt"
+            if feature_name not in self.cache:
+                vmd_win512_dt = vmd_win512.res(dt=True)
+                for i in range(vmd_win512_dt.shape[1]):
+                    self.cache[f"vmd_win512_{i}_dt"] = vmd_win512_dt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win512_{index}_dt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win512_dt_lag = vmd_win512.res(dt=True, lag=lag)
+                    for i in range(vmd_win512_dt_lag.shape[1]):
+                        self.cache[f"vmd_win512_{i}_dt_lag{lag}"] = vmd_win512_dt_lag[
+                            :, i
+                        ]
+
+        if ddt:
+            feature_name = f"vmd_win512_{index}_ddt"
+            if feature_name not in self.cache:
+                vmd_win512_ddt = vmd_win512.res(ddt=True)
+                for i in range(vmd_win512_ddt.shape[1]):
+                    self.cache[f"vmd_win512_{i}_ddt"] = vmd_win512_ddt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win512_{index}_ddt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win512_ddt_lag = vmd_win512.res(ddt=True, lag=lag)
+                    for i in range(vmd_win512_ddt_lag.shape[1]):
+                        self.cache[f"vmd_win512_{i}_ddt_lag{lag}"] = vmd_win512_ddt_lag[
+                            :, i
+                        ]
 
     def vmd_win1024(self, **kwargs):
         index = kwargs["index"]
+        lag = kwargs["lag"] if "lag" in kwargs else None
+        dt = True if "dt" in kwargs else False
+        ddt = True if "ddt" in kwargs else False
+
+        vmd_win1024 = VMD_NRBO(self.candles, 1024, sequential=self.sequential)
         if f"vmd_win1024_{index}" not in self.cache:
-            vmd_win1024 = vmd_indicator(self.candles, 1024, sequential=self.sequential)
-            if vmd_win1024.ndim == 1:
-                vmd_win1024 = vmd_win1024.reshape(1, -1)
-            for i in range(vmd_win1024.shape[1]):
-                self.cache[f"vmd_win1024_{i}"] = vmd_win1024[:, i]
+            vmd_win1024_res = vmd_win1024.res()
+            for i in range(vmd_win1024_res.shape[1]):
+                self.cache[f"vmd_win1024_{i}"] = vmd_win1024_res[:, i]
+
+        if lag is not None:
+            feature_name = f"vmd_win1024_{index}_lag{lag}"
+            if feature_name not in self.cache:
+                vmd_win1024_lag = vmd_win1024.res(lag=lag)
+                for i in range(vmd_win1024_lag.shape[1]):
+                    self.cache[f"vmd_win1024_{i}_lag{lag}"] = vmd_win1024_lag[:, i]
+
+        if dt:
+            feature_name = f"vmd_win1024_{index}_dt"
+            if feature_name not in self.cache:
+                vmd_win1024_dt = vmd_win1024.res(dt=True)
+                for i in range(vmd_win1024_dt.shape[1]):
+                    self.cache[f"vmd_win1024_{i}_dt"] = vmd_win1024_dt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win1024_{index}_dt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win1024_dt_lag = vmd_win1024.res(dt=True, lag=lag)
+                    for i in range(vmd_win1024_dt_lag.shape[1]):
+                        self.cache[f"vmd_win1024_{i}_dt_lag{lag}"] = vmd_win1024_dt_lag[
+                            :, i
+                        ]
+
+        if ddt:
+            feature_name = f"vmd_win1024_{index}_ddt"
+            if feature_name not in self.cache:
+                vmd_win1024_ddt = vmd_win1024.res(ddt=True)
+                for i in range(vmd_win1024_ddt.shape[1]):
+                    self.cache[f"vmd_win1024_{i}_ddt"] = vmd_win1024_ddt[:, i]
+
+            if lag is not None:
+                feature_name = f"vmd_win1024_{index}_ddt_lag{lag}"
+                if feature_name not in self.cache:
+                    vmd_win1024_ddt_lag = vmd_win1024.res(ddt=True, lag=lag)
+                    for i in range(vmd_win1024_ddt_lag.shape[1]):
+                        self.cache[f"vmd_win1024_{i}_ddt_lag{lag}"] = (
+                            vmd_win1024_ddt_lag[:, i]
+                        )
 
     def voss(self, **kwargs):
         if "voss" not in self.cache:
@@ -1371,29 +1877,143 @@ def feature_bundle(
         res_fe[f"conv_{i}"] = conv[:, i]
 
     # cwt wavelet
-    cwt_win32 = cwt(candles, 32, sequential=True, parallel=True)
-    for i in range(cwt_win32.shape[1]):
-        res_fe[f"cwt_win32_{i}"] = cwt_win32[:, i]
+    cwt_win32 = CWT_SWT(candles, 32, sequential=True)
+    cwt_win32_res = cwt_win32.res()
+    for i in range(cwt_win32_res.shape[1]):
+        res_fe[f"cwt_win32_{i}"] = cwt_win32_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win32_lag_res = cwt_win32.res(lag=lg)
+        for i in range(cwt_win32_lag_res.shape[1]):
+            res_fe[f"cwt_win32_{i}_lag{lg}"] = cwt_win32_lag_res[:, i]
+    cwt_win32_dt_res = cwt_win32.res(dt=True)
+    for i in range(cwt_win32_dt_res.shape[1]):
+        res_fe[f"cwt_win32_{i}_dt"] = cwt_win32_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win32_dt_lag_res = cwt_win32.res(dt=True, lag=lg)
+        for i in range(cwt_win32_dt_lag_res.shape[1]):
+            res_fe[f"cwt_win32_{i}_dt_lag{lg}"] = cwt_win32_dt_lag_res[:, i]
+    cwt_win32_ddt_res = cwt_win32.res(ddt=True)
+    for i in range(cwt_win32_ddt_res.shape[1]):
+        res_fe[f"cwt_win32_{i}_ddt"] = cwt_win32_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win32_ddt_lag_res = cwt_win32.res(ddt=True, lag=lg)
+        for i in range(cwt_win32_ddt_lag_res.shape[1]):
+            res_fe[f"cwt_win32_{i}_ddt_lag{lg}"] = cwt_win32_ddt_lag_res[:, i]
 
-    cwt_win64 = cwt(candles, 64, sequential=True, parallel=True)
-    for i in range(cwt_win64.shape[1]):
-        res_fe[f"cwt_win64_{i}"] = cwt_win64[:, i]
+    cwt_win64 = CWT_SWT(candles, 64, sequential=True)
+    cwt_win64_res = cwt_win64.res()
+    for i in range(cwt_win64_res.shape[1]):
+        res_fe[f"cwt_win64_{i}"] = cwt_win64_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win64_lag_res = cwt_win64.res(lag=lg)
+        for i in range(cwt_win64_lag_res.shape[1]):
+            res_fe[f"cwt_win64_{i}_lag{lg}"] = cwt_win64_lag_res[:, i]
+    cwt_win64_dt_res = cwt_win64.res(dt=True)
+    for i in range(cwt_win64_dt_res.shape[1]):
+        res_fe[f"cwt_win64_{i}_dt"] = cwt_win64_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win64_dt_lag_res = cwt_win64.res(dt=True, lag=lg)
+        for i in range(cwt_win64_dt_lag_res.shape[1]):
+            res_fe[f"cwt_win64_{i}_dt_lag{lg}"] = cwt_win64_dt_lag_res[:, i]
+    cwt_win64_ddt_res = cwt_win64.res(ddt=True)
+    for i in range(cwt_win64_ddt_res.shape[1]):
+        res_fe[f"cwt_win64_{i}_ddt"] = cwt_win64_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win64_ddt_lag_res = cwt_win64.res(ddt=True, lag=lg)
+        for i in range(cwt_win64_ddt_lag_res.shape[1]):
+            res_fe[f"cwt_win64_{i}_ddt_lag{lg}"] = cwt_win64_ddt_lag_res[:, i]
 
-    cwt_win128 = cwt(candles, 128, sequential=True, parallel=True)
-    for i in range(cwt_win128.shape[1]):
-        res_fe[f"cwt_win128_{i}"] = cwt_win128[:, i]
+    cwt_win128 = CWT_SWT(candles, 128, sequential=True)
+    cwt_win128_res = cwt_win128.res()
+    for i in range(cwt_win128_res.shape[1]):
+        res_fe[f"cwt_win128_{i}"] = cwt_win128_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win128_lag_res = cwt_win128.res(lag=lg)
+        for i in range(cwt_win128_lag_res.shape[1]):
+            res_fe[f"cwt_win128_{i}_lag{lg}"] = cwt_win128_lag_res[:, i]
+    cwt_win128_dt_res = cwt_win128.res(dt=True)
+    for i in range(cwt_win128_dt_res.shape[1]):
+        res_fe[f"cwt_win128_{i}_dt"] = cwt_win128_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win128_dt_lag_res = cwt_win128.res(dt=True, lag=lg)
+        for i in range(cwt_win128_dt_lag_res.shape[1]):
+            res_fe[f"cwt_win128_{i}_dt_lag{lg}"] = cwt_win128_dt_lag_res[:, i]
+    cwt_win128_ddt_res = cwt_win128.res(ddt=True)
+    for i in range(cwt_win128_ddt_res.shape[1]):
+        res_fe[f"cwt_win128_{i}_ddt"] = cwt_win128_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win128_ddt_lag_res = cwt_win128.res(ddt=True, lag=lg)
+        for i in range(cwt_win128_ddt_lag_res.shape[1]):
+            res_fe[f"cwt_win128_{i}_ddt_lag{lg}"] = cwt_win128_ddt_lag_res[:, i]
 
-    cwt_win256 = cwt(candles, 256, sequential=True, parallel=True)
-    for i in range(cwt_win256.shape[1]):
-        res_fe[f"cwt_win256_{i}"] = cwt_win256[:, i]
+    cwt_win256 = CWT_SWT(candles, 256, sequential=True)
+    cwt_win256_res = cwt_win256.res()
+    for i in range(cwt_win256_res.shape[1]):
+        res_fe[f"cwt_win256_{i}"] = cwt_win256_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win256_lag_res = cwt_win256.res(lag=lg)
+        for i in range(cwt_win256_lag_res.shape[1]):
+            res_fe[f"cwt_win256_{i}_lag{lg}"] = cwt_win256_lag_res[:, i]
+    cwt_win256_dt_res = cwt_win256.res(dt=True)
+    for i in range(cwt_win256_dt_res.shape[1]):
+        res_fe[f"cwt_win256_{i}_dt"] = cwt_win256_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win256_dt_lag_res = cwt_win256.res(dt=True, lag=lg)
+        for i in range(cwt_win256_dt_lag_res.shape[1]):
+            res_fe[f"cwt_win256_{i}_dt_lag{lg}"] = cwt_win256_dt_lag_res[:, i]
+    cwt_win256_ddt_res = cwt_win256.res(ddt=True)
+    for i in range(cwt_win256_ddt_res.shape[1]):
+        res_fe[f"cwt_win256_{i}_ddt"] = cwt_win256_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win256_ddt_lag_res = cwt_win256.res(ddt=True, lag=lg)
+        for i in range(cwt_win256_ddt_lag_res.shape[1]):
+            res_fe[f"cwt_win256_{i}_ddt_lag{lg}"] = cwt_win256_ddt_lag_res[:, i]
 
-    cwt_win512 = cwt(candles, 512, sequential=True, parallel=True)
-    for i in range(cwt_win512.shape[1]):
-        res_fe[f"cwt_win512_{i}"] = cwt_win512[:, i]
+    cwt_win512 = CWT_SWT(candles, 512, sequential=True)
+    cwt_win512_res = cwt_win512.res()
+    for i in range(cwt_win512_res.shape[1]):
+        res_fe[f"cwt_win512_{i}"] = cwt_win512_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win512_lag_res = cwt_win512.res(lag=lg)
+        for i in range(cwt_win512_lag_res.shape[1]):
+            res_fe[f"cwt_win512_{i}_lag{lg}"] = cwt_win512_lag_res[:, i]
+    cwt_win512_dt_res = cwt_win512.res(dt=True)
+    for i in range(cwt_win512_dt_res.shape[1]):
+        res_fe[f"cwt_win512_{i}_dt"] = cwt_win512_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win512_dt_lag_res = cwt_win512.res(dt=True, lag=lg)
+        for i in range(cwt_win512_dt_lag_res.shape[1]):
+            res_fe[f"cwt_win512_{i}_dt_lag{lg}"] = cwt_win512_dt_lag_res[:, i]
+    cwt_win512_ddt_res = cwt_win512.res(ddt=True)
+    for i in range(cwt_win512_ddt_res.shape[1]):
+        res_fe[f"cwt_win512_{i}_ddt"] = cwt_win512_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win512_ddt_lag_res = cwt_win512.res(ddt=True, lag=lg)
+        for i in range(cwt_win512_ddt_lag_res.shape[1]):
+            res_fe[f"cwt_win512_{i}_ddt_lag{lg}"] = cwt_win512_ddt_lag_res[:, i]
 
-    cwt_win1024 = cwt(candles, 1024, sequential=True, parallel=True)
-    for i in range(cwt_win1024.shape[1]):
-        res_fe[f"cwt_win1024_{i}"] = cwt_win1024[:, i]
+    cwt_win1024 = CWT_SWT(candles, 1024, sequential=True)
+    cwt_win1024_res = cwt_win1024.res()
+    for i in range(cwt_win1024_res.shape[1]):
+        res_fe[f"cwt_win1024_{i}"] = cwt_win1024_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win1024_lag_res = cwt_win1024.res(lag=lg)
+        for i in range(cwt_win1024_lag_res.shape[1]):
+            res_fe[f"cwt_win1024_{i}_lag{lg}"] = cwt_win1024_lag_res[:, i]
+    cwt_win1024_dt_res = cwt_win1024.res(dt=True)
+    for i in range(cwt_win1024_dt_res.shape[1]):
+        res_fe[f"cwt_win1024_{i}_dt"] = cwt_win1024_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win1024_dt_lag_res = cwt_win1024.res(dt=True, lag=lg)
+        for i in range(cwt_win1024_dt_lag_res.shape[1]):
+            res_fe[f"cwt_win1024_{i}_dt_lag{lg}"] = cwt_win1024_dt_lag_res[:, i]
+    cwt_win1024_ddt_res = cwt_win1024.res(ddt=True)
+    for i in range(cwt_win1024_ddt_res.shape[1]):
+        res_fe[f"cwt_win1024_{i}_ddt"] = cwt_win1024_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        cwt_win1024_ddt_lag_res = cwt_win1024.res(ddt=True, lag=lg)
+        for i in range(cwt_win1024_ddt_lag_res.shape[1]):
+            res_fe[f"cwt_win1024_{i}_ddt_lag{lg}"] = cwt_win1024_ddt_lag_res[:, i]
 
     # dft
     dft_dom_cycle, spectrum = dft(candles, sequential=True)
@@ -1935,29 +2555,143 @@ def feature_bundle(
         res_fe[f"trendflex_ddt_lag{lg}"] = lag(res_fe["trendflex_ddt"], lg)
 
     # VMD
-    vmd_win32 = vmd_indicator(candles, 32, sequential=True, parallel=True)
-    for i in range(vmd_win32.shape[1]):
-        res_fe[f"vmd_win32_{i}"] = vmd_win32[:, i]
+    vmd_win32 = VMD_NRBO(candles, 32, sequential=True)
+    vmd_win32_res = vmd_win32.res()
+    for i in range(vmd_win32_res.shape[1]):
+        res_fe[f"vmd_win32_{i}"] = vmd_win32_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win32_lag_res = vmd_win32.res(lag=lg)
+        for i in range(vmd_win32_lag_res.shape[1]):
+            res_fe[f"vmd_win32_{i}_lag{lg}"] = vmd_win32_lag_res[:, i]
+    vmd_win32_dt_res = vmd_win32.res(dt=True)
+    for i in range(vmd_win32_dt_res.shape[1]):
+        res_fe[f"vmd_win32_{i}_dt"] = vmd_win32_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win32_dt_lag_res = vmd_win32.res(dt=True, lag=lg)
+        for i in range(vmd_win32_dt_lag_res.shape[1]):
+            res_fe[f"vmd_win32_{i}_dt_lag{lg}"] = vmd_win32_dt_lag_res[:, i]
+    vmd_win32_ddt_res = vmd_win32.res(ddt=True)
+    for i in range(vmd_win32_ddt_res.shape[1]):
+        res_fe[f"vmd_win32_{i}_ddt"] = vmd_win32_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win32_ddt_lag_res = vmd_win32.res(ddt=True, lag=lg)
+        for i in range(vmd_win32_ddt_lag_res.shape[1]):
+            res_fe[f"vmd_win32_{i}_ddt_lag{lg}"] = vmd_win32_ddt_lag_res[:, i]
 
-    vmd_win64 = vmd_indicator(candles, 64, sequential=True, parallel=True)
-    for i in range(vmd_win64.shape[1]):
-        res_fe[f"vmd_win64_{i}"] = vmd_win64[:, i]
+    vmd_win64 = VMD_NRBO(candles, 64, sequential=True)
+    vmd_win64_res = vmd_win64.res()
+    for i in range(vmd_win64_res.shape[1]):
+        res_fe[f"vmd_win64_{i}"] = vmd_win64_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win64_lag_res = vmd_win64.res(lag=lg)
+        for i in range(vmd_win64_lag_res.shape[1]):
+            res_fe[f"vmd_win64_{i}_lag{lg}"] = vmd_win64_lag_res[:, i]
+    vmd_win64_dt_res = vmd_win64.res(dt=True)
+    for i in range(vmd_win64_dt_res.shape[1]):
+        res_fe[f"vmd_win64_{i}_dt"] = vmd_win64_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win64_dt_lag_res = vmd_win64.res(dt=True, lag=lg)
+        for i in range(vmd_win64_dt_lag_res.shape[1]):
+            res_fe[f"vmd_win64_{i}_dt_lag{lg}"] = vmd_win64_dt_lag_res[:, i]
+    vmd_win64_ddt_res = vmd_win64.res(ddt=True)
+    for i in range(vmd_win64_ddt_res.shape[1]):
+        res_fe[f"vmd_win64_{i}_ddt"] = vmd_win64_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win64_ddt_lag_res = vmd_win64.res(ddt=True, lag=lg)
+        for i in range(vmd_win64_ddt_lag_res.shape[1]):
+            res_fe[f"vmd_win64_{i}_ddt_lag{lg}"] = vmd_win64_ddt_lag_res[:, i]
 
-    vmd_win128 = vmd_indicator(candles, 128, sequential=True, parallel=True)
-    for i in range(vmd_win128.shape[1]):
-        res_fe[f"vmd_win128_{i}"] = vmd_win128[:, i]
+    vmd_win128 = VMD_NRBO(candles, 128, sequential=True)
+    vmd_win128_res = vmd_win128.res()
+    for i in range(vmd_win128_res.shape[1]):
+        res_fe[f"vmd_win128_{i}"] = vmd_win128_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win128_lag_res = vmd_win128.res(lag=lg)
+        for i in range(vmd_win128_lag_res.shape[1]):
+            res_fe[f"vmd_win128_{i}_lag{lg}"] = vmd_win128_lag_res[:, i]
+    vmd_win128_dt_res = vmd_win128.res(dt=True)
+    for i in range(vmd_win128_dt_res.shape[1]):
+        res_fe[f"vmd_win128_{i}_dt"] = vmd_win128_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win128_dt_lag_res = vmd_win128.res(dt=True, lag=lg)
+        for i in range(vmd_win128_dt_lag_res.shape[1]):
+            res_fe[f"vmd_win128_{i}_dt_lag{lg}"] = vmd_win128_dt_lag_res[:, i]
+    vmd_win128_ddt_res = vmd_win128.res(ddt=True)
+    for i in range(vmd_win128_ddt_res.shape[1]):
+        res_fe[f"vmd_win128_{i}_ddt"] = vmd_win128_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win128_ddt_lag_res = vmd_win128.res(ddt=True, lag=lg)
+        for i in range(vmd_win128_ddt_lag_res.shape[1]):
+            res_fe[f"vmd_win128_{i}_ddt_lag{lg}"] = vmd_win128_ddt_lag_res[:, i]
 
-    vmd_win256 = vmd_indicator(candles, 256, sequential=True, parallel=True)
-    for i in range(vmd_win256.shape[1]):
-        res_fe[f"vmd_win256_{i}"] = vmd_win256[:, i]
+    vmd_win256 = VMD_NRBO(candles, 256, sequential=True)
+    vmd_win256_res = vmd_win256.res()
+    for i in range(vmd_win256_res.shape[1]):
+        res_fe[f"vmd_win256_{i}"] = vmd_win256_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win256_lag_res = vmd_win256.res(lag=lg)
+        for i in range(vmd_win256_lag_res.shape[1]):
+            res_fe[f"vmd_win256_{i}_lag{lg}"] = vmd_win256_lag_res[:, i]
+    vmd_win256_dt_res = vmd_win256.res(dt=True)
+    for i in range(vmd_win256_dt_res.shape[1]):
+        res_fe[f"vmd_win256_{i}_dt"] = vmd_win256_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win256_dt_lag_res = vmd_win256.res(dt=True, lag=lg)
+        for i in range(vmd_win256_dt_lag_res.shape[1]):
+            res_fe[f"vmd_win256_{i}_dt_lag{lg}"] = vmd_win256_dt_lag_res[:, i]
+    vmd_win256_ddt_res = vmd_win256.res(ddt=True)
+    for i in range(vmd_win256_ddt_res.shape[1]):
+        res_fe[f"vmd_win256_{i}_ddt"] = vmd_win256_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win256_ddt_lag_res = vmd_win256.res(ddt=True, lag=lg)
+        for i in range(vmd_win256_ddt_lag_res.shape[1]):
+            res_fe[f"vmd_win256_{i}_ddt_lag{lg}"] = vmd_win256_ddt_lag_res[:, i]
 
-    vmd_win512 = vmd_indicator(candles, 512, sequential=True, parallel=True)
-    for i in range(vmd_win512.shape[1]):
-        res_fe[f"vmd_win512_{i}"] = vmd_win512[:, i]
+    vmd_win512 = VMD_NRBO(candles, 512, sequential=True)
+    vmd_win512_res = vmd_win512.res()
+    for i in range(vmd_win512_res.shape[1]):
+        res_fe[f"vmd_win512_{i}"] = vmd_win512_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win512_lag_res = vmd_win512.res(lag=lg)
+        for i in range(vmd_win512_lag_res.shape[1]):
+            res_fe[f"vmd_win512_{i}_lag{lg}"] = vmd_win512_lag_res[:, i]
+    vmd_win512_dt_res = vmd_win512.res(dt=True)
+    for i in range(vmd_win512_dt_res.shape[1]):
+        res_fe[f"vmd_win512_{i}_dt"] = vmd_win512_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win512_dt_lag_res = vmd_win512.res(dt=True, lag=lg)
+        for i in range(vmd_win512_dt_lag_res.shape[1]):
+            res_fe[f"vmd_win512_{i}_dt_lag{lg}"] = vmd_win512_dt_lag_res[:, i]
+    vmd_win512_ddt_res = vmd_win512.res(ddt=True)
+    for i in range(vmd_win512_ddt_res.shape[1]):
+        res_fe[f"vmd_win512_{i}_ddt"] = vmd_win512_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win512_ddt_lag_res = vmd_win512.res(ddt=True, lag=lg)
+        for i in range(vmd_win512_ddt_lag_res.shape[1]):
+            res_fe[f"vmd_win512_{i}_ddt_lag{lg}"] = vmd_win512_ddt_lag_res[:, i]
 
-    vmd_win1024 = vmd_indicator(candles, 1024, sequential=True, parallel=True)
-    for i in range(vmd_win1024.shape[1]):
-        res_fe[f"vmd_win1024_{i}"] = vmd_win1024[:, i]
+    vmd_win1024 = VMD_NRBO(candles, 1024, sequential=True)
+    vmd_win1024_res = vmd_win1024.res()
+    for i in range(vmd_win1024_res.shape[1]):
+        res_fe[f"vmd_win1024_{i}"] = vmd_win1024_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win1024_lag_res = vmd_win1024.res(lag=lg)
+        for i in range(vmd_win1024_lag_res.shape[1]):
+            res_fe[f"vmd_win1024_{i}_lag{lg}"] = vmd_win1024_lag_res[:, i]
+    vmd_win1024_dt_res = vmd_win1024.res(dt=True)
+    for i in range(vmd_win1024_dt_res.shape[1]):
+        res_fe[f"vmd_win1024_{i}_dt"] = vmd_win1024_dt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win1024_dt_lag_res = vmd_win1024.res(dt=True, lag=lg)
+        for i in range(vmd_win1024_dt_lag_res.shape[1]):
+            res_fe[f"vmd_win1024_{i}_dt_lag{lg}"] = vmd_win1024_dt_lag_res[:, i]
+    vmd_win1024_ddt_res = vmd_win1024.res(ddt=True)
+    for i in range(vmd_win1024_ddt_res.shape[1]):
+        res_fe[f"vmd_win1024_{i}_ddt"] = vmd_win1024_ddt_res[:, i]
+    for lg in range(1, LAG_MAX):
+        vmd_win1024_ddt_lag_res = vmd_win1024.res(ddt=True, lag=lg)
+        for i in range(vmd_win1024_ddt_lag_res.shape[1]):
+            res_fe[f"vmd_win1024_{i}_ddt_lag{lg}"] = vmd_win1024_ddt_lag_res[:, i]
 
     # Voss Filter
     voss_filter_ = ta.voss(candles, sequential=True)
