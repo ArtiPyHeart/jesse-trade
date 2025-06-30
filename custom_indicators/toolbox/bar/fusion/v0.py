@@ -1,5 +1,5 @@
 import numpy as np
-from mpire.pool import WorkerPool
+from joblib import Parallel, delayed
 
 from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
@@ -32,7 +32,8 @@ class FusionBarContainerV0(FusionBarContainerBase):
         else:
             entropy_log_ret_list = log_ret_from_candles(candles, self.N_ENTROPY)
 
-        with WorkerPool() as pool:
-            entropy_array = pool.map(sample_entropy_numba, entropy_log_ret_list)
+        entropy_array = Parallel(n_jobs=-2)(
+            delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
+        )
 
         return np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)

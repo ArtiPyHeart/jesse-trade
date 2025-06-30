@@ -4,9 +4,6 @@ from abc import ABC, abstractmethod
 import arrow
 import numpy as np
 
-from custom_indicators.utils.import_tools import ensure_package
-
-ensure_package("mpire")
 
 from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
 

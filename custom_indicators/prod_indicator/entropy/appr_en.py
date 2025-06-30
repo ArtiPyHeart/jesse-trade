@@ -1,5 +1,5 @@
 import numpy as np
-from mpire.pool import WorkerPool
+from joblib import Parallel, delayed
 from jesse.helpers import slice_candles, get_candle_source
 
 from custom_indicators.toolbox.entropy.apen_sampen import approximate_entropy_numba
@@ -24,8 +24,10 @@ def approximate_entropy_indicator(
             log_ret_list = log_ret_from_array_price(src, period)
         else:
             log_ret_list = log_ret_from_current_price(src, period)
-        with WorkerPool() as pool:
-            entropy_array = pool.map(approximate_entropy_numba, log_ret_list)
+
+        entropy_array = Parallel(n_jobs=-2)(
+            delayed(approximate_entropy_numba)(i) for i in log_ret_list
+        )
         entropy_array = np.hstack(([np.nan] * period, entropy_array))
         return entropy_array
     else:

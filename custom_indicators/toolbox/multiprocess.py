@@ -5,10 +5,10 @@ Contains the logic from chapter 20 on multiprocessing and vectorization.
 import datetime as dt
 import sys
 import time
+from multiprocessing import Pool
 
 import numpy as np
 import pandas as pd
-from mpire import WorkerPool
 
 
 # Snippet 20.5 (page 306), the lin_parts function
@@ -233,10 +233,8 @@ def process_jobs(jobs, task=None, num_threads=24, verbose=True):
     out = []
     time0 = time.time()
 
-    with WorkerPool(n_jobs=num_threads) as pool:
-        for job_num, result in enumerate(
-            pool.imap(expand_call, jobs, progress_bar=False), start=1
-        ):
+    with Pool(processes=num_threads) as pool:
+        for job_num, result in enumerate(pool.imap(expand_call, jobs), start=1):
             out.append(result)
             if verbose:
                 report_progress(job_num, len(jobs), time0, task)

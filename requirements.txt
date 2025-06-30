@@ -1,7 +1,7 @@
 lightgbm
 catboost
 jesse
-mpire
+joblib
 tqdm
 PyWavelets
 numba

@@ -6,7 +6,7 @@ import optuna
 import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
-from mpire.pool import WorkerPool
+from joblib import Parallel, delayed
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
@@ -70,8 +70,9 @@ class TuningBarContainer(FusionBarContainerBase):
         else:
             entropy_log_ret_list = log_ret_from_candles(candles, self.N_ENTROPY)
 
-        with WorkerPool() as pool:
-            entropy_array = pool.map(sample_entropy_numba, entropy_log_ret_list)
+        entropy_array = Parallel(n_jobs=-2)(
+            delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
+        )
 
         return np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)
 
