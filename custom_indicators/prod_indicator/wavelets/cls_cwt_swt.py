@@ -1,7 +1,7 @@
 import numpy as np
 import pywt
-from joblib import Parallel, delayed
 from jesse.helpers import get_candle_source
+from joblib import Parallel, delayed
 
 from custom_indicators.prod_indicator._indicator_base._cls_ind import IndicatorBase
 
@@ -60,7 +60,7 @@ class CWT_SWT(IndicatorBase):
     def _sequential_process(self):
         src_with_window = [
             self.src[idx - self.window : idx]
-            for idx in range(self.window, len(self.src))
+            for idx in range(self.window, len(self.src) + 1)
         ]
         res = Parallel(n_jobs=-2)(delayed(_cwt)(i) for i in src_with_window)
 

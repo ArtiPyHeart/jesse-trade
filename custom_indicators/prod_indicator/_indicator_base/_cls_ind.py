@@ -33,29 +33,32 @@ class IndicatorBase(ABC):
     def _sequential_process(self):
         pass
 
-    def dt(self):
-        dt_result = [i[1:] - i[:-1] for i in self.raw_result]
-        dt_result = np.array([i[-1] for i in dt_result])
-        if self.sequential:
-            dt_result = _fill_gap(dt_result, self.candles)
+    def lag(self, value, n: int = 0):
+        if n == 0:
+            return value
+        lag_result = [i[:-n] for i in value]
+        return lag_result
+
+    def dt(self, value):
+        dt_result = [i[1:] - i[:-1] for i in value]
         return dt_result
 
-    def ddt(self):
-        dt_result = [i[1:] - i[:-1] for i in self.raw_result]
-        ddt_result = [i[1:] - i[:-1] for i in dt_result]
-        ddt_result = np.array([i[-1] for i in ddt_result])
-        if self.sequential:
-            ddt_result = _fill_gap(ddt_result, self.candles)
+    def ddt(self, value):
+        dt_result = self.dt(value)
+        ddt_result = self.dt(dt_result)
         return ddt_result
 
-    def res(self, n: int = 0, dt: bool = False, ddt: bool = False):
+    def res(self, lag: int = 0, dt: bool = False, ddt: bool = False):
         if dt:
-            lag_result = [i[-n] for i in self.dt()]
+            dt_result = self.dt(self.raw_result)
+            lag_result = self.lag(dt_result, lag)
         elif ddt:
-            lag_result = [i[-n] for i in self.ddt()]
+            ddt_result = self.ddt(self.raw_result)
+            lag_result = self.lag(ddt_result, lag)
         else:
-            lag_result = [i[-n] for i in self.raw_result]
-        lag_result = np.array(lag_result)
+            lag_result = self.lag(self.raw_result, lag)
+
+        final_res = np.array([i[-1] for i in lag_result])
         if self.sequential:
-            lag_result = _fill_gap(lag_result, self.candles)
-        return lag_result
+            final_res = _fill_gap(final_res, self.candles)
+        return final_res
