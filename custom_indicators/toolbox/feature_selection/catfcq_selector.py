@@ -132,7 +132,7 @@ class CatFCQSelector:
 
         return relevance
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "RFCQSelector":
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "CatFCQSelector":
         """
         训练RFCQ特征选择器
 

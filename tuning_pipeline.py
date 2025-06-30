@@ -277,6 +277,7 @@ class BacktestPipeline:
             verbose=False,
             auto_class_weights="Balanced",
             thread_count=-1,
+            early_stopping_rounds=50,
         )
         self.side_model.fit(feature_masked, label_masked)
 
@@ -419,7 +420,7 @@ class BacktestPipeline:
             verbose=False,
             auto_class_weights="Balanced",
             thread_count=-1,
-            custom_metric=["F1"],
+            early_stopping_rounds=50,
         )
         self.meta_model.fit(feature_masked, label_masked)
 
@@ -543,7 +544,7 @@ def tune_pipeline(trial: optuna.Trial):
     n_entropy = trial.suggest_int("n_entropy", 30, 300)
     pipeline.init_bar_container(n1, n2, n_entropy)
     raw_threshold_array = pipeline.get_threshold_array()
-    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 30)
+    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 45)
     threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 360)
     pipeline.set_threshold(
         trial.suggest_float("threshold", threshold_min, threshold_max)
