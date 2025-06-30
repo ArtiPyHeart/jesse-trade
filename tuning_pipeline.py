@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-import lightgbm as lgb
+import catboost as ctb
 import numpy as np
 import optuna
 import pandas as pd
@@ -12,7 +12,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_sco
 from custom_indicators.all_features import feature_bundle
 from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
-from custom_indicators.toolbox.feature_selection.rfcq_selector import RFCQSelector
+from custom_indicators.toolbox.feature_selection.catfcq_selector import CatFCQSelector
 from custom_indicators.utils.math_tools import log_ret_from_candles
 
 
@@ -44,7 +44,7 @@ optuna_log_manager = OptunaLogManager()
 
 class TuningBarContainer(FusionBarContainerBase):
     def __init__(
-        self, n1: int, n2: int, n_entropy: int, threshold: float, max_bars=50000
+        self, n1: int, n2: int, n_entropy: int, threshold: float, max_bars=500000
     ):
         super().__init__(max_bars, threshold)
         self.N_1 = n1
@@ -246,7 +246,7 @@ class BacktestPipeline:
         assert len(self.df_feature) == len(self.side_label)
 
     def side_feature_selection(self):
-        selector = RFCQSelector(verbose=False)
+        selector = CatFCQSelector(verbose=False)
         selector.fit(self.df_feature, self.side_label)
         side_res = pd.Series(
             selector.relevance_, index=selector.variables_
@@ -257,27 +257,31 @@ class BacktestPipeline:
         mask = self.df_feature.index < self.side_model_split_timestamp
         feature_masked = self.df_feature[self.side_feature_names][mask]
         label_masked = self.side_label[mask]
-        params = {
-            "objective": "binary",
-            "metric": "auc",
-            "num_threads": -1,
-            "verbose": -1,
-            "is_unbalance": True,
-            "extra_trees": False,
-            "num_leaves": 62,
-            "max_depth": 294,
-            "min_gain_to_split": 0.3876711100653668,
-            "min_data_in_leaf": 200,
-            "lambda_l1": 10,
-            "lambda_l2": 50,
-            "num_boost_round": 600,
-        }
-        dtrain = lgb.Dataset(feature_masked, label_masked)
-        self.side_model = lgb.train(params, dtrain)
-
-        self.df_feature["model"] = self.side_model.predict(
-            self.df_feature[self.side_feature_names]
+        # params = {
+        #     "objective": "binary",
+        #     "metric": "auc",
+        #     "num_threads": -1,
+        #     "verbose": -1,
+        #     "is_unbalance": True,
+        #     "extra_trees": False,
+        #     "num_leaves": 62,
+        #     "max_depth": 294,
+        #     "min_gain_to_split": 0.3876711100653668,
+        #     "min_data_in_leaf": 200,
+        #     "lambda_l1": 10,
+        #     "lambda_l2": 50,
+        #     "num_boost_round": 600,
+        # }
+        self.side_model = ctb.CatBoostClassifier(
+            verbose=False,
+            auto_class_weights="Balanced",
+            thread_count=-1,
         )
+        self.side_model.fit(feature_masked, label_masked)
+
+        self.df_feature["model"] = self.side_model.predict_proba(
+            self.df_feature[self.side_feature_names]
+        )[:, 1]
 
         testset_mask = self.df_feature.index >= self.side_model_split_timestamp
         test_auc = roc_auc_score(
@@ -287,7 +291,9 @@ class BacktestPipeline:
         return test_auc
 
     def meta_labeling(self):
-        side_res = self.side_model.predict(self.df_feature[self.side_feature_names])
+        side_res = self.side_model.predict_proba(
+            self.df_feature[self.side_feature_names]
+        )[:, 1]
         side_pred_label = np.where(side_res > 0.5, 1, -1)
 
         close_prices = self.merged_bar[:, 2]
@@ -345,7 +351,7 @@ class BacktestPipeline:
         return meta_label
 
     def meta_feature_selection(self):
-        selector = RFCQSelector(verbose=False)
+        selector = CatFCQSelector(verbose=False)
         selector.fit(self.df_feature, self.meta_label)
         meta_res = pd.Series(
             selector.relevance_, index=selector.variables_
@@ -357,63 +363,69 @@ class BacktestPipeline:
         feature_masked = self.df_feature[self.meta_feature_names][mask]
         label_masked = self.meta_label[mask]
 
-        METRIC = "f1"
-
-        def eval_metric(preds, eval_dataset):
-            metric_name = METRIC
-            y_true = eval_dataset.get_label()
-            value = f1_score(y_true, preds > 0.5, average="weighted")
-            higher_better = True
-            return metric_name, value, higher_better
-
-        def objective(trial: optuna.Trial):
-            params = {
-                "objective": "binary",
-                "is_unbalance": True,
-                "num_threads": -1,
-                "verbose": -1,
-                "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
-                "boosting": trial.suggest_categorical("boosting", ["gbdt", "dart"]),
-                "num_leaves": trial.suggest_int("num_leaves", 31, 500),
-                "max_depth": trial.suggest_int("max_depth", 30, 1000),
-                "min_gain_to_split": trial.suggest_float("min_gain_to_split", 1e-8, 1),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 300),
-                "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 100),
-                "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 100),
-            }
-            dtrain = lgb.Dataset(feature_masked, label_masked)
-            # dtest = lgb.Dataset(meta_features_test, meta_label_test)
-            model_res = lgb.cv(
-                params,
-                dtrain,
-                num_boost_round=trial.suggest_int("num_boost_round", 100, 1000),
-                stratified=True,
-                feval=eval_metric,
-            )
-            return model_res[f"valid {METRIC}-mean"][-1]
-
-        with optuna_log_manager.silent_optimization():
-            study = optuna.create_study(
-                direction="maximize",
-                pruner=optuna.pruners.HyperbandPruner(),
-                sampler=optuna.samplers.TPESampler(n_startup_trials=5),
-            )
-            study.optimize(objective, n_trials=10, n_jobs=1)
-
-        params = {
-            "objective": "binary",
-            "num_threads": -1,
-            "verbose": -1,
-            "is_unbalance": True,
-            **study.best_params,
-        }
-        dtrain = lgb.Dataset(feature_masked, label_masked)
-        self.meta_model = lgb.train(params, dtrain)
+        # METRIC = "f1"
+        #
+        # def eval_metric(preds, eval_dataset):
+        #     metric_name = METRIC
+        #     y_true = eval_dataset.get_label()
+        #     value = f1_score(y_true, preds > 0.5, average="weighted")
+        #     higher_better = True
+        #     return metric_name, value, higher_better
+        #
+        # def objective(trial: optuna.Trial):
+        #     params = {
+        #         "objective": "binary",
+        #         "is_unbalance": True,
+        #         "num_threads": -1,
+        #         "verbose": -1,
+        #         "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
+        #         "boosting": trial.suggest_categorical("boosting", ["gbdt", "dart"]),
+        #         "num_leaves": trial.suggest_int("num_leaves", 31, 500),
+        #         "max_depth": trial.suggest_int("max_depth", 30, 1000),
+        #         "min_gain_to_split": trial.suggest_float("min_gain_to_split", 1e-8, 1),
+        #         "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 300),
+        #         "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 100),
+        #         "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 100),
+        #     }
+        #     dtrain = lgb.Dataset(feature_masked, label_masked)
+        #     # dtest = lgb.Dataset(meta_features_test, meta_label_test)
+        #     model_res = lgb.cv(
+        #         params,
+        #         dtrain,
+        #         num_boost_round=trial.suggest_int("num_boost_round", 100, 1000),
+        #         stratified=True,
+        #         feval=eval_metric,
+        #     )
+        #     return model_res[f"valid {METRIC}-mean"][-1]
+        #
+        # with optuna_log_manager.silent_optimization():
+        #     study = optuna.create_study(
+        #         direction="maximize",
+        #         pruner=optuna.pruners.HyperbandPruner(),
+        #         sampler=optuna.samplers.TPESampler(n_startup_trials=5),
+        #     )
+        #     study.optimize(objective, n_trials=10, n_jobs=1)
+        #
+        # params = {
+        #     "objective": "binary",
+        #     "num_threads": -1,
+        #     "verbose": -1,
+        #     "is_unbalance": True,
+        #     **study.best_params,
+        # }
+        # dtrain = lgb.Dataset(feature_masked, label_masked)
+        self.meta_model = ctb.CatBoostClassifier(
+            verbose=False,
+            auto_class_weights="Balanced",
+            thread_count=-1,
+            custom_metric=["F1"],
+        )
+        self.meta_model.fit(feature_masked, label_masked)
 
         testset_mask = self.df_feature.index >= self.meta_model_split_timestamp
-        meta_pred_proba = self.meta_model.predict(
+        meta_pred_proba = self.meta_model.predict_proba(
             self.df_feature[self.meta_feature_names][testset_mask]
-        )
+        )[:, 1]
         test_precision = precision_score(
             self.meta_label[testset_mask],
             (meta_pred_proba > 0.5).astype(int),
@@ -541,10 +553,6 @@ def tune_pipeline(trial: optuna.Trial):
     pipeline.get_df_feature()
     pipeline.side_feature_selection()
     side_auc = pipeline.train_side_model()
-    # # 舍弃预测效果过于差的模型
-    # if side_auc < 0.7:
-    #     print(f"{side_auc = :.6f}")
-    #     return -100
 
     meta_label = pipeline.meta_labeling()
     pipeline.meta_feature_selection()
