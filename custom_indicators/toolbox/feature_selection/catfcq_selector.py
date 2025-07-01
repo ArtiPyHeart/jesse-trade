@@ -164,7 +164,7 @@ class CatFCQSelector:
 
         # 计算相关性
         if self.verbose:
-            print("➤ 计算特征与目标变量的相关性(使用随机森林)...")
+            print("➤ 计算特征与目标变量的相关性(使用CatBoost)...")
         X_numeric = X[self.variables_]
         self.relevance_ = self._calculate_relevance(X_numeric, y)
 
