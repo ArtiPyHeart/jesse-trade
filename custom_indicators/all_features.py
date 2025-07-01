@@ -2188,12 +2188,10 @@ def feature_bundle(
     )
     res_fe["approximate_entropy_win32_spot"] = approximate_entropy_win32_spot
 
-    approximate_entropy_indicator_win32_array = approximate_entropy_indicator(
+    approximate_entropy_win32_array = approximate_entropy_indicator(
         candles, period=32, use_array_price=True, sequential=True
     )
-    res_fe["approximate_entropy_indicator_win32_array"] = (
-        approximate_entropy_indicator_win32_array
-    )
+    res_fe["approximate_entropy_win32_array"] = approximate_entropy_win32_array
 
     approximate_entropy_win64_spot = approximate_entropy_indicator(
         candles, period=64, use_array_price=False, sequential=True
