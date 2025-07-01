@@ -278,6 +278,9 @@ class BacktestPipeline:
             auto_class_weights="Balanced",
             thread_count=-1,
             early_stopping_rounds=50,
+            subsample=0.8,
+            bootstrap_type="Bernoulli",
+            rsm=0.7,
         )
         self.side_model.fit(feature_masked, label_masked)
 
@@ -421,6 +424,9 @@ class BacktestPipeline:
             auto_class_weights="Balanced",
             thread_count=-1,
             early_stopping_rounds=50,
+            subsample=0.8,
+            bootstrap_type="Bernoulli",
+            rsm=0.7,
         )
         self.meta_model.fit(feature_masked, label_masked)
 
