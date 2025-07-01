@@ -26,7 +26,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         self.meta_model = get_meta_model(self.is_livetrading)
         self.side_model = get_side_model(self.is_livetrading)
 
-        self.main_bar_container = FusionBarContainerV0(max_bars=5000)
+        self.main_bar_container = FusionBarContainerV0(max_bars=10000)
 
         self.fusion_bar_fc = FeatureCalculator()
 
