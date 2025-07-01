@@ -6,7 +6,7 @@ import optuna
 import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
-from joblib import Parallel, delayed
+from joblib import parallel_backend, delayed
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
@@ -14,6 +14,7 @@ from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
 from custom_indicators.toolbox.feature_selection.catfcq_selector import CatFCQSelector
 from custom_indicators.utils.math_tools import log_ret_from_candles
+from custom_indicators.utils.parallel import joblib_pool
 
 
 class OptunaLogManager:
@@ -70,9 +71,10 @@ class TuningBarContainer(FusionBarContainerBase):
         else:
             entropy_log_ret_list = log_ret_from_candles(candles, self.N_ENTROPY)
 
-        entropy_array = Parallel(n_jobs=-2)(
-            delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
-        )
+        with parallel_backend(joblib_pool._backend):
+            entropy_array = [
+                delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
+            ]
 
         return np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)
 
