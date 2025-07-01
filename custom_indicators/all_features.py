@@ -78,12 +78,14 @@ class FeatureCalculator:
         self.candles: np.ndarray = None
         self.sequential = False
         self.cache = {}
+        self.cache_class_indicator = {}
 
     def load(self, candles: np.ndarray, sequential: bool = False):
         self.candles = helpers.slice_candles(candles, sequential)
         self.sequential = sequential
         # 每次load后，缓存清空
         self.cache = {}
+        self.cache_class_indicator = {}
 
     def get(self, features: list[str]):
         res_fe = {}
@@ -396,7 +398,13 @@ class FeatureCalculator:
         ddt = True if "ddt" in kwargs else False
         lag_value = kwargs["lag"] if "lag" in kwargs else None
 
-        cwt_win32 = CWT_SWT(self.candles, 32, sequential=self.sequential)
+        cwt_win32 = (
+            CWT_SWT(self.candles, 32, sequential=self.sequential)
+            if "cwt_win32" not in self.cache_class_indicator
+            else self.cache_class_indicator["cwt_win32"]
+        )
+        self.cache_class_indicator["cwt_win32"] = cwt_win32
+
         if f"cwt_win32_{index}" not in self.cache:
             cwt_win32_res = cwt_win32.res()
             for i in range(cwt_win32_res.shape[1]):
@@ -447,7 +455,13 @@ class FeatureCalculator:
         ddt = True if "ddt" in kwargs else False
         lag_value = kwargs["lag"] if "lag" in kwargs else None
 
-        cwt_win64 = CWT_SWT(self.candles, 64, sequential=self.sequential)
+        cwt_win64 = (
+            CWT_SWT(self.candles, 64, sequential=self.sequential)
+            if "cwt_win64" not in self.cache_class_indicator
+            else self.cache_class_indicator["cwt_win64"]
+        )
+        self.cache_class_indicator["cwt_win64"] = cwt_win64
+
         if f"cwt_win64_{index}" not in self.cache:
             cwt_win64_res = cwt_win64.res()
             for i in range(cwt_win64_res.shape[1]):
@@ -498,7 +512,13 @@ class FeatureCalculator:
         ddt = True if "ddt" in kwargs else False
         lag_value = kwargs["lag"] if "lag" in kwargs else None
 
-        cwt_win128 = CWT_SWT(self.candles, 128, sequential=self.sequential)
+        cwt_win128 = (
+            CWT_SWT(self.candles, 128, sequential=self.sequential)
+            if "cwt_win128" not in self.cache_class_indicator
+            else self.cache_class_indicator["cwt_win128"]
+        )
+        self.cache_class_indicator["cwt_win128"] = cwt_win128
+
         if f"cwt_win128_{index}" not in self.cache:
             cwt_win128_res = cwt_win128.res()
             for i in range(cwt_win128_res.shape[1]):
@@ -549,7 +569,13 @@ class FeatureCalculator:
         ddt = True if "ddt" in kwargs else False
         lag_value = kwargs["lag"] if "lag" in kwargs else None
 
-        cwt_win256 = CWT_SWT(self.candles, 256, sequential=self.sequential)
+        cwt_win256 = (
+            CWT_SWT(self.candles, 256, sequential=self.sequential)
+            if "cwt_win256" not in self.cache_class_indicator
+            else self.cache_class_indicator["cwt_win256"]
+        )
+        self.cache_class_indicator["cwt_win256"] = cwt_win256
+
         if f"cwt_win256_{index}" not in self.cache:
             cwt_win256_res = cwt_win256.res()
             for i in range(cwt_win256_res.shape[1]):
@@ -600,7 +626,13 @@ class FeatureCalculator:
         ddt = True if "ddt" in kwargs else False
         lag_value = kwargs["lag"] if "lag" in kwargs else None
 
-        cwt_win512 = CWT_SWT(self.candles, 512, sequential=self.sequential)
+        cwt_win512 = (
+            CWT_SWT(self.candles, 512, sequential=self.sequential)
+            if "cwt_win512" not in self.cache_class_indicator
+            else self.cache_class_indicator["cwt_win512"]
+        )
+        self.cache_class_indicator["cwt_win512"] = cwt_win512
+
         if f"cwt_win512_{index}" not in self.cache:
             cwt_win512_res = cwt_win512.res()
             for i in range(cwt_win512_res.shape[1]):
@@ -651,7 +683,13 @@ class FeatureCalculator:
         ddt = True if "ddt" in kwargs else False
         lag_value = kwargs["lag"] if "lag" in kwargs else None
 
-        cwt_win1024 = CWT_SWT(self.candles, 1024, sequential=self.sequential)
+        cwt_win1024 = (
+            CWT_SWT(self.candles, 1024, sequential=self.sequential)
+            if "cwt_win1024" not in self.cache_class_indicator
+            else self.cache_class_indicator["cwt_win1024"]
+        )
+        self.cache_class_indicator["cwt_win1024"] = cwt_win1024
+
         if f"cwt_win1024_{index}" not in self.cache:
             cwt_win1024_res = cwt_win1024.res()
             for i in range(cwt_win1024_res.shape[1]):
@@ -1286,7 +1324,13 @@ class FeatureCalculator:
         dt = True if "dt" in kwargs else False
         ddt = True if "ddt" in kwargs else False
 
-        vmd_win32 = VMD_NRBO(self.candles, 32, sequential=self.sequential)
+        vmd_win32 = (
+            VMD_NRBO(self.candles, 32, sequential=self.sequential)
+            if "vmd_win32" not in self.cache_class_indicator
+            else self.cache_class_indicator["vmd_win32"]
+        )
+        self.cache_class_indicator["vmd_win32"] = vmd_win32
+
         if f"vmd_win32_{index}" not in self.cache:
             vmd_win32_res = vmd_win32.res()
             for i in range(vmd_win32_res.shape[1]):
@@ -1337,7 +1381,13 @@ class FeatureCalculator:
         dt = True if "dt" in kwargs else False
         ddt = True if "ddt" in kwargs else False
 
-        vmd_win64 = VMD_NRBO(self.candles, 64, sequential=self.sequential)
+        vmd_win64 = (
+            VMD_NRBO(self.candles, 64, sequential=self.sequential)
+            if "vmd_win64" not in self.cache_class_indicator
+            else self.cache_class_indicator["vmd_win64"]
+        )
+        self.cache_class_indicator["vmd_win64"] = vmd_win64
+
         if f"vmd_win64_{index}" not in self.cache:
             vmd_win64_res = vmd_win64.res()
             for i in range(vmd_win64_res.shape[1]):
@@ -1388,7 +1438,13 @@ class FeatureCalculator:
         dt = True if "dt" in kwargs else False
         ddt = True if "ddt" in kwargs else False
 
-        vmd_win128 = VMD_NRBO(self.candles, 128, sequential=self.sequential)
+        vmd_win128 = (
+            VMD_NRBO(self.candles, 128, sequential=self.sequential)
+            if "vmd_win128" not in self.cache_class_indicator
+            else self.cache_class_indicator["vmd_win128"]
+        )
+        self.cache_class_indicator["vmd_win128"] = vmd_win128
+
         if f"vmd_win128_{index}" not in self.cache:
             vmd_win128_res = vmd_win128.res()
             for i in range(vmd_win128_res.shape[1]):
@@ -1439,7 +1495,13 @@ class FeatureCalculator:
         dt = True if "dt" in kwargs else False
         ddt = True if "ddt" in kwargs else False
 
-        vmd_win256 = VMD_NRBO(self.candles, 256, sequential=self.sequential)
+        vmd_win256 = (
+            VMD_NRBO(self.candles, 256, sequential=self.sequential)
+            if "vmd_win256" not in self.cache_class_indicator
+            else self.cache_class_indicator["vmd_win256"]
+        )
+        self.cache_class_indicator["vmd_win256"] = vmd_win256
+
         if f"vmd_win256_{index}" not in self.cache:
             vmd_win256_res = vmd_win256.res()
             for i in range(vmd_win256_res.shape[1]):
@@ -1490,7 +1552,13 @@ class FeatureCalculator:
         dt = True if "dt" in kwargs else False
         ddt = True if "ddt" in kwargs else False
 
-        vmd_win512 = VMD_NRBO(self.candles, 512, sequential=self.sequential)
+        vmd_win512 = (
+            VMD_NRBO(self.candles, 512, sequential=self.sequential)
+            if "vmd_win512" not in self.cache_class_indicator
+            else self.cache_class_indicator["vmd_win512"]
+        )
+        self.cache_class_indicator["vmd_win512"] = vmd_win512
+
         if f"vmd_win512_{index}" not in self.cache:
             vmd_win512_res = vmd_win512.res()
             for i in range(vmd_win512_res.shape[1]):
@@ -1541,7 +1609,13 @@ class FeatureCalculator:
         dt = True if "dt" in kwargs else False
         ddt = True if "ddt" in kwargs else False
 
-        vmd_win1024 = VMD_NRBO(self.candles, 1024, sequential=self.sequential)
+        vmd_win1024 = (
+            VMD_NRBO(self.candles, 1024, sequential=self.sequential)
+            if "vmd_win1024" not in self.cache_class_indicator
+            else self.cache_class_indicator["vmd_win1024"]
+        )
+        self.cache_class_indicator["vmd_win1024"] = vmd_win1024
+
         if f"vmd_win1024_{index}" not in self.cache:
             vmd_win1024_res = vmd_win1024.res()
             for i in range(vmd_win1024_res.shape[1]):
