@@ -1,5 +1,5 @@
 import numpy as np
-from joblib import parallel_backend, delayed
+from joblib import parallel_backend, delayed, Parallel
 
 from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
@@ -34,8 +34,10 @@ class FusionBarContainerV0(FusionBarContainerBase):
             entropy_log_ret_list = log_ret_from_candles(candles, self.N_ENTROPY)
 
         with parallel_backend(joblib_pool._backend):
-            entropy_array = [
+            entropy_array = Parallel()(
                 delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
-            ]
+            )
 
-        return np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)
+        entropy_array = np.array(entropy_array)
+        threshold = np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)
+        return threshold

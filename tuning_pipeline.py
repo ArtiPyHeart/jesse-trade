@@ -6,7 +6,7 @@ import optuna
 import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
-from joblib import delayed, parallel_backend
+from joblib import delayed, parallel_backend, Parallel
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
@@ -72,9 +72,10 @@ class TuningBarContainer(FusionBarContainerBase):
             entropy_log_ret_list = log_ret_from_candles(candles, self.N_ENTROPY)
 
         with parallel_backend(joblib_pool._backend):
-            entropy_array = [
+            entropy_array = Parallel()(
                 delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
-            ]
+            )
+        entropy_array = np.array(entropy_array)
 
         return np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)
 

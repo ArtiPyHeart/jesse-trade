@@ -1,5 +1,5 @@
 import numpy as np
-from joblib import parallel_backend, delayed
+from joblib import parallel_backend, delayed, Parallel
 from jesse.helpers import slice_candles, get_candle_source
 
 from custom_indicators.toolbox.entropy.apen_sampen import approximate_entropy_numba
@@ -27,9 +27,9 @@ def approximate_entropy_indicator(
             log_ret_list = log_ret_from_current_price(src, period)
 
         with parallel_backend(joblib_pool._backend):
-            entropy_array = [
+            entropy_array = Parallel()(
                 delayed(approximate_entropy_numba)(i) for i in log_ret_list
-            ]
+            )
 
         entropy_array = np.hstack(([np.nan] * period, entropy_array))
         return entropy_array

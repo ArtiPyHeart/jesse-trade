@@ -1,5 +1,5 @@
 import numpy as np
-from joblib import parallel_backend, delayed
+from joblib import parallel_backend, delayed, Parallel
 
 from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
@@ -65,7 +65,10 @@ class EntropyBarContainer:
         window_on_vol = np.clip(window_on_vol, self.MIN_WINDOW, self.MAX_WINDOW)
         log_ret_list = log_ret_from_candles(candle_for_vol, window_on_vol)
         with parallel_backend(joblib_pool._backend):
-            entropy_array = [delayed(sample_entropy_numba)(i) for i in log_ret_list]
+            entropy_array = Parallel()(
+                delayed(sample_entropy_numba)(i) for i in log_ret_list
+            )
+        entropy_array = np.array(entropy_array)
         # 统一处理长度
         if self.bars.size == 0:
             len_gap = len(candles) - len(entropy_array)
