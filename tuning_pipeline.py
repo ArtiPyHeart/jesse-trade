@@ -6,13 +6,13 @@ import optuna
 import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
-from joblib import parallel_backend, delayed
+from joblib import delayed, parallel_backend
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
 from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
-from custom_indicators.toolbox.feature_selection.catfcq_selector import CatFCQSelector
+from custom_indicators.toolbox.feature_selection.rfcq_selector import RFCQSelector
 from custom_indicators.utils.math_tools import log_ret_from_candles
 from custom_indicators.utils.parallel import joblib_pool
 
@@ -249,7 +249,7 @@ class BacktestPipeline:
         assert len(self.df_feature) == len(self.side_label)
 
     def side_feature_selection(self):
-        selector = CatFCQSelector(verbose=False)
+        selector = RFCQSelector(verbose=False)
         selector.fit(self.df_feature, self.side_label)
         side_res = pd.Series(
             selector.relevance_, index=selector.variables_
@@ -358,7 +358,7 @@ class BacktestPipeline:
         return meta_label
 
     def meta_feature_selection(self):
-        selector = CatFCQSelector(verbose=False)
+        selector: RFCQSelector = RFCQSelector(verbose=False)
         selector.fit(self.df_feature, self.meta_label)
         meta_res = pd.Series(
             selector.relevance_, index=selector.variables_
