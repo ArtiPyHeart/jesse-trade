@@ -1,10 +1,9 @@
 import numpy as np
 import pywt
 from jesse.helpers import get_candle_source
-from joblib import parallel_backend, delayed, Parallel
+from joblib import delayed, Parallel
 
 from custom_indicators.prod_indicator._indicator_base._cls_ind import IndicatorBase
-from custom_indicators.utils.parallel import joblib_pool
 
 SAMPLING_HOURS = 0.5
 MIN_SCALE = 8
@@ -63,7 +62,6 @@ class CWT_SWT(IndicatorBase):
             self.src[idx - self.window : idx]
             for idx in range(self.window, len(self.src) + 1)
         ]
-        with parallel_backend(joblib_pool._backend):
-            res = Parallel()(delayed(_cwt)(i) for i in src_with_window)
+        res = Parallel()(delayed(_cwt)(i) for i in src_with_window)
 
         self.raw_result.extend(res)

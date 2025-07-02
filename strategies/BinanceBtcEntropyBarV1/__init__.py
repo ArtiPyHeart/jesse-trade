@@ -1,7 +1,12 @@
+import os
+
 import numpy as np
 import pandas as pd
 from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
+from joblib._parallel_backends import LokyBackend  # 内部 API
+from joblib.externals.loky import get_reusable_executor
+from joblib.parallel import register_parallel_backend
 
 from custom_indicators.all_features import FeatureCalculator
 from custom_indicators.toolbox.bar.fusion.v0 import FusionBarContainerV0
@@ -13,6 +18,15 @@ from .config import (
     get_meta_model,
     get_side_model,
 )
+
+# joblib设置
+# ① 主线程启动时就建好进程池
+executor = get_reusable_executor(
+    max_workers=max(os.cpu_count() - 1, 1), timeout=None, reuse=True
+)  # 永不过期
+backend = LokyBackend(executor=executor, timeout=None)
+# ② 把它注册成全局 backend
+register_parallel_backend("loky_reuse", lambda **kw: backend, make_default=True)
 
 META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
