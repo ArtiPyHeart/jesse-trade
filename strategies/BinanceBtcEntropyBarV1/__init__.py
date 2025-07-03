@@ -52,7 +52,11 @@ class BinanceBtcEntropyBarV1(Strategy):
 
     def cancel_active_orders(self):
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
-        alive_orders = [o for o in self.orders if o.is_active or o.is_partially_filled]
+        alive_orders = [
+            o
+            for o in self.orders
+            if (o.is_active or o.is_partially_filled) and not o.is_stop_loss
+        ]
         for order in alive_orders:
             if helpers.now_to_timestamp() - order.created_at > ORDER_TIMEOUT:
                 order.cancel()
