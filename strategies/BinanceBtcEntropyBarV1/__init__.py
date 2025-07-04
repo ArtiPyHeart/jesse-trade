@@ -22,7 +22,7 @@ from .config import (
 # joblib设置
 # ① 主线程启动时就建好进程池
 executor = get_reusable_executor(
-    max_workers=max(os.cpu_count() - 1, 1), timeout=None, reuse=True
+    max_workers=os.cpu_count(), timeout=None, reuse=True
 )  # 永不过期
 backend = LokyBackend(executor=executor, timeout=None)
 # ② 把它注册成全局 backend
@@ -50,24 +50,24 @@ class BinanceBtcEntropyBarV1(Strategy):
         candles = candles[candles[:, 5] > 0]
         return candles
 
-    def cancel_active_orders(self, with_stoploss=False):
-        # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
-        if with_stoploss:
-            alive_orders = [o for o in self.orders if o.is_cancellable]
-        else:
-            alive_orders = [
-                o for o in self.orders if not o.is_stop_loss and o.is_cancellable
-            ]
-
-        for order in alive_orders:
-            if helpers.now_to_timestamp() - order.created_at > ORDER_TIMEOUT:
-                order.cancel()
+    # def cancel_active_orders(self, with_stoploss=False):
+    #     # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
+    #     if with_stoploss:
+    #         alive_orders = [o for o in self.orders if o.is_cancellable]
+    #     else:
+    #         alive_orders = [
+    #             o for o in self.orders if not o.is_stop_loss and o.is_cancellable
+    #         ]
+    #
+    #     for order in alive_orders:
+    #         if helpers.now_to_timestamp() - order.created_at > ORDER_TIMEOUT:
+    #             order.cancel()
 
     ############################### dollar bar 预处理 ##############################
     def before(self):
         self.main_bar_container.update_with_candles(self.cleaned_candles)
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
-        self.cancel_active_orders()
+        # self.cancel_active_orders()
 
     @property
     def should_trade_main_bar(self) -> bool:
@@ -139,9 +139,10 @@ class BinanceBtcEntropyBarV1(Strategy):
         return False
 
     def go_long(self):
-        self.cancel_active_orders(with_stoploss=True)
+        # self.cancel_active_orders(with_stoploss=True)
         # 打开多仓
-        entry_price = self.price - 0.1
+        # entry_price = self.price - 0.1
+        entry_price = self.price
         qty = utils.size_to_qty(
             self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
         )
@@ -149,9 +150,10 @@ class BinanceBtcEntropyBarV1(Strategy):
         self.stop_loss = qty, entry_price * (1 - STOP_LOSS_RATIO)
 
     def go_short(self):
-        self.cancel_active_orders(with_stoploss=True)
+        # self.cancel_active_orders(with_stoploss=True)
         # 打开空仓
-        entry_price = self.price + 0.1
+        # entry_price = self.price + 0.1
+        entry_price = self.price
         qty = utils.size_to_qty(
             self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
         )
