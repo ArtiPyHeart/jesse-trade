@@ -31,7 +31,7 @@ register_parallel_backend("loky_reuse", lambda **kw: backend, make_default=True)
 META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
 STOP_LOSS_RATIO = 0.04
-ORDER_TIMEOUT = 300 * 1000
+ORDER_TIMEOUT = 600 * 1000
 
 
 class BinanceBtcEntropyBarV1(Strategy):
@@ -50,13 +50,15 @@ class BinanceBtcEntropyBarV1(Strategy):
         candles = candles[candles[:, 5] > 0]
         return candles
 
-    def cancel_active_orders(self):
+    def cancel_active_orders(self, with_stoploss=False):
         # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
-        alive_orders = [
-            o
-            for o in self.orders
-            if (o.is_active or o.is_partially_filled) and not o.is_stop_loss
-        ]
+        if with_stoploss:
+            alive_orders = [o for o in self.orders if o.is_cancellable]
+        else:
+            alive_orders = [
+                o for o in self.orders if not o.is_stop_loss and o.is_cancellable
+            ]
+
         for order in alive_orders:
             if helpers.now_to_timestamp() - order.created_at > ORDER_TIMEOUT:
                 order.cancel()
@@ -137,7 +139,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         return False
 
     def go_long(self):
-        self.cancel_active_orders()
+        self.cancel_active_orders(with_stoploss=True)
         # 打开多仓
         entry_price = self.price - 0.1
         qty = utils.size_to_qty(
@@ -147,7 +149,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         self.stop_loss = qty, entry_price * (1 - STOP_LOSS_RATIO)
 
     def go_short(self):
-        self.cancel_active_orders()
+        self.cancel_active_orders(with_stoploss=True)
         # 打开空仓
         entry_price = self.price + 0.1
         qty = utils.size_to_qty(
