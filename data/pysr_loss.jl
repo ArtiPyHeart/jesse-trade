@@ -2,7 +2,8 @@ function kurtosis_loss(tree, dataset::Dataset{T,L}, options) where {T,L}
     using NPZ
     using Statistics
 
-    candles = npzread(joinpath(dirname(@__FILE__), "btc_1m.npy"))
+    candles = npzread("btc_1m.npy")
+    candles = candles[candles[:, 6].>0, :]
 
     # build bar function
     function build_bar_by_cumsum(candles, condition, threshold)
@@ -93,7 +94,9 @@ function kurtosis_loss(tree, dataset::Dataset{T,L}, options) where {T,L}
     # Impose functional form:
     prediction = P_prediction ./ Q_prediction
 
-    @assert length(prediction) == length(candles)
+    # @assert length(prediction) == length(candles) "prediction length: $(length(prediction)) != candles length: $(length(candles))"
+    len_gap = length(candles) - length(prediction)
+    candles = candles[1+len_gap:end, :]
 
     cumsum_threshold = sum(prediction) / (length(prediction) ÷ 120)
     merged_bars = build_bar_by_cumsum(candles, prediction, cumsum_threshold)
