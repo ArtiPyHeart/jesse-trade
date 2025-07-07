@@ -76,23 +76,8 @@ function kurtosis_loss(tree, dataset::Dataset{T,L}, options) where {T,L}
         return kurt
     end
 
-    # Require root node to be binary, so we can split it,
-    # otherwise return a large loss:
-    tree.degree != 2 && return L(Inf)
-
-    P = tree.l
-    Q = tree.r
-
-    # Evaluate numerator:
-    P_prediction, flag = eval_tree_array(P, dataset.X, options)
+    prediction, flag = eval_tree_array(tree, dataset.X, options)
     !flag && return L(Inf)
-
-    # Evaluate denominator:
-    Q_prediction, flag = eval_tree_array(Q, dataset.X, options)
-    !flag && return L(Inf)
-
-    # Impose functional form:
-    prediction = P_prediction ./ Q_prediction
 
     # @assert length(prediction) == length(candles) "prediction length: $(length(prediction)) != candles length: $(length(candles))"
     len_gap = length(candles) - length(prediction)
