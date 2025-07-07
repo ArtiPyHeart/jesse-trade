@@ -22,3 +22,7 @@ alwaysApply: false
 Python最佳实践：
 1. 组织Python代码时，对于只需要内部使用的子函数、子模块，尽量使用下划线作为前缀，减少其他文件import时的认知负担；
 2. 使用numba对效率进行优化时，必须对代码进行单元测试，以保证修改后的算法能正确运行并输出与原始算法相同的结果。
+
+Julia最佳实践：
+1. 使用JuliaCall来完成Python与Julia的交互；
+2. 在书写Julia代码时，既要考虑到Julia代码自身的最佳实践，也要考虑与Python交互时的兼容性；
