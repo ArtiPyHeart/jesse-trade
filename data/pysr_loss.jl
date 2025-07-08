@@ -1,13 +1,14 @@
-function kurtosis_loss(tree, dataset::Dataset{T,L}, options) where {T,L}
-    using NPZ
-    using Statistics
+using NPZ
+using Statistics
 
-    candles = npzread("btc_1m.npy")
-    candles = candles[candles[:, 6].>0, :]
+function kurtosis_loss(tree, dataset::Dataset{T,L}, options) where {T,L}
+    raw_candles = npzread("btc_1m.npy")
+    raw_candles = raw_candles[raw_candles[:, 6].>0, :]
 
     # build bar function
     function build_bar_by_cumsum(candles, condition, threshold)
         n = size(candles, 1)
+        @assert n>0 "no candles"
         bars = zeros(Float64, n, 6)
         bar_index = 1
 
@@ -50,13 +51,13 @@ function kurtosis_loss(tree, dataset::Dataset{T,L}, options) where {T,L}
         return bars[1:bar_index-1, :]
     end
 
-    function compute_kurtosis(merged_bars)
-        n = size(merged_bars, 1)
+    function compute_kurtosis(m_bars)
+        n = size(m_bars, 1)
         if n <= 5
             return Inf
         end
 
-        close_prices = merged_bars[:, 3]
+        close_prices = m_bars[:, 3]
         log_returns = log.(close_prices[6:end] ./ close_prices[1:end-5])
 
         if length(log_returns) == 0
@@ -79,26 +80,29 @@ function kurtosis_loss(tree, dataset::Dataset{T,L}, options) where {T,L}
     prediction, flag = eval_tree_array(tree, dataset.X, options)
     !flag && return L(Inf)
 
-    # @assert length(prediction) == length(candles) "prediction length: $(length(prediction)) != candles length: $(length(candles))"
-    len_gap = length(candles) - length(prediction)
-    candles = candles[1+len_gap:end, :]
+    @assert size(dataset.X, 1) <= size(raw_candles, 1) "dataset.X length: $(size(dataset.X, 1)) > raw_candles length: $(size(raw_candles, 1))"
+    len_gap = size(raw_candles, 1) - size(dataset.X, 1)
+    raw_candles = raw_candles[1+len_gap:end, :]
 
     cumsum_threshold = sum(prediction) / (length(prediction) ÷ 120)
-    merged_bars = build_bar_by_cumsum(candles, prediction, cumsum_threshold)
+    merged_bars = build_bar_by_cumsum(raw_candles, prediction, cumsum_threshold)
 
     # 如果合并后的bar数量小于原始bar数量太多，则返回Inf
-    if length(merged_bars) < length(candles) ÷ 300
+    if size(merged_bars, 1) < 8000
         return L(Inf)
     end
 
     # 计算总体kurtosis
-    kurtosis_all = compute_kurtosis(merged_bars)
+    index_1_3 = size(merged_bars, 1) ÷ 3
+    index_2_3 = size(merged_bars, 1) * 2 ÷ 3
+    @assert 0 < index_1_3 < index_2_3 < size(merged_bars, 1) "index_1_3: $index_1_3, index_2_3: $index_2_3, size(merged_bars, 1): $(size(merged_bars, 1))"
+    kurtosis_all = compute_kurtosis(merged_bars[:, :])
     # 计算前1/3数据的kurtosis
-    kurtosis_first_third = compute_kurtosis(merged_bars[1:end÷3, :])
+    kurtosis_first_third = compute_kurtosis(merged_bars[1:index_1_3, :])
     # 计算中间1/3数据的kurtosis
-    kurtosis_middle_third = compute_kurtosis(merged_bars[end÷3:2*end÷3, :])
+    kurtosis_middle_third = compute_kurtosis(merged_bars[index_1_3:index_2_3, :])
     # 计算后1/3数据的kurtosis
-    kurtosis_last_third = compute_kurtosis(merged_bars[end÷3:end, :])
+    kurtosis_last_third = compute_kurtosis(merged_bars[index_2_3:end, :])
 
     kurtosis = mean([
         kurtosis_all,
