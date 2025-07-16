@@ -148,7 +148,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         # entry_price = self.price - 0.1
         entry_price = self.price
         qty = utils.size_to_qty(
-            self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
+            self.leveraged_available_margin * 0.95, entry_price, fee_rate=self.fee_rate
         )
         self.buy = qty, entry_price
         self.stop_loss = qty, entry_price * (1 - self.loss_ratio_with_leverage)
@@ -159,7 +159,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         # entry_price = self.price + 0.1
         entry_price = self.price
         qty = utils.size_to_qty(
-            self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
+            self.leveraged_available_margin * 0.95, entry_price, fee_rate=self.fee_rate
         )
         self.sell = qty, entry_price
         self.stop_loss = qty, entry_price * (1 + self.loss_ratio_with_leverage)
