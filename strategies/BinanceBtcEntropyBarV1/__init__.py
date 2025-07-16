@@ -30,7 +30,7 @@ register_parallel_backend("loky_reuse", lambda **kw: backend, make_default=True)
 
 META_MODEL_THRESHOLD = 0.5
 SIDE_MODEL_THRESHOLD = 0.5
-STOP_LOSS_RATIO = 0.04
+STOP_LOSS_RATIO_NO_LEVERAGE = 0.05
 ORDER_TIMEOUT = 600 * 1000
 
 
@@ -49,6 +49,10 @@ class BinanceBtcEntropyBarV1(Strategy):
         candles = self.get_candles("Binance Perpetual Futures", "BTC-USDT", "1m")
         candles = candles[candles[:, 5] > 0]
         return candles
+
+    @property
+    def loss_ratio_with_leverage(self):
+        return STOP_LOSS_RATIO_NO_LEVERAGE / self.leverage
 
     # def cancel_active_orders(self, with_stoploss=False):
     #     # 检查超时的活跃订单，如果订单超时依然没有成交，则取消订单
@@ -147,7 +151,7 @@ class BinanceBtcEntropyBarV1(Strategy):
             self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
         )
         self.buy = qty, entry_price
-        self.stop_loss = qty, entry_price * (1 - STOP_LOSS_RATIO)
+        self.stop_loss = qty, entry_price * (1 - self.loss_ratio_with_leverage)
 
     def go_short(self):
         # self.cancel_active_orders(with_stoploss=True)
@@ -158,7 +162,7 @@ class BinanceBtcEntropyBarV1(Strategy):
             self.leveraged_available_margin, entry_price, fee_rate=self.fee_rate
         )
         self.sell = qty, entry_price
-        self.stop_loss = qty, entry_price * (1 + STOP_LOSS_RATIO)
+        self.stop_loss = qty, entry_price * (1 + self.loss_ratio_with_leverage)
 
     def update_position(self):
         if not self.should_trade_main_bar:
