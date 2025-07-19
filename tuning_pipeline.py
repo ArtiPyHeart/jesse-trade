@@ -6,7 +6,7 @@ import optuna
 import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
-from joblib import delayed, Parallel
+from joblib import Parallel, delayed
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
@@ -44,12 +44,19 @@ optuna_log_manager = OptunaLogManager()
 
 class TuningBarContainer(FusionBarContainerBase):
     def __init__(
-        self, n1: int, n2: int, n_entropy: int, threshold: float, max_bars=500000
+        self,
+        n1: int,
+        n2: int,
+        n_entropy: int,
+        en_div_thres: float,
+        threshold: float,
+        max_bars=500000,
     ):
         super().__init__(max_bars, threshold)
         self.N_1 = n1
         self.N_2 = n2
         self.N_ENTROPY = n_entropy
+        self.EN_DIV_THRES = en_div_thres
 
     @property
     def max_lookback(self) -> int:
@@ -73,7 +80,7 @@ class TuningBarContainer(FusionBarContainerBase):
         entropy_array = Parallel()(
             delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
         )
-        entropy_array = np.array(entropy_array)
+        entropy_array = np.array(entropy_array) / self.EN_DIV_THRES
 
         return np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)
 
@@ -107,8 +114,10 @@ class BacktestPipeline:
     def merged_bar(self, value):
         self._merged_bar = value
 
-    def init_bar_container(self, n1, n2, n_entropy, threshold=0.5):
-        self.bar_container = TuningBarContainer(n1, n2, n_entropy, threshold)
+    def init_bar_container(self, n1, n2, n_entropy, en_div_thres, threshold=0.5):
+        self.bar_container = TuningBarContainer(
+            n1, n2, n_entropy, en_div_thres, threshold
+        )
 
     def get_threshold_array(self):
         return self.bar_container.get_thresholds(self.raw_candles)
@@ -549,10 +558,11 @@ def tune_pipeline(trial: optuna.Trial):
     n1 = trial.suggest_int("n1", 1, 300)
     n2 = trial.suggest_int("n2", 1, 300)
     n_entropy = trial.suggest_int("n_entropy", 30, 300)
-    pipeline.init_bar_container(n1, n2, n_entropy)
+    en_div_thres = trial.suggest_float("en_div_thres", 1, 100)
+    pipeline.init_bar_container(n1, n2, n_entropy, en_div_thres)
     raw_threshold_array = pipeline.get_threshold_array()
-    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 45)
-    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 360)
+    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 30)
+    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 720)
     pipeline.set_threshold(
         trial.suggest_float("threshold", threshold_min, threshold_max)
     )
