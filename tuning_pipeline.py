@@ -558,10 +558,10 @@ def tune_pipeline(trial: optuna.Trial):
     n1 = trial.suggest_int("n1", 1, 300)
     n2 = trial.suggest_int("n2", 1, 300)
     n_entropy = trial.suggest_int("n_entropy", 30, 300)
-    en_div_thres = trial.suggest_float("en_div_thres", 1, 1000)
+    en_div_thres = trial.suggest_float("en_div_thres", 1, 100)
     pipeline.init_bar_container(n1, n2, n_entropy, en_div_thres)
     raw_threshold_array = pipeline.get_threshold_array()
-    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 30)
+    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 120)
     threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 720)
     if threshold_max < threshold_min:
         threshold_min, threshold_max = threshold_max, threshold_min
