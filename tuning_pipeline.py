@@ -563,6 +563,9 @@ def tune_pipeline(trial: optuna.Trial):
     raw_threshold_array = pipeline.get_threshold_array()
     threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 30)
     threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 720)
+    if threshold_max < threshold_min:
+        threshold_min, threshold_max = threshold_max, threshold_min
+
     pipeline.set_threshold(
         trial.suggest_float("threshold", threshold_min, threshold_max)
     )
