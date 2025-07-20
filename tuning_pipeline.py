@@ -249,7 +249,7 @@ class BacktestPipeline:
 
     def get_df_feature(self):
         self.df_feature = pd.DataFrame(
-            feature_bundle(self.merged_bar[:-1], sequential=True),
+            feature_bundle(self.merged_bar[:-1], sequential=True, lightweighted=True),
             index=self.merged_bar[:-1, 0].astype(int),
         )
         self.df_feature = self.df_feature.iloc[self.df_feature.isna().sum().max() :]
@@ -561,8 +561,8 @@ def tune_pipeline(trial: optuna.Trial):
     en_div_thres = trial.suggest_float("en_div_thres", 1, 100)
     pipeline.init_bar_container(n1, n2, n_entropy, en_div_thres)
     raw_threshold_array = pipeline.get_threshold_array()
-    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 120)
-    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 720)
+    threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 60)
+    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 540)
     if threshold_max < threshold_min:
         threshold_min, threshold_max = threshold_max, threshold_min
 
@@ -592,3 +592,29 @@ def tune_pipeline(trial: optuna.Trial):
         f"{side_auc = :.6f} {meta_f1 = :.6f} {meta_precision = :.6f} {meta_recall = :.6f} {calmar_ratio = :.6f} {meta_label_train_count = } {meta_label_test_count = }"
     )
     return calmar_ratio * side_auc**3 * meta_f1**2
+
+
+if __name__ == "__main__":
+    from optuna_config import create_robust_study, safe_optimize
+
+    # 方法1: 创建新的研究
+    study_name = "backtest_tuning_find_v1_bar"
+
+    with optuna_log_manager.verbose_optimization():
+        study = create_robust_study(
+            study_name=study_name,
+            storage_dir="optuna_storage",
+            direction="maximize",
+            n_startup_trials=5000,
+            percentile_for_pruning=20.0,
+        )
+
+        # 使用安全优化函数
+        safe_optimize(
+            study=study,
+            objective=tune_pipeline,
+            n_trials=10000,
+            n_jobs=1,
+            gc_after_trial=True,
+            show_progress_bar=False,
+        )
