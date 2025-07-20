@@ -558,13 +558,13 @@ def tune_pipeline(trial: optuna.Trial):
     n1 = trial.suggest_int("n1", 1, 300)
     n2 = trial.suggest_int("n2", 1, 300)
     n_entropy = trial.suggest_int("n_entropy", 30, 300)
-    en_div_thres = trial.suggest_float("en_div_thres", 1, 100)
+    en_div_thres = trial.suggest_float("en_div_thres", 1, 20)
     pipeline.init_bar_container(n1, n2, n_entropy, en_div_thres)
     raw_threshold_array = pipeline.get_threshold_array()
     threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 60)
     threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 540)
-    if threshold_max < threshold_min:
-        threshold_min, threshold_max = threshold_max, threshold_min
+    if threshold_min < 0:
+        return -1000
 
     pipeline.set_threshold(
         trial.suggest_float("threshold", threshold_min, threshold_max)
@@ -605,7 +605,7 @@ if __name__ == "__main__":
             study_name=study_name,
             storage_dir="optuna_storage",
             direction="maximize",
-            n_startup_trials=5000,
+            n_startup_trials=10000,
             percentile_for_pruning=20.0,
         )
 
@@ -613,7 +613,7 @@ if __name__ == "__main__":
         safe_optimize(
             study=study,
             objective=tune_pipeline,
-            n_trials=10000,
+            n_trials=12000,
             n_jobs=1,
             gc_after_trial=True,
             show_progress_bar=False,
