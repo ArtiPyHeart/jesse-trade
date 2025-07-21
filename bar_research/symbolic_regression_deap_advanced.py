@@ -191,6 +191,9 @@ class AdvancedSymbolicRegressionDEAP:
     高级DEAP符号回归实现，支持多目标优化和高级特性
     """
 
+    CUSUM_WINDOW = 120
+    MAX_CUSUM_WINDOW = 360
+
     def __init__(
         self,
         population_size: int = 300,
@@ -262,8 +265,8 @@ class AdvancedSymbolicRegressionDEAP:
         # 基本运算
         self.pset.addPrimitive(operator.add, [float, float], float, name="add")
         self.pset.addPrimitive(operator.sub, [float, float], float, name="sub")
-        self.pset.addPrimitive(operator.mul, [float, float], float, name="mul")
-        self.pset.addPrimitive(protected_div, [float, float], float, name="div")
+        # self.pset.addPrimitive(operator.mul, [float, float], float, name="mul")
+        # self.pset.addPrimitive(protected_div, [float, float], float, name="div")
         self.pset.addPrimitive(operator.neg, [float], float, name="neg")
         self.pset.addPrimitive(operator.abs, [float], float, name="abs")
 
@@ -272,15 +275,15 @@ class AdvancedSymbolicRegressionDEAP:
         self.pset.addPrimitive(min, [float, float], float, name="min")
 
         # 高级数学函数
-        self.pset.addPrimitive(protected_sqrt, [float], float, name="sqrt")
-        self.pset.addPrimitive(protected_log, [float], float, name="log")
-        self.pset.addPrimitive(protected_exp, [float], float, name="exp")
-        self.pset.addPrimitive(protected_pow, [float, float], float, name="pow")
-        self.pset.addPrimitive(np.sign, [float], float, name="sign")
-        self.pset.addPrimitive(tanh_scaled, [float], float, name="tanh")
+        # self.pset.addPrimitive(protected_sqrt, [float], float, name="sqrt")
+        # self.pset.addPrimitive(protected_log, [float], float, name="log")
+        # self.pset.addPrimitive(protected_exp, [float], float, name="exp")
+        # self.pset.addPrimitive(protected_pow, [float, float], float, name="pow")
+        # self.pset.addPrimitive(np.sign, [float], float, name="sign")
+        # self.pset.addPrimitive(tanh_scaled, [float], float, name="tanh")
 
         # 条件运算
-        self.pset.addPrimitive(if_then_else, [float, float, float], float, name="ite")
+        # self.pset.addPrimitive(if_then_else, [float, float, float], float, name="ite")
 
         # 常数
         self.pset.addEphemeralConstant("rand_const", rand_const, float)
@@ -308,20 +311,16 @@ class AdvancedSymbolicRegressionDEAP:
                 y_pred = np.array([func(*x) for x in self.X_scaled])
                 self.semantic_cache[ind_str] = y_pred
             except Exception:
-                return (1000.0, 1000.0)
-
-        # 检查有效性
-        if len(y_pred) <= 2 or np.any(np.isnan(y_pred)) or np.any(np.isinf(y_pred)):
-            return (1000.0, 1000.0)
+                return 1000.0, 1000.0
 
         # 计算峰度目标
         try:
-            cumsum_threshold = np.sum(np.abs(y_pred)) / (
-                len(self.candles_in_metrics) // 120
+            cumsum_threshold = np.sum(y_pred) / (
+                len(self.candles_in_metrics) // self.CUSUM_WINDOW
             )
 
-            if cumsum_threshold <= 0:
-                return (1000.0, 1000.0)
+            # if cumsum_threshold <= 0:
+            #     return 1000.0, 1000.0
 
             merged_bar = build_bar_by_cumsum(
                 self.candles_in_metrics,
@@ -330,18 +329,18 @@ class AdvancedSymbolicRegressionDEAP:
                 reverse=False,
             )
 
-            if len(merged_bar) < len(self.candles_in_metrics) // 240:
-                return (1000.0, 1000.0)
+            if len(merged_bar) < len(self.candles_in_metrics) // self.MAX_CUSUM_WINDOW:
+                return 1000.0, 1000.0
 
             kurtosis_deviation = self._calculate_kurtosis(merged_bar)
 
         except Exception:
-            return (1000.0, 1000.0)
+            return 1000.0, 1000.0
 
         # 计算复杂度（考虑深度和大小）
         complexity = len(individual) + individual.height * 2
 
-        return (kurtosis_deviation, complexity)
+        return kurtosis_deviation, complexity
 
     def _calculate_kurtosis(self, merged_bar: np.ndarray) -> float:
         """计算峰度偏差"""
@@ -360,9 +359,10 @@ class AdvancedSymbolicRegressionDEAP:
         kurtosis = stats.kurtosis(standard, axis=None, fisher=False, nan_policy="omit")
 
         # 同时考虑峰度和偏度
-        skewness = abs(stats.skew(standard))
+        # skewness = abs(stats.skew(standard))
 
-        return abs(kurtosis - 3.0) + 0.1 * skewness
+        # return abs(kurtosis - 3.0) + 0.1 * skewness
+        return kurtosis
 
     def _semantic_crossover(self, ind1, ind2):
         """
@@ -373,8 +373,11 @@ class AdvancedSymbolicRegressionDEAP:
         func2 = gp.compile(expr=ind2, pset=self.pset)
 
         try:
-            output1 = np.array([func1(*x) for x in self.X_scaled[:100]])  # 使用子集加速
-            output2 = np.array([func2(*x) for x in self.X_scaled[:100]])
+            # output1 = np.array([func1(*x) for x in self.X_scaled[:100]])  # 使用子集加速
+            # output2 = np.array([func2(*x) for x in self.X_scaled[:100]])
+
+            output1 = np.array([func1(*x) for x in self.X_scaled])
+            output2 = np.array([func2(*x) for x in self.X_scaled])
 
             # 计算语义相似度
             if np.std(output1) > 0 and np.std(output2) > 0:
@@ -588,6 +591,8 @@ class AdvancedSymbolicRegressionDEAP:
         self,
         X: np.ndarray,
         feature_names: List[str],
+        NA_MAX_NUM: int,
+        stand_scale: bool = False,
         candles_path: str = "data/btc_1m.npy",
     ):
         """训练模型"""
@@ -595,22 +600,25 @@ class AdvancedSymbolicRegressionDEAP:
         self.feature_names = feature_names
 
         # 特征标准化
-        self.scaler = StandardScaler()
-        self.X_scaled = self.scaler.fit_transform(X)
+        if stand_scale:
+            self.scaler = StandardScaler()
+            self.X_scaled = self.scaler.fit_transform(X)
+        else:
+            self.X_scaled = X
 
         # 加载数据
         self.candles = np.load(candles_path)
         self.candles = self.candles[self.candles[:, 5] > 0]
 
-        if len(self.candles) > 10000:
-            test_start_idx = len(self.candles) - 10000
-            self.candles = self.candles[test_start_idx:]
-            self.X = self.X[-10000:] if len(self.X) > 10000 else self.X
-            self.X_scaled = (
-                self.X_scaled[-10000:] if len(self.X_scaled) > 10000 else self.X_scaled
-            )
+        # if len(self.candles) > 10000:
+        #     test_start_idx = len(self.candles) - 10000
+        #     self.candles = self.candles[test_start_idx:]
+        #     self.X = self.X[-10000:] if len(self.X) > 10000 else self.X
+        #     self.X_scaled = (
+        #         self.X_scaled[-10000:] if len(self.X_scaled) > 10000 else self.X_scaled
+        #     )
 
-        self.NA_MAX_NUM = 0
+        self.NA_MAX_NUM = NA_MAX_NUM
         self.candles_in_metrics = self.candles[self.NA_MAX_NUM :]
 
         # 创建原语集
@@ -779,9 +787,9 @@ class AdvancedSymbolicRegressionDEAP:
         objectives = np.array([ind.fitness.values for ind in self.pareto_front])
 
         plt.scatter(objectives[:, 0], objectives[:, 1], alpha=0.6, s=50)
-        plt.xlabel("峰度偏差 (Kurtosis Deviation)")
-        plt.ylabel("复杂度 (Complexity)")
-        plt.title("Pareto Front - 峰度 vs 复杂度")
+        plt.xlabel("Kurtosis Deviation")
+        plt.ylabel("Complexity")
+        plt.title("Pareto Front - Kurtosis vs Complexity")
         plt.grid(True, alpha=0.3)
 
         # 标记最佳几个解
@@ -822,8 +830,8 @@ class AdvancedSymbolicRegressionDEAP:
 
             # 计算详细统计
             y_pred = self.predict(self.X, individual=ind)
-            cumsum_threshold = np.sum(np.abs(y_pred)) / (
-                len(self.candles_in_metrics) // 120
+            cumsum_threshold = np.sum(y_pred) / (
+                len(self.candles_in_metrics) // self.CUSUM_WINDOW
             )
             merged_bar = build_bar_by_cumsum(
                 self.candles_in_metrics,

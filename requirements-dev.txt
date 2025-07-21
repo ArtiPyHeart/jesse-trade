@@ -11,3 +11,4 @@ lightweight-charts
 matplotlib
 seaborn
 hmmlearn
+deap
