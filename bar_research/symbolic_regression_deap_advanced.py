@@ -15,14 +15,13 @@ import operator
 import pickle
 import random
 import warnings
+from multiprocessing import Pool, cpu_count
 from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from deap import base, creator, gp, tools
-
-# from joblib import Parallel, delayed  # Removed due to serialization issues
 from scipy import stats
 from scipy.spatial.distance import cosine
 from sklearn.preprocessing import StandardScaler
@@ -81,6 +80,110 @@ def moving_average(x, window=5):
 def tanh_scaled(x):
     """缩放的双曲正切函数"""
     return np.tanh(x / 2.0)
+
+
+def rand_const():
+    """生成随机常数"""
+    return random.uniform(-2.0, 2.0)
+
+
+def if_then_else(condition, output1, output2):
+    """条件运算符"""
+    return output1 if condition > 0 else output2
+
+
+# 全局变量用于多进程
+_global_model_instance = None
+
+
+def _init_worker(model_dict):
+    """初始化工作进程"""
+    global _global_model_instance
+
+    # 在每个工作进程中重新创建DEAP类型
+    if hasattr(creator, "FitnessMulti"):
+        del creator.FitnessMulti
+    if hasattr(creator, "Individual"):
+        del creator.Individual
+
+    creator.create("FitnessMulti", base.Fitness, weights=(-1.0, -1.0))
+    creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMulti)
+
+    # 重建模型实例
+    _global_model_instance = AdvancedSymbolicRegressionDEAP.__new__(
+        AdvancedSymbolicRegressionDEAP
+    )
+    for key, value in model_dict.items():
+        setattr(_global_model_instance, key, value)
+
+
+def _island_evolution_worker(args):
+    """岛屿进化的工作函数"""
+    island_id, population_data, generations = args
+
+    model = _global_model_instance
+
+    # 重建toolbox
+    toolbox = base.Toolbox()
+
+    # 注册操作
+    toolbox.register(
+        "expr",
+        gp.genHalfAndHalf,
+        pset=model.pset,
+        min_=model.init_depth[0],
+        max_=model.init_depth[1],
+    )
+    toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.expr)
+    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+
+    # 注册评估函数
+    toolbox.register("evaluate", model._evaluate_multi_objective)
+    toolbox.register("select", tools.selNSGA2)
+
+    # 注册遗传操作
+    toolbox.register("mate", model._semantic_crossover)
+    toolbox.register("expr_mut", gp.genFull, min_=0, max_=2)
+    toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=model.pset)
+    toolbox.register("mutate_eph", gp.mutEphemeral, mode="all")
+    toolbox.register("local_search", model._local_search)
+
+    # 深度限制
+    toolbox.decorate(
+        "mate",
+        gp.staticLimit(key=operator.attrgetter("height"), max_value=model.max_depth),
+    )
+    toolbox.decorate(
+        "mutate",
+        gp.staticLimit(key=operator.attrgetter("height"), max_value=model.max_depth),
+    )
+
+    # 重建种群
+    population = []
+    for ind_data in population_data:
+        ind = creator.Individual(ind_data["tree"])
+        if ind_data["fitness"] is not None:
+            ind.fitness.values = ind_data["fitness"]
+        population.append(ind)
+
+    # 创建统计对象
+    stats = tools.Statistics(lambda ind: ind.fitness.values)
+    stats.register("avg", np.mean, axis=0)
+    stats.register("std", np.std, axis=0)
+    stats.register("min", np.min, axis=0)
+    stats.register("max", np.max, axis=0)
+
+    # 执行岛屿进化
+    final_pop, logbook = model._island_evolution_impl(
+        island_id, population, toolbox, stats, generations
+    )
+
+    # 将种群转换为可序列化的格式
+    serialized_pop = []
+    for ind in final_pop:
+        serialized_pop.append({"tree": list(ind), "fitness": ind.fitness.values})
+
+    return serialized_pop, logbook
 
 
 class AdvancedSymbolicRegressionDEAP:
@@ -177,15 +280,10 @@ class AdvancedSymbolicRegressionDEAP:
         self.pset.addPrimitive(tanh_scaled, [float], float, name="tanh")
 
         # 条件运算
-        def if_then_else(condition, output1, output2):
-            return output1 if condition > 0 else output2
-
         self.pset.addPrimitive(if_then_else, [float, float, float], float, name="ite")
 
         # 常数
-        self.pset.addEphemeralConstant(
-            "rand_const", lambda: random.uniform(-2.0, 2.0), float
-        )
+        self.pset.addEphemeralConstant("rand_const", rand_const, float)
         self.pset.addTerminal(0.0, float, name="zero")
         self.pset.addTerminal(1.0, float, name="one")
 
@@ -387,21 +485,22 @@ class AdvancedSymbolicRegressionDEAP:
             gp.staticLimit(key=operator.attrgetter("height"), max_value=self.max_depth),
         )
 
-    def _island_evolution(
+    def _island_evolution_impl(
         self,
         island_id: int,
         population: List,
+        toolbox: base.Toolbox,
         stats: tools.Statistics,
         generations: int,
     ) -> Tuple[List, tools.Logbook]:
         """
-        岛屿进化
+        岛屿进化的实际实现
         """
         logbook = tools.Logbook()
         logbook.header = ["gen", "island", "nevals"] + stats.fields
 
         # 评估初始种群
-        fitnesses = list(map(self.toolbox.evaluate, population))
+        fitnesses = list(map(toolbox.evaluate, population))
         for ind, fit in zip(population, fitnesses):
             ind.fitness.values = fit
 
@@ -423,13 +522,13 @@ class AdvancedSymbolicRegressionDEAP:
                 current_mutation_prob = self.mutation_prob
 
             # 选择
-            offspring = self.toolbox.select(population, len(population))
-            offspring = [self.toolbox.clone(ind) for ind in offspring]
+            offspring = toolbox.select(population, len(population))
+            offspring = [toolbox.clone(ind) for ind in offspring]
 
             # 交叉和变异
             for i in range(0, len(offspring) - 1, 2):
                 if random.random() < self.crossover_prob:
-                    offspring[i], offspring[i + 1] = self.toolbox.mate(
+                    offspring[i], offspring[i + 1] = toolbox.mate(
                         offspring[i], offspring[i + 1]
                     )
                     del offspring[i].fitness.values
@@ -438,24 +537,24 @@ class AdvancedSymbolicRegressionDEAP:
             for i in range(len(offspring)):
                 if random.random() < current_mutation_prob:
                     if random.random() < 0.5:
-                        (offspring[i],) = self.toolbox.mutate(offspring[i])
+                        (offspring[i],) = toolbox.mutate(offspring[i])
                     else:
-                        (offspring[i],) = self.toolbox.mutate_eph(offspring[i])
+                        (offspring[i],) = toolbox.mutate_eph(offspring[i])
                     del offspring[i].fitness.values
 
                 # 局部搜索
                 if random.random() < self.local_search_prob:
-                    (offspring[i],) = self.toolbox.local_search(offspring[i])
+                    (offspring[i],) = toolbox.local_search(offspring[i])
                     del offspring[i].fitness.values
 
             # 评估新个体
             invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = list(map(self.toolbox.evaluate, invalid_ind))
+            fitnesses = list(map(toolbox.evaluate, invalid_ind))
             for ind, fit in zip(invalid_ind, fitnesses):
                 ind.fitness.values = fit
 
             # 环境选择
-            population[:] = self.toolbox.select(population + offspring, len(population))
+            population[:] = toolbox.select(population + offspring, len(population))
 
             # 检查停滞
             current_best = min(population, key=lambda x: x.fitness.values[0])
@@ -470,6 +569,20 @@ class AdvancedSymbolicRegressionDEAP:
             logbook.record(gen=gen, island=island_id, nevals=len(invalid_ind), **record)
 
         return population, logbook
+
+    def _island_evolution(
+        self,
+        island_id: int,
+        population: List,
+        stats: tools.Statistics,
+        generations: int,
+    ) -> Tuple[List, tools.Logbook]:
+        """
+        岛屿进化（单进程版本，用于兼容性）
+        """
+        return self._island_evolution_impl(
+            island_id, population, self.toolbox, stats, generations
+        )
 
     def fit(
         self,
@@ -517,6 +630,13 @@ class AdvancedSymbolicRegressionDEAP:
             print("开始多目标符号回归进化...")
             print(f"种群大小: {self.population_size}, 进化代数: {self.generations}")
             print(f"岛屿数量: {self.n_islands}, 迁移率: {self.migration_rate}")
+            if self.n_jobs != 1 and self.n_islands > 1:
+                n_processes = min(
+                    self.n_islands, cpu_count() if self.n_jobs == -1 else self.n_jobs
+                )
+                print(f"使用多进程加速: {n_processes} 个进程")
+            else:
+                print("使用单进程模式")
 
         # 创建岛屿种群
         islands = []
@@ -528,18 +648,90 @@ class AdvancedSymbolicRegressionDEAP:
         all_logbooks = []
 
         for gen in range(0, self.generations, 10):  # 每10代进行一次迁移
-            # TODO: 需要改为多进程执行。由于DEAP creator的序列化问题，暂时使用单线程执行
-            results = []
-            for i, island in enumerate(islands):
-                result = self._island_evolution(
-                    i, island, stats, min(10, self.generations - gen)
-                )
-                results.append(result)
+            # 决定是否使用多进程
+            use_multiprocessing = self.n_jobs != 1 and self.n_islands > 1
 
-            # 更新岛屿种群和日志
-            for i, (pop, logbook) in enumerate(results):
-                islands[i] = pop
-                all_logbooks.append(logbook)
+            if use_multiprocessing:
+                # 准备多进程所需的模型数据
+                model_dict = {
+                    "pset": self.pset,
+                    "X": self.X,
+                    "X_scaled": self.X_scaled,
+                    "scaler": self.scaler,
+                    "feature_names": self.feature_names,
+                    "candles": self.candles,
+                    "candles_in_metrics": self.candles_in_metrics,
+                    "NA_MAX_NUM": self.NA_MAX_NUM,
+                    "semantic_cache": self.semantic_cache,
+                    "population_size": self.population_size,
+                    "generations": self.generations,
+                    "tournament_size": self.tournament_size,
+                    "crossover_prob": self.crossover_prob,
+                    "mutation_prob": self.mutation_prob,
+                    "max_depth": self.max_depth,
+                    "init_depth": self.init_depth,
+                    "parsimony_coefficient": self.parsimony_coefficient,
+                    "elite_size": self.elite_size,
+                    "n_islands": self.n_islands,
+                    "migration_rate": self.migration_rate,
+                    "local_search_prob": self.local_search_prob,
+                    "adaptive_mutation": self.adaptive_mutation,
+                }
+
+                # 序列化种群数据
+                islands_data = []
+                for island in islands:
+                    island_data = []
+                    for ind in island:
+                        island_data.append(
+                            {
+                                "tree": list(ind),
+                                "fitness": (
+                                    ind.fitness.values if ind.fitness.valid else None
+                                ),
+                            }
+                        )
+                    islands_data.append(island_data)
+
+                # 准备任务参数
+                tasks = []
+                for i, island_data in enumerate(islands_data):
+                    tasks.append((i, island_data, min(10, self.generations - gen)))
+
+                # 使用多进程池执行
+                n_processes = min(
+                    self.n_islands, cpu_count() if self.n_jobs == -1 else self.n_jobs
+                )
+                with Pool(
+                    processes=n_processes,
+                    initializer=_init_worker,
+                    initargs=(model_dict,),
+                ) as pool:
+                    results = pool.map(_island_evolution_worker, tasks)
+
+                # 更新岛屿种群和日志
+                for i, (serialized_pop, logbook) in enumerate(results):
+                    # 重建种群
+                    new_pop = []
+                    for ind_data in serialized_pop:
+                        ind = creator.Individual(ind_data["tree"])
+                        ind.fitness.values = ind_data["fitness"]
+                        new_pop.append(ind)
+                    islands[i] = new_pop
+                    all_logbooks.append(logbook)
+            else:
+                # 单进程执行
+                results = []
+                for i, island in enumerate(islands):
+                    result = self._island_evolution(
+                        i, island, stats, min(10, self.generations - gen)
+                    )
+                    results.append(result)
+
+                # 更新岛屿种群和日志
+                for i, (pop, logbook) in enumerate(results):
+                    islands[i] = pop
+                    all_logbooks.append(logbook)
 
             # 岛屿间迁移
             if gen + 10 < self.generations:
