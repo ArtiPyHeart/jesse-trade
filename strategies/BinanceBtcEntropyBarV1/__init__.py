@@ -98,6 +98,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         return pd.DataFrame(side_features)
 
     @property
+    @cached
     def side_model_pred(self) -> float:
         return self.side_model.predict(self.side_model_features)[-1]
 
@@ -111,6 +112,7 @@ class BinanceBtcEntropyBarV1(Strategy):
         return pd.DataFrame(meta_features)
 
     @property
+    @cached
     def meta_model_pred(self):
         return self.meta_model.predict(self.meta_model_features)[-1]
 
