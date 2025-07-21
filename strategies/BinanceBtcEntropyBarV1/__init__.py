@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
-from jesse import helpers, utils
+from jesse import utils
 from jesse.strategies import Strategy, cached
 from joblib._parallel_backends import LokyBackend  # 内部 API
 from joblib.externals.loky import get_reusable_executor
@@ -98,7 +98,6 @@ class BinanceBtcEntropyBarV1(Strategy):
         return pd.DataFrame(side_features)
 
     @property
-    @cached
     def side_model_pred(self) -> float:
         return self.side_model.predict(self.side_model_features)[-1]
 
@@ -112,34 +111,35 @@ class BinanceBtcEntropyBarV1(Strategy):
         return pd.DataFrame(meta_features)
 
     @property
-    @cached
     def meta_model_pred(self):
         return self.meta_model.predict(self.meta_model_features)[-1]
+
+    @property
+    def model_shows_long(self):
+        meta_pred = self.meta_model_pred > META_MODEL_THRESHOLD
+        side_pred = self.side_model_pred > SIDE_MODEL_THRESHOLD
+        return meta_pred & side_pred
+
+    @property
+    def model_shows_short(self):
+        meta_pred = self.meta_model_pred > META_MODEL_THRESHOLD
+        side_pred = self.side_model_pred < SIDE_MODEL_THRESHOLD
+        return meta_pred & side_pred
 
     def should_long(self) -> bool:
         if not self.should_trade_main_bar:
             return False
-        if self.meta_model_pred > META_MODEL_THRESHOLD:
-            if self.side_model_pred > SIDE_MODEL_THRESHOLD:
-                return True
-            else:
-                return False
-        else:
-            return False
+        return self.model_shows_long
 
     def should_short(self) -> bool:
         if not self.should_trade_main_bar:
             return False
-        if self.meta_model_pred > META_MODEL_THRESHOLD:
-            if self.side_model_pred < SIDE_MODEL_THRESHOLD:
-                return True
-            else:
-                return False
-        else:
-            return False
+        return self.model_shows_short
 
     def should_cancel_entry(self) -> bool:
         # Only for limit orders，当提交的限价单没有成交时，是否在下一个candle取消
+        if self.should_long() or self.should_short():
+            return True
         return False
 
     def go_long(self):
@@ -169,10 +169,10 @@ class BinanceBtcEntropyBarV1(Strategy):
             return
         # 更新仓位
         if self.is_long:
-            if not self.should_long():
+            if not self.model_shows_long:
                 self.liquidate()
         if self.is_short:
-            if not self.should_short():
+            if not self.model_shows_short:
                 self.liquidate()
 
     # def before_terminate(self):
