@@ -189,10 +189,20 @@ def _island_evolution_worker(args):
 class AdvancedSymbolicRegressionDEAP:
     """
     高级DEAP符号回归实现，支持多目标优化和高级特性
+
+    该类实现了基于DEAP的高级符号回归算法，主要特性包括：
+    1. NSGA-II多目标优化：同时优化峰度偏差和表达式复杂度
+    2. 岛屿模型并行进化：将种群分割到多个岛屿独立进化，定期迁移
+    3. 语义相似度交叉：根据个体输出的相似度选择合适的交叉策略
+    4. 局部搜索优化：对常数进行微调以改善性能
+    5. 自适应变异率：根据进化进度和停滞情况动态调整变异率
+    6. 高级膨胀控制：通过深度限制和复杂度惩罚控制表达式增长
+    7. Pareto前沿可视化：展示多目标优化的权衡关系
     """
 
-    CUSUM_WINDOW = 120
-    MAX_CUSUM_WINDOW = 360
+    # 窗口大小常量
+    CUSUM_WINDOW = 120  # CUSUM累积和窗口大小，用于计算合并阈值
+    MAX_CUSUM_WINDOW = 360  # 最大CUSUM窗口，用于验证合并结果的合理性
 
     def __init__(
         self,
@@ -216,11 +226,101 @@ class AdvancedSymbolicRegressionDEAP:
         """
         初始化高级符号回归模型
 
-        新增参数:
-        - n_islands: 岛屿模型中的岛屿数量
-        - migration_rate: 岛屿间迁移率
-        - local_search_prob: 局部搜索概率
-        - adaptive_mutation: 是否使用自适应变异率
+        参数详解：
+        -----------
+        population_size : int, default=300
+            种群大小，即每一代中个体的数量。
+            - 推荐值：200-500
+            - 较大的种群可以增加多样性，但会增加计算成本
+            - 建议根据问题复杂度和计算资源调整
+
+        generations : int, default=100
+            进化的代数。
+            - 推荐值：50-200
+            - 更多代数可以获得更好的结果，但耗时更长
+            - 可以通过early stopping机制提前终止
+
+        tournament_size : int, default=7
+            锦标赛选择的参与者数量。
+            - 推荐值：5-10
+            - 较大的值增加选择压力，可能导致早熟收敛
+            - 较小的值保持多样性，但收敛速度慢
+
+        crossover_prob : float, default=0.9
+            交叉概率，控制两个个体交换基因的概率。
+            - 推荐值：0.8-0.95
+            - 高交叉率有助于探索解空间
+            - 过高可能破坏优良基因组合
+
+        mutation_prob : float, default=0.1
+            变异概率，控制个体基因突变的概率。
+            - 推荐值：0.05-0.2
+            - 用于维持种群多样性，避免局部最优
+            - 配合自适应变异率使用效果更好
+
+        max_depth : int, default=12
+            表达式树的最大深度。
+            - 推荐值：10-17
+            - 限制表达式复杂度，防止过拟合
+            - 太小可能限制表达能力，太大增加计算成本
+
+        init_depth : Tuple[int, int], default=(2, 6)
+            初始化时表达式树的深度范围(最小深度, 最大深度)。
+            - 推荐值：(2, 6) 或 (3, 8)
+            - 影响初始种群的多样性
+            - 较大范围增加初始多样性
+
+        parsimony_coefficient : float, default=0.001
+            简约系数，用于惩罚复杂表达式（已被多目标优化替代）。
+            - 推荐值：0.0001-0.01
+            - 在单目标优化中控制膨胀
+            - 在多目标优化中可设为0
+
+        elite_size : int, default=20
+            精英个体数量，保留最佳个体到下一代。
+            - 推荐值：10-50
+            - 确保优良基因不丢失
+            - 过大可能降低多样性
+
+        n_islands : int, default=4
+            岛屿模型中的岛屿数量。
+            - 推荐值：2-8
+            - 每个岛屿独立进化，增加搜索的并行性
+            - 岛屿数量应与CPU核心数匹配以获得最佳性能
+
+        migration_rate : float, default=0.1
+            岛屿间个体迁移的比例。
+            - 推荐值：0.05-0.2
+            - 控制岛屿间基因交流的频率
+            - 过高会降低岛屿独立性，过低限制基因流动
+
+        local_search_prob : float, default=0.05
+            对个体进行局部搜索优化的概率。
+            - 推荐值：0.02-0.1
+            - 微调常数以改善适应度
+            - 过高会增加计算成本，过低效果不明显
+
+        adaptive_mutation : bool, default=True
+            是否使用自适应变异率。
+            - 推荐值：True
+            - 根据进化进度和停滞情况动态调整变异率
+            - 早期高变异探索，后期低变异精调
+
+        n_jobs : int, default=-1
+            并行计算使用的CPU核心数。
+            - -1：使用所有可用核心
+            - 1：单线程执行（调试用）
+            - n>1：使用n个核心
+
+        verbose : bool, default=True
+            是否输出详细的进化过程信息。
+            - True：显示进化进度和统计信息
+            - False：静默执行
+
+        random_state : int, default=None
+            随机数种子，用于结果复现。
+            - None：使用系统时间作为种子
+            - 整数：固定种子，确保结果可重复
         """
         self.population_size = population_size
         self.generations = generations
@@ -259,7 +359,24 @@ class AdvancedSymbolicRegressionDEAP:
         self.NA_MAX_NUM = None
 
     def _create_advanced_primitive_set(self, n_features: int):
-        """创建增强的原语集"""
+        """
+        创建增强的原语集（Primitive Set）
+
+        原语集定义了符号回归中可用的操作符、函数和终端节点。
+        这是构建表达式树的基础组件。
+
+        参数:
+        ------
+        n_features : int
+            输入特征的数量，决定了终端节点（变量）的个数
+
+        说明:
+        ------
+        - 基本运算：加减、取反、绝对值
+        - 比较运算：最大值、最小值
+        - 常数：随机常数、0、1
+        - 部分高级函数被注释掉以降低搜索空间复杂度
+        """
         self.pset = gp.PrimitiveSetTyped("MAIN", [float] * n_features, float)
 
         # 基本运算
@@ -298,8 +415,26 @@ class AdvancedSymbolicRegressionDEAP:
     def _evaluate_multi_objective(self, individual) -> Tuple[float, float]:
         """
         多目标评估函数
-        目标1: 最小化峰度偏差
-        目标2: 最小化复杂度
+
+        实现NSGA-II算法的多目标优化，同时考虑两个相互冲突的目标：
+        1. 峰度偏差（kurtosis deviation）：衡量生成的bar序列的统计特性
+        2. 表达式复杂度（complexity）：控制表达式的大小和深度
+
+        参数:
+        ------
+        individual : gp.PrimitiveTree
+            待评估的表达式树个体
+
+        返回:
+        ------
+        Tuple[float, float]
+            (峰度偏差, 复杂度) - 两个目标值，越小越好
+
+        注意:
+        ------
+        - 使用语义缓存避免重复计算
+        - 异常情况返回(1000.0, 1000.0)作为惩罚
+        - 峰度计算基于5期对数收益率
         """
         # 获取缓存的语义值
         ind_str = str(individual)
@@ -342,14 +477,14 @@ class AdvancedSymbolicRegressionDEAP:
 
         return kurtosis_deviation, complexity
 
-    def _calculate_kurtosis(self, merged_bar: np.ndarray) -> float:
+    def _calculate_kurtosis(self, merged_bar: np.ndarray, lag=3) -> float:
         """计算峰度偏差"""
         close_arr = merged_bar[:, 2]
 
         if len(close_arr) < 10:
             return 1000.0
 
-        ret = np.log(close_arr[5:] / close_arr[:-5])
+        ret = np.log(close_arr[lag:] / close_arr[:-lag])
         ret = ret[~np.isnan(ret) & ~np.isinf(ret)]
 
         if len(ret) < 10 or ret.std() < 1e-10:
@@ -367,6 +502,25 @@ class AdvancedSymbolicRegressionDEAP:
     def _semantic_crossover(self, ind1, ind2):
         """
         基于语义相似度的交叉操作
+
+        这是一种智能交叉策略，根据两个个体的输出相似度来选择合适的交叉方式。
+        相似的个体使用标准交叉，差异大的个体使用叶偏向交叉。
+
+        参数:
+        ------
+        ind1, ind2 : gp.PrimitiveTree
+            参与交叉的两个父代个体
+
+        返回:
+        ------
+        Tuple[gp.PrimitiveTree, gp.PrimitiveTree]
+            交叉后的两个子代个体
+
+        策略:
+        ------
+        - 高相似度（语义接近）：使用标准单点交叉
+        - 低相似度（语义差异大）：使用叶偏向交叉，倾向于交换叶节点
+        - 使用余弦相似度衡量语义相似性
         """
         # 计算两个个体的语义输出
         func1 = gp.compile(expr=ind1, pset=self.pset)
@@ -399,6 +553,25 @@ class AdvancedSymbolicRegressionDEAP:
     def _local_search(self, individual):
         """
         局部搜索操作，微调常数
+
+        对表达式树中的数值常数进行局部优化，通过高斯扰动微调常数值。
+        这是一种memetic算法的体现，结合全局搜索和局部优化。
+
+        参数:
+        ------
+        individual : gp.PrimitiveTree
+            待优化的个体
+
+        返回:
+        ------
+        Tuple[gp.PrimitiveTree,]
+            优化后的个体（返回元组以符合DEAP接口）
+
+        策略:
+        ------
+        - 30%概率对每个常数节点进行扰动
+        - 使用均值0、标准差0.1的高斯分布
+        - 只修改浮点数常数，不影响变量和操作符
         """
         # 找到所有常数节点
         for i, node in enumerate(individual):
@@ -415,6 +588,28 @@ class AdvancedSymbolicRegressionDEAP:
     ) -> float:
         """
         自适应变异率
+
+        根据进化进度和适应度停滞情况动态调整变异率。
+        早期维持较高变异率以探索，后期降低变异率以精调。
+
+        参数:
+        ------
+        generation : int
+            当前进化代数
+        fitness_stagnation : int
+            适应度停滞的代数（多少代没有改进）
+
+        返回:
+        ------
+        float
+            调整后的变异率，范围[0, 0.5]
+
+        策略:
+        ------
+        - 停滞5代：变异率×1.5
+        - 停滞10代：变异率×2.0
+        - 进化80%后：变异率×0.5（精细调整阶段）
+        - 最大不超过0.5，避免过度破坏
         """
         base_rate = self.mutation_prob
 
@@ -498,6 +693,39 @@ class AdvancedSymbolicRegressionDEAP:
     ) -> Tuple[List, tools.Logbook]:
         """
         岛屿进化的实际实现
+
+        每个岛屿独立进行遗传算法进化，包含选择、交叉、变异和局部搜索。
+        这是岛屿模型的核心实现，支持并行执行。
+
+        参数:
+        ------
+        island_id : int
+            岛屿标识符
+        population : List[Individual]
+            岛屿的种群
+        toolbox : base.Toolbox
+            DEAP工具箱，包含遗传操作
+        stats : tools.Statistics
+            统计对象，记录进化过程
+        generations : int
+            进化代数
+
+        返回:
+        ------
+        Tuple[List[Individual], tools.Logbook]
+            (最终种群, 进化日志)
+
+        算法流程:
+        ---------
+        1. 评估初始种群
+        2. 对每一代：
+           - 计算自适应变异率
+           - NSGA-II选择
+           - 交叉操作（语义交叉）
+           - 变异操作（均匀变异或常数变异）
+           - 局部搜索
+           - 环境选择（保留最优个体）
+        3. 检测适应度停滞并调整策略
         """
         logbook = tools.Logbook()
         logbook.header = ["gen", "island", "nevals"] + stats.fields
@@ -595,7 +823,41 @@ class AdvancedSymbolicRegressionDEAP:
         stand_scale: bool = False,
         candles_path: str = "data/btc_1m.npy",
     ):
-        """训练模型"""
+        """
+        训练模型
+
+        执行完整的符号回归训练流程，包括数据预处理、岛屿模型进化和结果收集。
+
+        参数:
+        ------
+        X : np.ndarray
+            输入特征矩阵，shape=(n_samples, n_features)
+        feature_names : List[str]
+            特征名称列表，用于生成可读的表达式
+        NA_MAX_NUM : int
+            最大缺失值数量，用于数据对齐
+        stand_scale : bool, default=False
+            是否对特征进行标准化处理
+        candles_path : str, default="data/btc_1m.npy"
+            K线数据文件路径
+
+        训练流程:
+        ---------
+        1. 数据预处理：加载K线数据，特征标准化
+        2. 创建原语集：定义可用的操作符和函数
+        3. 设置多目标进化：配置NSGA-II算法
+        4. 岛屿模型进化：
+           - 创建多个岛屿种群
+           - 并行或串行进化
+           - 定期进行岛屿间迁移
+        5. 收集Pareto前沿解
+
+        注意:
+        ------
+        - 支持多进程并行加速
+        - 每10代进行一次岛屿间迁移
+        - 最终合并所有岛屿的种群
+        """
         self.X = X
         self.feature_names = feature_names
 
@@ -777,7 +1039,29 @@ class AdvancedSymbolicRegressionDEAP:
             print(f"对应复杂度: {self.best_individuals[0].fitness.values[1]:.0f}")
 
     def visualize_pareto_front(self, save_path: str = None):
-        """可视化Pareto前沿"""
+        """
+        可视化Pareto前沿
+
+        绘制多目标优化的Pareto前沿图，展示峰度偏差与复杂度之间的权衡关系。
+        Pareto前沿上的每个点代表一个非支配解，即不存在另一个解在所有目标上都优于它。
+
+        参数:
+        ------
+        save_path : str, optional
+            图片保存路径。如果提供，将保存图片到指定路径
+
+        可视化内容:
+        -----------
+        - 所有Pareto前沿上的解（蓝色散点）
+        - Top 5最优解（红色星号）
+        - X轴：峰度偏差（越小越好）
+        - Y轴：表达式复杂度（越小越好）
+
+        抛出:
+        ------
+        ValueError
+            如果模型尚未训练
+        """
         if self.pareto_front is None:
             raise ValueError("模型尚未训练")
 
@@ -813,7 +1097,37 @@ class AdvancedSymbolicRegressionDEAP:
         plt.show()
 
     def get_best_expressions(self, n: int = 5) -> List[Dict[str, Any]]:
-        """获取最佳的n个表达式及其性能"""
+        """
+        获取最佳的n个表达式及其性能
+
+        从Pareto前沿中选择最优的n个表达式，并计算它们的详细统计指标。
+        选择标准是优先考虑峰度偏差最小的解。
+
+        参数:
+        ------
+        n : int, default=5
+            要返回的表达式数量
+
+        返回:
+        ------
+        List[Dict[str, Any]]
+            包含以下字段的字典列表：
+            - rank: 排名
+            - expression: 表达式字符串
+            - kurtosis_deviation: 峰度偏差（优化目标）
+            - complexity: 复杂度（优化目标）
+            - height: 表达式树深度
+            - size: 表达式节点数
+            - num_bars: 生成的bar数量
+            - actual_kurtosis: 实际峰度值
+            - skewness: 偏度
+            - sharpe_ratio: 夏普比率
+
+        抛出:
+        ------
+        ValueError
+            如果模型尚未训练
+        """
         if self.best_individuals is None:
             raise ValueError("模型尚未训练")
 
@@ -860,7 +1174,34 @@ class AdvancedSymbolicRegressionDEAP:
         return results
 
     def predict(self, X: np.ndarray, individual=None) -> np.ndarray:
-        """预测"""
+        """
+        预测
+
+        使用训练得到的表达式对新数据进行预测。
+
+        参数:
+        ------
+        X : np.ndarray
+            输入特征矩阵，shape=(n_samples, n_features)
+            特征顺序必须与训练时一致
+        individual : gp.PrimitiveTree, optional
+            指定使用的表达式个体。如果不提供，使用最佳个体
+
+        返回:
+        ------
+        np.ndarray
+            预测结果，shape=(n_samples,)
+
+        抛出:
+        ------
+        ValueError
+            如果模型尚未训练
+
+        注意:
+        ------
+        - 如果训练时启用了特征标准化，输入数据会自动进行标准化
+        - 预测结果是原始表达式的输出，通常用于计算bar合并阈值
+        """
         if individual is None:
             if self.best_individuals is None:
                 raise ValueError("模型尚未训练")
@@ -875,7 +1216,25 @@ class AdvancedSymbolicRegressionDEAP:
         return predictions
 
     def save_model(self, filepath: str):
-        """保存模型"""
+        """
+        保存模型
+
+        将训练得到的模型保存到文件，包括所有必要的组件以便后续加载和使用。
+
+        参数:
+        ------
+        filepath : str
+            保存文件的路径，建议使用.pkl扩展名
+
+        保存内容:
+        ---------
+        - best_individuals: 最佳个体列表
+        - pareto_front: 完整的Pareto前沿
+        - pset: 原语集定义
+        - scaler: 特征标准化器（如果使用）
+        - feature_names: 特征名称
+        - params: 模型参数
+        """
         model_data = {
             "best_individuals": self.best_individuals,
             "pareto_front": self.pareto_front,
@@ -893,7 +1252,27 @@ class AdvancedSymbolicRegressionDEAP:
             pickle.dump(model_data, f)
 
     def load_model(self, filepath: str):
-        """加载模型"""
+        """
+        加载模型
+
+        从文件加载之前保存的模型，恢复所有必要的组件。
+
+        参数:
+        ------
+        filepath : str
+            模型文件的路径
+
+        恢复内容:
+        ---------
+        - 最佳个体和Pareto前沿
+        - 原语集和特征信息
+        - 标准化器
+        - 模型参数
+
+        注意:
+        ------
+        加载后可以直接使用predict方法进行预测
+        """
         with open(filepath, "rb") as f:
             model_data = pickle.load(f)
 
@@ -911,7 +1290,37 @@ class AdvancedSymbolicRegressionDEAP:
 def prepare_features(
     candles_path: str = "data/btc_1m.npy", use_last_n: int = 10000
 ) -> Tuple[np.ndarray, List[str], int]:
-    """准备特征数据"""
+    """
+    准备特征数据
+
+    从K线数据中提取技术特征，用于符号回归训练。
+
+    参数:
+    ------
+    candles_path : str, default="data/btc_1m.npy"
+        K线数据文件路径
+    use_last_n : int, default=10000
+        使用最近n条K线数据。如果为0或负数，使用全部数据
+
+    返回:
+    ------
+    Tuple[np.ndarray, List[str], int]
+        - X: 特征矩阵，shape=(n_samples-1, n_features)
+        - feature_names: 特征名称列表
+        - NA_MAX_NUM: 最大缺失值数量，用于数据对齐
+
+    特征包括:
+    ----------
+    - hl_range: 高低区间的对数，衡量波动性
+    - r25, r50, r100, r200: 不同周期的对数收益率
+    - vol_ratio: 成交量比率的对数
+    - price_position: 价格在高低区间的位置
+
+    注意:
+    ------
+    - 过滤掉成交量为0的K线
+    - 移除有缺失值的前部行
+    """
     candles = np.load(candles_path)
     candles = candles[candles[:, 5] > 0]
 
