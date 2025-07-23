@@ -477,7 +477,7 @@ class AdvancedSymbolicRegressionDEAP:
 
         return kurtosis_deviation, complexity
 
-    def _calculate_kurtosis(self, merged_bar: np.ndarray, lag=3) -> float:
+    def _calculate_kurtosis(self, merged_bar: np.ndarray, lag=5) -> float:
         """计算峰度偏差"""
         close_arr = merged_bar[:, 2]
 
