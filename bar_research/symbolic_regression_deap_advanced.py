@@ -1364,6 +1364,11 @@ class AdvancedSymbolicRegressionDEAP:
                     "max_cache_size": self.max_cache_size,
                     "batch_size": self.batch_size,
                     "memory_efficient": self.memory_efficient,
+                    "_cache_hits": self._cache_hits,
+                    "_cache_misses": self._cache_misses,
+                    "shared_memories": self.shared_memories,
+                    "shared_shapes": self.shared_shapes,
+                    "shared_dtypes": self.shared_dtypes,
                 }
 
                 # 添加共享内存信息
