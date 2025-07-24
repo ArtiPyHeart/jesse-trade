@@ -1,3 +1,30 @@
+"""
+独立的自定义轴调参工作流，用于寻找DEAP、Gplearn找出的自定义轴的最佳参数组合
+
+待评估列表：
+min(
+  1-0.9603852058885574,
+  min(
+    min(abs(r30), abs(r60)),
+    min(
+      max(vol120, zero),
+      abs(price_position)
+    )
+  )
+)
+
+min(
+  price_position,
+  min(
+    abs(r120),
+    min(
+      max(vol120, zero),
+      abs(r30)
+    )
+  )
+)
+"""
+
 from contextlib import contextmanager
 
 import catboost as ctb
