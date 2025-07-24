@@ -152,36 +152,39 @@ def _init_worker(model_dict):
     import types
 
     _global_model_instance._evaluate_multi_objective = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._evaluate_multi_objective.__func__,
+        AdvancedSymbolicRegressionDEAP._evaluate_multi_objective,
         _global_model_instance,
     )
     _global_model_instance._semantic_crossover = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._semantic_crossover.__func__,
+        AdvancedSymbolicRegressionDEAP._semantic_crossover,
         _global_model_instance,
     )
     _global_model_instance._local_search = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._local_search.__func__, _global_model_instance
+        AdvancedSymbolicRegressionDEAP._local_search, _global_model_instance
     )
     _global_model_instance._island_evolution_impl = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._island_evolution_impl.__func__,
+        AdvancedSymbolicRegressionDEAP._island_evolution_impl,
         _global_model_instance,
     )
     _global_model_instance._adaptive_mutation_rate = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._adaptive_mutation_rate.__func__,
+        AdvancedSymbolicRegressionDEAP._adaptive_mutation_rate,
         _global_model_instance,
     )
     _global_model_instance._calculate_kurtosis = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._calculate_kurtosis.__func__,
+        AdvancedSymbolicRegressionDEAP._calculate_kurtosis,
         _global_model_instance,
     )
     _global_model_instance._add_to_cache = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._add_to_cache.__func__, _global_model_instance
+        AdvancedSymbolicRegressionDEAP._add_to_cache, _global_model_instance
     )
     _global_model_instance._clear_cache = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._clear_cache.__func__, _global_model_instance
+        AdvancedSymbolicRegressionDEAP._clear_cache, _global_model_instance
     )
     _global_model_instance._evaluate_batch = types.MethodType(
-        AdvancedSymbolicRegressionDEAP._evaluate_batch.__func__, _global_model_instance
+        AdvancedSymbolicRegressionDEAP._evaluate_batch, _global_model_instance
+    )
+    _global_model_instance._get_shared_array = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._get_shared_array, _global_model_instance
     )
 
 
