@@ -11,12 +11,15 @@ This advanced implementation includes:
 7. Pareto front visualization
 """
 
+import gc
 import operator
 import pickle
 import random
 import warnings
+from collections import OrderedDict
 from multiprocessing import Pool, cpu_count
-from typing import Any, Dict, List, Tuple
+from multiprocessing.shared_memory import SharedMemory
+from typing import Any, Dict, List, Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,11 +29,9 @@ from scipy import stats
 from scipy.spatial.distance import cosine
 from sklearn.preprocessing import StandardScaler
 
-warnings.filterwarnings("ignore")
-
-from jesse.utils import numpy_candles_to_dataframe
-
 from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
+
+warnings.filterwarnings("ignore")
 
 
 # 高级数学操作符
@@ -113,8 +114,75 @@ def _init_worker(model_dict):
     _global_model_instance = AdvancedSymbolicRegressionDEAP.__new__(
         AdvancedSymbolicRegressionDEAP
     )
+    # 处理共享内存
+    if "shared_memory_info" in model_dict:
+        shm_info = model_dict.pop("shared_memory_info")
+
+        # 从共享内存恢复数组
+        if shm_info["X_scaled"]["name"]:
+            _global_model_instance.X_scaled = _global_model_instance._get_shared_array(
+                shm_info["X_scaled"]["name"],
+                shm_info["X_scaled"]["shape"],
+                shm_info["X_scaled"]["dtype"],
+            )
+            model_dict.pop("X_scaled", None)
+
+        if shm_info["candles"]["name"]:
+            _global_model_instance.candles = _global_model_instance._get_shared_array(
+                shm_info["candles"]["name"],
+                shm_info["candles"]["shape"],
+                shm_info["candles"]["dtype"],
+            )
+            model_dict.pop("candles", None)
+
+        if shm_info["candles_in_metrics"]["name"]:
+            _global_model_instance.candles_in_metrics = (
+                _global_model_instance._get_shared_array(
+                    shm_info["candles_in_metrics"]["name"],
+                    shm_info["candles_in_metrics"]["shape"],
+                    shm_info["candles_in_metrics"]["dtype"],
+                )
+            )
+            model_dict.pop("candles_in_metrics", None)
+
     for key, value in model_dict.items():
         setattr(_global_model_instance, key, value)
+
+    # 重建方法绑定
+    import types
+
+    _global_model_instance._evaluate_multi_objective = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._evaluate_multi_objective.__func__,
+        _global_model_instance,
+    )
+    _global_model_instance._semantic_crossover = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._semantic_crossover.__func__,
+        _global_model_instance,
+    )
+    _global_model_instance._local_search = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._local_search.__func__, _global_model_instance
+    )
+    _global_model_instance._island_evolution_impl = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._island_evolution_impl.__func__,
+        _global_model_instance,
+    )
+    _global_model_instance._adaptive_mutation_rate = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._adaptive_mutation_rate.__func__,
+        _global_model_instance,
+    )
+    _global_model_instance._calculate_kurtosis = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._calculate_kurtosis.__func__,
+        _global_model_instance,
+    )
+    _global_model_instance._add_to_cache = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._add_to_cache.__func__, _global_model_instance
+    )
+    _global_model_instance._clear_cache = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._clear_cache.__func__, _global_model_instance
+    )
+    _global_model_instance._evaluate_batch = types.MethodType(
+        AdvancedSymbolicRegressionDEAP._evaluate_batch.__func__, _global_model_instance
+    )
 
 
 def _island_evolution_worker(args):
@@ -213,7 +281,6 @@ class AdvancedSymbolicRegressionDEAP:
         mutation_prob: float = 0.1,
         max_depth: int = 12,
         init_depth: Tuple[int, int] = (2, 6),
-        parsimony_coefficient: float = 0.001,
         elite_size: int = 20,
         n_islands: int = 4,
         migration_rate: float = 0.1,
@@ -222,6 +289,9 @@ class AdvancedSymbolicRegressionDEAP:
         n_jobs: int = -1,
         verbose: bool = True,
         random_state: int = None,
+        max_cache_size: int = 1000,
+        batch_size: int = 100,
+        memory_efficient: bool = False,
     ):
         """
         初始化高级符号回归模型
@@ -270,11 +340,6 @@ class AdvancedSymbolicRegressionDEAP:
             - 影响初始种群的多样性
             - 较大范围增加初始多样性
 
-        parsimony_coefficient : float, default=0.001
-            简约系数，用于惩罚复杂表达式（已被多目标优化替代）。
-            - 推荐值：0.0001-0.01
-            - 在单目标优化中控制膨胀
-            - 在多目标优化中可设为0
 
         elite_size : int, default=20
             精英个体数量，保留最佳个体到下一代。
@@ -321,6 +386,23 @@ class AdvancedSymbolicRegressionDEAP:
             随机数种子，用于结果复现。
             - None：使用系统时间作为种子
             - 整数：固定种子，确保结果可重复
+
+        max_cache_size : int, default=1000
+            语义缓存的最大大小。
+            - 推荐值：500-2000
+            - 较大的缓存可以加速计算，但会占用更多内存
+            - 设为0可以禁用缓存
+
+        batch_size : int, default=100
+            批量评估的大小。
+            - 推荐值：50-200
+            - 较小的批次减少内存峰值使用
+            - 较大的批次可能提高计算效率
+
+        memory_efficient : bool, default=False
+            是否启用内存高效模式。
+            - True：自动调整设置以减少内存使用
+            - False：使用默认设置，性能优先
         """
         self.population_size = population_size
         self.generations = generations
@@ -329,7 +411,6 @@ class AdvancedSymbolicRegressionDEAP:
         self.mutation_prob = mutation_prob
         self.max_depth = max_depth
         self.init_depth = init_depth
-        self.parsimony_coefficient = parsimony_coefficient
         self.elite_size = elite_size
         self.n_islands = n_islands
         self.migration_rate = migration_rate
@@ -338,6 +419,18 @@ class AdvancedSymbolicRegressionDEAP:
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.random_state = random_state
+        self.max_cache_size = max_cache_size
+        self.batch_size = batch_size
+        self.memory_efficient = memory_efficient
+
+        # 内存高效模式仅设置初始保守值
+        # 实际参数会在fit()时根据数据大小和可用内存动态调整
+        if self.memory_efficient:
+            # 保守的初始值，避免在不知道数据大小前占用过多内存
+            self.max_cache_size = min(500, max_cache_size)
+            self.batch_size = min(50, batch_size)
+            # 注意：不再基于种群大小进行硬编码调整
+            # 所有内存相关的优化都在fit()时动态进行
 
         if random_state is not None:
             random.seed(random_state)
@@ -347,7 +440,10 @@ class AdvancedSymbolicRegressionDEAP:
         self.pareto_front = None
         self.best_individuals = None
         self.logbook = None
-        self.semantic_cache = {}  # 缓存语义值以加速计算
+        # 使用有序字典实现LRU缓存
+        self.semantic_cache = OrderedDict() if max_cache_size > 0 else None
+        self._cache_hits = 0
+        self._cache_misses = 0
 
         # 数据相关
         self.X = None
@@ -358,9 +454,14 @@ class AdvancedSymbolicRegressionDEAP:
         self.candles_in_metrics = None
         self.NA_MAX_NUM = None
 
+        # 共享内存管理
+        self.shared_memories: Dict[str, SharedMemory] = {}
+        self.shared_shapes: Dict[str, tuple] = {}
+        self.shared_dtypes: Dict[str, np.dtype] = {}
+
     def _create_advanced_primitive_set(self, n_features: int):
         """
-        创建增强的原语集（Primitive Set）
+        创建增强的原语集（Primitive Set），通过注释改变原语集
 
         原语集定义了符号回归中可用的操作符、函数和终端节点。
         这是构建表达式树的基础组件。
@@ -438,13 +539,27 @@ class AdvancedSymbolicRegressionDEAP:
         """
         # 获取缓存的语义值
         ind_str = str(individual)
-        if ind_str in self.semantic_cache:
-            y_pred = self.semantic_cache[ind_str]
+
+        if self.semantic_cache is not None:
+            if ind_str in self.semantic_cache:
+                # LRU: 移动到末尾
+                self.semantic_cache.move_to_end(ind_str)
+                y_pred = self.semantic_cache[ind_str]
+                self._cache_hits += 1
+            else:
+                self._cache_misses += 1
+                func = gp.compile(expr=individual, pset=self.pset)
+                try:
+                    y_pred = np.array([func(*x) for x in self.X_scaled])
+                    # 添加到缓存
+                    self._add_to_cache(ind_str, y_pred)
+                except Exception:
+                    return 1000.0, 1000.0
         else:
+            # 禁用缓存时直接计算
             func = gp.compile(expr=individual, pset=self.pset)
             try:
                 y_pred = np.array([func(*x) for x in self.X_scaled])
-                self.semantic_cache[ind_str] = y_pred
             except Exception:
                 return 1000.0, 1000.0
 
@@ -476,6 +591,255 @@ class AdvancedSymbolicRegressionDEAP:
         complexity = len(individual) + individual.height * 2
 
         return kurtosis_deviation, complexity
+
+    def _add_to_cache(self, key: str, value: np.ndarray):
+        """添加到LRU缓存"""
+        if self.semantic_cache is None:
+            return
+
+        self.semantic_cache[key] = value
+
+        # 检查缓存大小
+        if len(self.semantic_cache) > self.max_cache_size:
+            # 删除最旧的项（第一个）
+            self.semantic_cache.popitem(last=False)
+
+    def _clear_cache(self):
+        """清空缓存"""
+        if self.semantic_cache is not None:
+            self.semantic_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        gc.collect()  # 强制垃圾回收
+
+    def _evaluate_batch(self, individuals: List) -> List[Tuple[float, float]]:
+        """
+        批量评估个体
+
+        将个体分批评估以减少内存峰值使用。
+
+        参数:
+        ------
+        individuals : List[Individual]
+            待评估的个体列表
+
+        返回:
+        ------
+        List[Tuple[float, float]]
+            评估结果列表
+        """
+        results = []
+
+        # 分批处理
+        for i in range(0, len(individuals), self.batch_size):
+            batch = individuals[i : i + self.batch_size]
+            batch_results = [self._evaluate_multi_objective(ind) for ind in batch]
+            results.extend(batch_results)
+
+            # 每批次后进行垃圾回收
+            if self.memory_efficient and i % (self.batch_size * 5) == 0:
+                gc.collect()
+
+        return results
+
+    def _create_shared_memory(
+        self, name: str, array: np.ndarray
+    ) -> Optional[SharedMemory]:
+        """
+        创建共享内存数组
+
+        参数:
+        ------
+        name : str
+            共享内存名称
+        array : np.ndarray
+            要共享的数组
+
+        返回:
+        ------
+        SharedMemory or None
+            共享内存对象
+        """
+        try:
+            # 创建共享内存
+            shm = SharedMemory(create=True, size=array.nbytes)
+            # 复制数据到共享内存
+            shared_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf)
+            shared_array[:] = array[:]
+
+            # 保存元数据
+            self.shared_memories[name] = shm
+            self.shared_shapes[name] = array.shape
+            self.shared_dtypes[name] = array.dtype
+
+            return shm
+        except Exception as e:
+            if self.verbose:
+                print(f"创建共享内存失败: {e}")
+            return None
+
+    def _cleanup_shared_memory(self):
+        """清理共享内存"""
+        for name, shm in self.shared_memories.items():
+            try:
+                shm.close()
+                shm.unlink()
+            except Exception:
+                pass
+        self.shared_memories.clear()
+        self.shared_shapes.clear()
+        self.shared_dtypes.clear()
+
+    def _get_shared_array(
+        self, shm_name: str, shape: tuple, dtype: np.dtype
+    ) -> np.ndarray:
+        """
+        从共享内存获取数组
+
+        参数:
+        ------
+        shm_name : str
+            共享内存名称
+        shape : tuple
+            数组形状
+        dtype : np.dtype
+            数组类型
+
+        返回:
+        ------
+        np.ndarray
+            共享内存中的数组
+        """
+        shm = SharedMemory(name=shm_name)
+        return np.ndarray(shape, dtype=dtype, buffer=shm.buf)
+
+    def _estimate_memory_usage(self, X: np.ndarray) -> Dict[str, float]:
+        """
+        估算内存使用情况
+
+        参数:
+        ------
+        X : np.ndarray
+            输入特征数据
+
+        返回:
+        ------
+        Dict[str, float]
+            内存使用估算（MB）
+        """
+        # 基础数据大小
+        x_size = X.nbytes / 1024 / 1024  # MB
+        candles_size = (
+            self.candles.nbytes / 1024 / 1024
+            if hasattr(self, "candles") and self.candles is not None
+            else 0
+        )
+
+        # 每个个体的评估需要的内存
+        # 包括：
+        # 1. y_pred数组 (x_size)
+        # 2. merged_bar数组 (预计最大为candles_size)
+        # 3. 中间计算结果
+        per_individual_memory = (
+            x_size + candles_size * 0.5 + x_size * 0.5
+        )  # 更精确的估计
+
+        # 种群总内存需求
+        population_memory = self.population_size * per_individual_memory
+
+        # 缓存内存（如果启用）
+        cache_memory = 0
+        if self.max_cache_size > 0:
+            cache_memory = self.max_cache_size * x_size
+
+        # 多进程内存开销
+        multiprocess_overhead = 0
+        if self.n_jobs != 1:
+            n_processes = self.n_jobs if self.n_jobs > 0 else cpu_count()
+            # 每个进程需要复制数据（如果没有共享内存）
+            multiprocess_overhead = (x_size + candles_size) * (n_processes - 1)
+
+        # 总内存估算
+        total_memory = (
+            x_size
+            + candles_size
+            + population_memory
+            + cache_memory
+            + multiprocess_overhead
+        )
+
+        return {
+            "data_size": x_size + candles_size,
+            "population_memory": population_memory,
+            "cache_memory": cache_memory,
+            "multiprocess_overhead": multiprocess_overhead,
+            "total_estimated": total_memory,
+            "per_individual": per_individual_memory,
+        }
+
+    def _auto_configure_memory_settings(
+        self, memory_estimate: Dict[str, float], available_memory: float
+    ):
+        """
+        根据内存估算自动配置参数
+
+        参数:
+        ------
+        memory_estimate : Dict[str, float]
+            内存使用估算
+        available_memory : float
+            可用内存（MB）
+        """
+        total_estimated = memory_estimate["total_estimated"]
+        memory_ratio = total_estimated / available_memory
+
+        if self.verbose:
+            print(f"\n内存使用估算:")
+            print(f"  数据大小: {memory_estimate['data_size']:.2f} MB")
+            print(f"  种群内存: {memory_estimate['population_memory']:.2f} MB")
+            print(f"  缓存内存: {memory_estimate['cache_memory']:.2f} MB")
+            print(f"  多进程开销: {memory_estimate['multiprocess_overhead']:.2f} MB")
+            print(f"  总计: {total_estimated:.2f} MB ({memory_ratio:.1%} 可用内存)")
+
+        # 根据内存压力调整参数
+        if memory_ratio > 0.8:  # 超过80%可用内存
+            if self.verbose:
+                print("\n警告: 预计内存使用较高，自动调整参数...")
+
+            # 减小缓存
+            if self.max_cache_size > 100:
+                old_cache = self.max_cache_size
+                self.max_cache_size = min(100, self.max_cache_size // 2)
+                if self.verbose:
+                    print(f"  缓存大小: {old_cache} -> {self.max_cache_size}")
+
+            # 减小批大小
+            if self.batch_size > 20:
+                old_batch = self.batch_size
+                self.batch_size = max(10, self.batch_size // 2)
+                if self.verbose:
+                    print(f"  批大小: {old_batch} -> {self.batch_size}")
+
+            # 减少进程数
+            if memory_ratio > 1.0 and self.n_jobs != 1:
+                old_jobs = self.n_jobs
+                # 根据内存压力决定进程数
+                if memory_ratio > 1.5:
+                    self.n_jobs = 1
+                else:
+                    self.n_jobs = max(1, self.n_jobs // 2)
+                if self.verbose:
+                    print(f"  进程数: {old_jobs} -> {self.n_jobs}")
+
+        elif memory_ratio < 0.3 and not self.memory_efficient:
+            # 内存充足，可以提高性能
+            if self.verbose:
+                print("\n内存充足，使用更高性能的设置")
+
+            if self.max_cache_size < 2000:
+                self.max_cache_size = min(2000, self.max_cache_size * 2)
+            if self.batch_size < 200:
+                self.batch_size = min(200, self.batch_size * 2)
 
     def _calculate_kurtosis(self, merged_bar: np.ndarray, lag=5) -> float:
         """计算峰度偏差"""
@@ -731,7 +1095,10 @@ class AdvancedSymbolicRegressionDEAP:
         logbook.header = ["gen", "island", "nevals"] + stats.fields
 
         # 评估初始种群
-        fitnesses = list(map(toolbox.evaluate, population))
+        if hasattr(self, "batch_size") and hasattr(self, "_evaluate_batch"):
+            fitnesses = self._evaluate_batch(population)
+        else:
+            fitnesses = list(map(toolbox.evaluate, population))
         for ind, fit in zip(population, fitnesses):
             ind.fitness.values = fit
 
@@ -780,9 +1147,21 @@ class AdvancedSymbolicRegressionDEAP:
 
             # 评估新个体
             invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = list(map(toolbox.evaluate, invalid_ind))
+            if hasattr(self, "batch_size") and hasattr(self, "_evaluate_batch"):
+                fitnesses = self._evaluate_batch(invalid_ind)
+            else:
+                fitnesses = list(map(toolbox.evaluate, invalid_ind))
             for ind, fit in zip(invalid_ind, fitnesses):
                 ind.fitness.values = fit
+
+            # 定期清理缓存
+            if (
+                hasattr(self, "memory_efficient")
+                and self.memory_efficient
+                and gen % 5 == 0
+            ):
+                if hasattr(self, "_clear_cache"):
+                    self._clear_cache()
 
             # 环境选择
             population[:] = toolbox.select(population + offspring, len(population))
@@ -872,14 +1251,6 @@ class AdvancedSymbolicRegressionDEAP:
         self.candles = np.load(candles_path)
         self.candles = self.candles[self.candles[:, 5] > 0]
 
-        # if len(self.candles) > 10000:
-        #     test_start_idx = len(self.candles) - 10000
-        #     self.candles = self.candles[test_start_idx:]
-        #     self.X = self.X[-10000:] if len(self.X) > 10000 else self.X
-        #     self.X_scaled = (
-        #         self.X_scaled[-10000:] if len(self.X_scaled) > 10000 else self.X_scaled
-        #     )
-
         self.NA_MAX_NUM = NA_MAX_NUM
         self.candles_in_metrics = self.candles[self.NA_MAX_NUM :]
 
@@ -917,7 +1288,49 @@ class AdvancedSymbolicRegressionDEAP:
         # 主进化循环
         all_logbooks = []
 
+        # 内存高效模式下的初始化
+        if self.memory_efficient:
+            if self.verbose:
+                print(
+                    f"内存高效模式已启用: 缓存大小={self.max_cache_size}, 批大小={self.batch_size}"
+                )
+
+            # 大种群时尝试创建共享内存
+            if self.population_size >= 1000 and self.n_jobs != 1:
+                try:
+                    # 创建共享内存数组
+                    x_scaled_shm = self._create_shared_memory("X_scaled", self.X_scaled)
+                    candles_shm = self._create_shared_memory("candles", self.candles)
+                    candles_metrics_shm = self._create_shared_memory(
+                        "candles_in_metrics", self.candles_in_metrics
+                    )
+
+                    if x_scaled_shm and candles_shm and candles_metrics_shm:
+                        if self.verbose:
+                            print("共享内存创建成功，多进程将使用共享内存以节省内存")
+                            total_shared_mb = (
+                                (
+                                    self.X_scaled.nbytes
+                                    + self.candles.nbytes
+                                    + self.candles_in_metrics.nbytes
+                                )
+                                / 1024
+                                / 1024
+                            )
+                            print(f"共享内存大小: {total_shared_mb:.2f} MB")
+                except Exception as e:
+                    if self.verbose:
+                        print(f"共享内存创建失败: {e}")
+                        print("将使用常规多进程方式（每个进程复制数据）")
+                        if self.population_size >= 5000:
+                            print("建议：对于大种群，考虑设置n_jobs=1或较小的值")
+
         for gen in range(0, self.generations, 10):  # 每10代进行一次迁移
+            # 清理缓存
+            if gen > 0 and gen % 20 == 0:
+                self._clear_cache()
+                if self.verbose:
+                    print(f"Generation {gen}: 清理缓存完成")
             # 决定是否使用多进程
             use_multiprocessing = self.n_jobs != 1 and self.n_islands > 1
 
@@ -940,13 +1353,47 @@ class AdvancedSymbolicRegressionDEAP:
                     "mutation_prob": self.mutation_prob,
                     "max_depth": self.max_depth,
                     "init_depth": self.init_depth,
-                    "parsimony_coefficient": self.parsimony_coefficient,
                     "elite_size": self.elite_size,
                     "n_islands": self.n_islands,
                     "migration_rate": self.migration_rate,
                     "local_search_prob": self.local_search_prob,
                     "adaptive_mutation": self.adaptive_mutation,
+                    "max_cache_size": self.max_cache_size,
+                    "batch_size": self.batch_size,
+                    "memory_efficient": self.memory_efficient,
                 }
+
+                # 添加共享内存信息
+                if self.shared_memories:
+                    model_dict["shared_memory_info"] = {
+                        "X_scaled": {
+                            "name": (
+                                self.shared_memories.get("X_scaled").name
+                                if "X_scaled" in self.shared_memories
+                                else None
+                            ),
+                            "shape": self.shared_shapes.get("X_scaled"),
+                            "dtype": self.shared_dtypes.get("X_scaled"),
+                        },
+                        "candles": {
+                            "name": (
+                                self.shared_memories.get("candles").name
+                                if "candles" in self.shared_memories
+                                else None
+                            ),
+                            "shape": self.shared_shapes.get("candles"),
+                            "dtype": self.shared_dtypes.get("candles"),
+                        },
+                        "candles_in_metrics": {
+                            "name": (
+                                self.shared_memories.get("candles_in_metrics").name
+                                if "candles_in_metrics" in self.shared_memories
+                                else None
+                            ),
+                            "shape": self.shared_shapes.get("candles_in_metrics"),
+                            "dtype": self.shared_dtypes.get("candles_in_metrics"),
+                        },
+                    }
 
                 # 序列化种群数据
                 islands_data = []
@@ -1033,10 +1480,21 @@ class AdvancedSymbolicRegressionDEAP:
             self.pareto_front, key=lambda x: x.fitness.values[0]
         )[: self.elite_size]
 
+        # 清理共享内存
+        if self.memory_efficient:
+            self._cleanup_shared_memory()
+
         if self.verbose:
             print(f"\n进化完成! Pareto前沿大小: {len(self.pareto_front)}")
             print(f"最佳峰度偏差: {self.best_individuals[0].fitness.values[0]:.6f}")
             print(f"对应复杂度: {self.best_individuals[0].fitness.values[1]:.0f}")
+            if self.semantic_cache is not None:
+                cache_rate = (
+                    self._cache_hits / (self._cache_hits + self._cache_misses)
+                    if (self._cache_hits + self._cache_misses) > 0
+                    else 0
+                )
+                print(f"缓存命中率: {cache_rate:.2%}")
 
     def visualize_pareto_front(self, save_path: str = None):
         """
@@ -1284,127 +1742,3 @@ class AdvancedSymbolicRegressionDEAP:
 
         for key, value in model_data["params"].items():
             setattr(self, key, value)
-
-
-# 辅助函数保持与基础版本一致
-def prepare_features(
-    candles_path: str = "data/btc_1m.npy", use_last_n: int = 10000
-) -> Tuple[np.ndarray, List[str], int]:
-    """
-    准备特征数据
-
-    从K线数据中提取技术特征，用于符号回归训练。
-
-    参数:
-    ------
-    candles_path : str, default="data/btc_1m.npy"
-        K线数据文件路径
-    use_last_n : int, default=10000
-        使用最近n条K线数据。如果为0或负数，使用全部数据
-
-    返回:
-    ------
-    Tuple[np.ndarray, List[str], int]
-        - X: 特征矩阵，shape=(n_samples-1, n_features)
-        - feature_names: 特征名称列表
-        - NA_MAX_NUM: 最大缺失值数量，用于数据对齐
-
-    特征包括:
-    ----------
-    - hl_range: 高低区间的对数，衡量波动性
-    - r25, r50, r100, r200: 不同周期的对数收益率
-    - vol_ratio: 成交量比率的对数
-    - price_position: 价格在高低区间的位置
-
-    注意:
-    ------
-    - 过滤掉成交量为0的K线
-    - 移除有缺失值的前部行
-    """
-    candles = np.load(candles_path)
-    candles = candles[candles[:, 5] > 0]
-
-    if use_last_n > 0 and len(candles) > use_last_n:
-        candles = candles[-use_last_n:]
-
-    df = numpy_candles_to_dataframe(candles)
-
-    feature_and_label = []
-
-    # label
-    label = np.log(df["close"].shift(-1) / df["close"])
-    label.name = "label"
-    feature_and_label.append(label)
-
-    # high low range
-    hl_range = np.log(df["high"] / df["low"])
-    hl_range.name = "hl_range"
-    feature_and_label.append(hl_range)
-
-    RANGE = [25, 50, 100, 200]
-
-    # log return
-    for i in RANGE:
-        series = np.log(df["close"] / df["close"].shift(i))
-        series.name = f"r{i}"
-        feature_and_label.append(series)
-
-    # volume features
-    vol_series = np.log(df["volume"] / df["volume"].shift(1) + 1)
-    vol_series.name = "vol_ratio"
-    feature_and_label.append(vol_series)
-
-    # price position
-    price_pos = (df["close"] - df["low"]) / (df["high"] - df["low"] + 1e-10)
-    price_pos.name = "price_position"
-    feature_and_label.append(price_pos)
-
-    df_features_and_label = pd.concat(feature_and_label, axis=1)
-
-    NA_MAX_NUM = df_features_and_label.isna().sum().max()
-    df_features_and_label = df_features_and_label.iloc[NA_MAX_NUM:]
-
-    cols = [col for col in df_features_and_label.columns if col != "label"]
-    X = df_features_and_label[cols].values[:-1]
-
-    return X, cols, NA_MAX_NUM
-
-
-if __name__ == "__main__":
-    # 高级版本演示
-    print("准备数据...")
-    X, feature_names, NA_MAX_NUM = prepare_features(use_last_n=10000)
-
-    print(f"特征数量: {len(feature_names)}")
-    print(f"样本数量: {X.shape[0]}")
-
-    # 创建高级模型
-    model = AdvancedSymbolicRegressionDEAP(
-        population_size=200,
-        generations=30,  # 演示用较少代数
-        n_islands=4,
-        migration_rate=0.1,
-        local_search_prob=0.05,
-        adaptive_mutation=True,
-        verbose=True,
-        random_state=42,
-    )
-
-    print("\n开始训练高级模型...")
-    model.fit(X, feature_names)
-
-    print("\n获取最佳表达式...")
-    best_expressions = model.get_best_expressions(n=5)
-
-    print("\n=== Top 5 表达式 ===")
-    for expr in best_expressions:
-        print(f"\n排名 {expr['rank']}:")
-        print(f"  表达式: {expr['expression'][:100]}...")
-        print(f"  峰度偏差: {expr['kurtosis_deviation']:.6f}")
-        print(f"  复杂度: {expr['complexity']}")
-        print(f"  实际峰度: {expr['actual_kurtosis']:.4f}")
-        print(f"  Bar数量: {expr['num_bars']}")
-
-    # 可视化Pareto前沿
-    print("\n生成Pareto前沿可视化...")
-    model.visualize_pareto_front(save_path="pareto_front.png")
