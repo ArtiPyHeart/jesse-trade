@@ -866,6 +866,139 @@ class AdvancedSymbolicRegressionDEAP:
         # return abs(kurtosis - 3.0) + 0.1 * skewness
         return kurtosis
 
+    def _calculate_crowding_distance(self, individuals):
+        """
+        计算个体的拥挤度距离
+
+        拥挤度距离用于衡量个体在目标空间中的分散程度。
+        距离越大，表示个体周围越不拥挤，应该被优先保留。
+
+        参数:
+        ------
+        individuals : List[Individual]
+            需要计算拥挤度的个体列表
+        """
+        if len(individuals) == 0:
+            return
+
+        # 初始化拥挤度距离
+        for ind in individuals:
+            ind.crowding_distance = 0
+
+        # 对每个目标维度计算
+        n_objectives = len(individuals[0].fitness.values)
+        for m in range(n_objectives):
+            # 按目标值排序
+            individuals.sort(key=lambda x: x.fitness.values[m])
+
+            # 边界个体设为无穷大
+            individuals[0].crowding_distance = float("inf")
+            individuals[-1].crowding_distance = float("inf")
+
+            # 计算中间个体的拥挤度
+            if len(individuals) > 2:
+                obj_range = (
+                    individuals[-1].fitness.values[m] - individuals[0].fitness.values[m]
+                )
+                if obj_range > 0:
+                    for i in range(1, len(individuals) - 1):
+                        individuals[i].crowding_distance += (
+                            individuals[i + 1].fitness.values[m]
+                            - individuals[i - 1].fitness.values[m]
+                        ) / obj_range
+
+    def _select_with_diversity(self, population, k):
+        """
+        结合Pareto等级和拥挤度距离的选择
+
+        首先按Pareto等级选择，同一等级内按拥挤度距离选择。
+        这样既保持了收敛性，又维护了多样性。
+
+        参数:
+        ------
+        population : List[Individual]
+            待选择的种群
+        k : int
+            需要选择的个体数量
+
+        返回:
+        ------
+        List[Individual]
+            选中的个体
+        """
+        # 获取Pareto分层
+        pareto_fronts = tools.sortNondominated(population, k)
+
+        chosen = []
+        for i, front in enumerate(pareto_fronts):
+            if len(chosen) + len(front) <= k:
+                chosen.extend(front)
+            else:
+                # 需要从当前层选择部分个体
+                # 计算拥挤度并选择
+                self._calculate_crowding_distance(front)
+                # 优先选择拥挤度大的（周围不拥挤的）
+                front.sort(key=lambda x: x.crowding_distance, reverse=True)
+                chosen.extend(front[: k - len(chosen)])
+                break
+
+        return chosen
+
+    def _create_diverse_individual(self):
+        """
+        创建多样化的个体
+
+        随机使用full、grow或halfandhalf方法创建个体，
+        增加初始种群的结构多样性。
+
+        返回:
+        ------
+        Individual
+            新创建的个体
+        """
+        # 三种初始化方法
+        methods = [
+            lambda: gp.genFull(self.pset, self.init_depth[0], self.init_depth[1]),
+            lambda: gp.genGrow(self.pset, self.init_depth[0], self.init_depth[1]),
+            lambda: gp.genHalfAndHalf(
+                self.pset, self.init_depth[0], self.init_depth[1]
+            ),
+        ]
+
+        # 设置不同方法的选择概率
+        # Full: 40%, Grow: 30%, HalfAndHalf: 30%
+        weights = [0.4, 0.3, 0.3]
+        method = random.choices(methods, weights=weights)[0]
+
+        return creator.Individual(method())
+
+    def _create_individual_with_depth_bias(self, min_depth, max_depth):
+        """
+        创建具有特定深度偏好的个体
+
+        参数:
+        ------
+        min_depth : int
+            最小深度
+        max_depth : int
+            最大深度
+
+        返回:
+        ------
+        Individual
+            新创建的个体
+        """
+        methods = [
+            lambda: gp.genFull(self.pset, min_depth, max_depth),
+            lambda: gp.genGrow(self.pset, min_depth, max_depth),
+            lambda: gp.genHalfAndHalf(self.pset, min_depth, max_depth),
+        ]
+        # Full: 40%, Grow: 30%, HalfAndHalf: 30%
+        weights = [0.4, 0.3, 0.3]
+        method = random.choices(methods, weights=weights)[0]
+
+        return creator.Individual(method())
+
     def _semantic_crossover(self, ind1, ind2):
         """
         基于语义相似度的交叉操作
@@ -1018,9 +1151,8 @@ class AdvancedSymbolicRegressionDEAP:
             min_=self.init_depth[0],
             max_=self.init_depth[1],
         )
-        self.toolbox.register(
-            "individual", tools.initIterate, creator.Individual, self.toolbox.expr
-        )
+        # 使用多样化的初始化方法
+        self.toolbox.register("individual", self._create_diverse_individual)
         self.toolbox.register(
             "population", tools.initRepeat, list, self.toolbox.individual
         )
@@ -1166,8 +1298,10 @@ class AdvancedSymbolicRegressionDEAP:
                 if hasattr(self, "_clear_cache"):
                     self._clear_cache()
 
-            # 环境选择
-            population[:] = toolbox.select(population + offspring, len(population))
+            # 环境选择（使用基于拥挤度的多样性选择）
+            population[:] = self._select_with_diversity(
+                population + offspring, len(population)
+            )
 
             # 检查停滞
             current_best = min(population, key=lambda x: x.fitness.values[0])
@@ -1282,10 +1416,29 @@ class AdvancedSymbolicRegressionDEAP:
             else:
                 print("使用单进程模式")
 
-        # 创建岛屿种群
+        # 创建岛屿种群（每个岛屿有不同的深度偏好）
         islands = []
         for i in range(self.n_islands):
-            pop = self.toolbox.population(n=self.population_size // self.n_islands)
+            # 为每个岛屿设置不同的深度偏好
+            if self.n_islands > 1:
+                # 线性分布深度偏好
+                depth_ratio = i / (self.n_islands - 1)
+                # 从较浅到较深
+                min_depth = self.init_depth[0]
+                max_depth = int(
+                    self.init_depth[0]
+                    + (self.init_depth[1] - self.init_depth[0])
+                    * (0.5 + depth_ratio * 0.5)
+                )
+            else:
+                min_depth = self.init_depth[0]
+                max_depth = self.init_depth[1]
+
+            # 创建具有特定深度偏好的种群
+            pop = []
+            for _ in range(self.population_size // self.n_islands):
+                ind = self._create_individual_with_depth_bias(min_depth, max_depth)
+                pop.append(ind)
             islands.append(pop)
 
         # 主进化循环
@@ -1461,14 +1614,17 @@ class AdvancedSymbolicRegressionDEAP:
             # 岛屿间迁移
             if gen + 10 < self.generations:
                 for i in range(self.n_islands):
-                    # 选择迁移个体
-                    migrants = tools.selBest(
-                        islands[i], int(self.migration_rate * len(islands[i]))
+                    # 使用锦标赛选择迁移个体，保持随机性
+                    num_migrants = int(self.migration_rate * len(islands[i]))
+                    migrants = tools.selTournament(
+                        islands[i], num_migrants, tournsize=3
                     )
                     # 迁移到下一个岛屿
                     next_island = (i + 1) % self.n_islands
-                    # 替换最差个体
-                    islands[next_island][-len(migrants) :] = migrants
+                    # 随机替换而非替换最差，增加多样性
+                    for migrant in migrants:
+                        idx = random.randint(0, len(islands[next_island]) - 1)
+                        islands[next_island][idx] = self.toolbox.clone(migrant)
 
             if self.verbose and gen % 20 == 0:
                 print(f"Generation {gen}/{self.generations} completed")
