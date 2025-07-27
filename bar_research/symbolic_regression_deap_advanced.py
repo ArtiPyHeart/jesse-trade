@@ -190,12 +190,22 @@ def _init_worker(model_dict):
 
 def _island_evolution_worker(args):
     """岛屿进化的工作函数"""
-    island_id, population_data, generations = args
+    island_id, population_data, generations, island_weights = args
 
     model = _global_model_instance
 
     # 重建toolbox
     toolbox = base.Toolbox()
+    
+    # 创建特定于岛屿的FitnessMulti类
+    if hasattr(creator, f"FitnessIsland{island_id}"):
+        delattr(creator, f"FitnessIsland{island_id}")
+    if hasattr(creator, f"IndividualIsland{island_id}"):
+        delattr(creator, f"IndividualIsland{island_id}")
+    
+    creator.create(f"FitnessIsland{island_id}", base.Fitness, weights=island_weights)
+    creator.create(f"IndividualIsland{island_id}", gp.PrimitiveTree, 
+                   fitness=getattr(creator, f"FitnessIsland{island_id}"))
 
     # 注册操作
     toolbox.register(
@@ -205,7 +215,8 @@ def _island_evolution_worker(args):
         min_=model.init_depth[0],
         max_=model.init_depth[1],
     )
-    toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.expr)
+    toolbox.register("individual", tools.initIterate, 
+                    getattr(creator, f"IndividualIsland{island_id}"), toolbox.expr)
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
     # 注册评估函数
@@ -231,8 +242,9 @@ def _island_evolution_worker(args):
 
     # 重建种群
     population = []
+    IndividualClass = getattr(creator, f"IndividualIsland{island_id}")
     for ind_data in population_data:
-        ind = creator.Individual(ind_data["tree"])
+        ind = IndividualClass(ind_data["tree"])
         if ind_data["fitness"] is not None:
             ind.fitness.values = ind_data["fitness"]
         population.append(ind)
@@ -461,6 +473,46 @@ class AdvancedSymbolicRegressionDEAP:
         self.shared_memories: Dict[str, SharedMemory] = {}
         self.shared_shapes: Dict[str, tuple] = {}
         self.shared_dtypes: Dict[str, np.dtype] = {}
+        
+        # 岛屿特化权重
+        self.island_weights = self._generate_island_weights()
+
+    def _generate_island_weights(self) -> List[Tuple[float, float]]:
+        """
+        为不同岛屿生成不同的目标权重
+        
+        通过给不同岛屿分配不同的目标权重，使它们探索帕累托前沿的不同区域：
+        - 前30%岛屿：更重视峰度（寻找最佳峰度的解）
+        - 中间40%岛屿：平衡考虑两个目标
+        - 后30%岛屿：更重视简单性（寻找最简单的解）
+        
+        返回:
+        ------
+        List[Tuple[float, float]]
+            每个岛屿的权重对 (峰度权重, 复杂度权重)
+        """
+        weights = []
+        
+        for i in range(self.n_islands):
+            if i < self.n_islands * 0.3:  # 前30%
+                # 更重视峰度
+                w1 = -1.0
+                w2 = -0.1
+            elif i < self.n_islands * 0.7:  # 中间40%
+                # 平衡考虑
+                w1 = -1.0
+                w2 = -1.0
+            else:  # 后30%
+                # 更重视简单性
+                w1 = -0.5
+                w2 = -1.0
+            
+            weights.append((w1, w2))
+            
+        if self.verbose:
+            print(f"岛屿权重分配: {weights}")
+            
+        return weights
 
     def _create_advanced_primitive_set(self, n_features: int):
         """
@@ -997,6 +1049,128 @@ class AdvancedSymbolicRegressionDEAP:
 
         return min(base_rate * rate_multiplier, 0.5)
 
+    def _deduplicate_individuals(self, individuals: List, max_unique: int = None) -> List:
+        """
+        去除重复的表达式个体
+        
+        根据表达式的字符串表示去除重复项，保留适应度最好的个体。
+        对于具有相同表达式的多个个体，保留适应度值最小的那个。
+        
+        参数:
+        ------
+        individuals : List[Individual]
+            待去重的个体列表
+        max_unique : int, optional
+            最多返回的唯一个体数量。如果为None，返回所有唯一个体
+            
+        返回:
+        ------
+        List[Individual]
+            去重后的个体列表，按适应度排序
+        """
+        # 使用字典存储每个唯一表达式的最佳个体
+        unique_expressions = {}
+        
+        for ind in individuals:
+            expr_str = str(ind)
+            
+            # 如果是新表达式或者当前个体适应度更好，则更新
+            if expr_str not in unique_expressions:
+                unique_expressions[expr_str] = ind
+            else:
+                # 比较适应度（第一个目标值：峰度偏差）
+                if ind.fitness.values[0] < unique_expressions[expr_str].fitness.values[0]:
+                    unique_expressions[expr_str] = ind
+        
+        # 获取所有唯一个体并按适应度排序
+        unique_individuals = list(unique_expressions.values())
+        unique_individuals.sort(key=lambda x: x.fitness.values[0])
+        
+        # 如果指定了最大数量，返回前max_unique个
+        if max_unique is not None:
+            return unique_individuals[:max_unique]
+        
+        return unique_individuals
+
+    def _semantic_diversity_migration(
+        self, source_island: List, target_island: List, migration_rate: float
+    ) -> List:
+        """
+        基于语义多样性的智能迁移策略
+        
+        选择既优秀又能增加目标岛屿多样性的个体进行迁移。
+        通过计算候选个体与目标岛屿现有个体的语义相似度，
+        优先选择差异较大的个体。
+        
+        参数:
+        ------
+        source_island : List[Individual]
+            源岛屿种群
+        target_island : List[Individual]  
+            目标岛屿种群
+        migration_rate : float
+            迁移率
+            
+        返回:
+        ------
+        List[Individual]
+            选中的迁移个体列表
+        """
+        n_migrants = int(migration_rate * len(source_island))
+        
+        # 获取源岛屿的优秀个体（前50%）
+        sorted_source = sorted(source_island, key=lambda x: x.fitness.values[0])
+        candidates = sorted_source[:len(sorted_source)//2]
+        
+        # 计算目标岛屿top个体的语义输出（用于比较）
+        n_compare = min(10, len(target_island))
+        target_top = sorted(target_island, key=lambda x: x.fitness.values[0])[:n_compare]
+        
+        target_semantics = []
+        for ind in target_top:
+            try:
+                func = gp.compile(expr=ind, pset=self.pset)
+                output = np.array([func(*x) for x in self.X_scaled[:100]])  # 使用子集加速
+                target_semantics.append(output)
+            except:
+                continue
+                
+        if not target_semantics:
+            # 如果无法计算语义，退回到普通选择
+            return tools.selBest(source_island, n_migrants)
+        
+        # 计算每个候选者的多样性贡献度
+        diversity_scores = []
+        for candidate in candidates:
+            try:
+                func = gp.compile(expr=candidate, pset=self.pset)
+                candidate_output = np.array([func(*x) for x in self.X_scaled[:100]])
+                
+                # 计算与目标岛屿的平均语义距离
+                distances = []
+                for target_output in target_semantics:
+                    if np.std(candidate_output) > 0 and np.std(target_output) > 0:
+                        # 使用余弦距离
+                        dist = 1 - cosine(candidate_output, target_output)
+                        distances.append(dist)
+                
+                avg_distance = np.mean(distances) if distances else 0
+                
+                # 结合适应度和多样性
+                # 适应度越好（值越小），得分越高；距离越大，得分越高
+                fitness_score = 1.0 / (1.0 + candidate.fitness.values[0])
+                diversity_score = fitness_score * (1.0 + avg_distance)
+                
+                diversity_scores.append((candidate, diversity_score))
+            except:
+                diversity_scores.append((candidate, 0))
+        
+        # 按多样性贡献度排序，选择前n_migrants个
+        diversity_scores.sort(key=lambda x: x[1], reverse=True)
+        migrants = [ind for ind, _ in diversity_scores[:n_migrants]]
+        
+        return migrants
+
     def _setup_multi_objective_evolution(self):
         """设置多目标进化算法"""
         # 创建多目标适应度类
@@ -1369,6 +1543,7 @@ class AdvancedSymbolicRegressionDEAP:
                     "shared_memories": self.shared_memories,
                     "shared_shapes": self.shared_shapes,
                     "shared_dtypes": self.shared_dtypes,
+                    "island_weights": self.island_weights,
                 }
 
                 # 添加共享内存信息
@@ -1421,7 +1596,7 @@ class AdvancedSymbolicRegressionDEAP:
                 # 准备任务参数
                 tasks = []
                 for i, island_data in enumerate(islands_data):
-                    tasks.append((i, island_data, min(10, self.generations - gen)))
+                    tasks.append((i, island_data, min(10, self.generations - gen), self.island_weights[i]))
 
                 # 使用多进程池执行
                 n_processes = min(
@@ -1461,14 +1636,17 @@ class AdvancedSymbolicRegressionDEAP:
             # 岛屿间迁移
             if gen + 10 < self.generations:
                 for i in range(self.n_islands):
-                    # 选择迁移个体
-                    migrants = tools.selBest(
-                        islands[i], int(self.migration_rate * len(islands[i]))
-                    )
                     # 迁移到下一个岛屿
                     next_island = (i + 1) % self.n_islands
+                    
+                    # 使用智能迁移策略
+                    migrants = self._semantic_diversity_migration(
+                        islands[i], islands[next_island], self.migration_rate
+                    )
+                    
                     # 替换最差个体
-                    islands[next_island][-len(migrants) :] = migrants
+                    if migrants:
+                        islands[next_island][-len(migrants):] = migrants
 
             if self.verbose and gen % 20 == 0:
                 print(f"Generation {gen}/{self.generations} completed")
@@ -1483,10 +1661,20 @@ class AdvancedSymbolicRegressionDEAP:
             final_population, len(final_population), True
         )[0]
 
-        # 保存最佳个体
-        self.best_individuals = sorted(
+        # 去重并保存最佳个体
+        # 首先对Pareto前沿按适应度排序
+        sorted_pareto = sorted(
             self.pareto_front, key=lambda x: x.fitness.values[0]
-        )[: self.elite_size]
+        )
+        
+        # 使用去重方法获取唯一的个体
+        self.best_individuals = self._deduplicate_individuals(
+            sorted_pareto, max_unique=self.elite_size
+        )
+        
+        # 如果去重后的个体数量少于elite_size，记录信息
+        if self.verbose and len(self.best_individuals) < self.elite_size:
+            print(f"注意：去重后只有 {len(self.best_individuals)} 个唯一表达式（期望 {self.elite_size} 个）")
 
         # 清理共享内存
         if self.memory_efficient:
