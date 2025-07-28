@@ -13,7 +13,7 @@ from jesse.utils import numpy_candles_to_dataframe
 from joblib import Parallel, delayed
 from scipy import stats
 
-from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
+from bar import build_bar_by_cumsum
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
 from custom_indicators.utils.math_tools import log_ret_from_candles
 

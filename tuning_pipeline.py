@@ -3,6 +3,23 @@
 
 待评估列表：
 min(
+  sub(
+    vol60,
+    min(
+      price_position,
+      vol60
+    )
+  ),
+  min(
+    min(
+      price_position,
+      abs(r60)
+    ),
+    abs(r120)
+  )
+)
+
+min(
   1-0.9603852058885574,
   min(
     min(abs(r30), abs(r60)),
@@ -37,7 +54,7 @@ from joblib import Parallel, delayed
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
-from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
+from bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
 from custom_indicators.toolbox.feature_selection.rfcq_selector import RFCQSelector
 from custom_indicators.utils.math_tools import log_ret_from_candles

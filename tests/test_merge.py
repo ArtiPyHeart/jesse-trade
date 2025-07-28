@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from custom_indicators.toolbox.bar.merge import np_merge_bars
+from bar import np_merge_bars
 
 # --------------------------- 辅助函数 ---------------------------
 

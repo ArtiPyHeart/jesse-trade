@@ -1,7 +1,7 @@
 import numpy as np
 from joblib import delayed, Parallel
 
-from custom_indicators.toolbox.bar.fusion.base import FusionBarContainerBase
+from bar.fusion.base import FusionBarContainerBase
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
 from custom_indicators.utils.math_tools import log_ret_from_candles
 

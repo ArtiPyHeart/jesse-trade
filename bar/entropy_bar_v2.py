@@ -1,7 +1,7 @@
 import numpy as np
 from joblib import delayed, Parallel
 
-from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
+from bar.build import build_bar_by_cumsum
 from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
 from custom_indicators.utils.math_tools import log_ret_from_candles
 from custom_indicators.volitility_indicator.yang_zhang import yang_zhang_volatility
@@ -130,7 +130,7 @@ class EntropyBarContainer:
 
 
 if __name__ == "__main__":
-    candles = np.load("/Users/yangqiuyu/Github/jesse-trade/data/btc_1m.npy")[-200000:]
+    candles = np.load("/data/btc_1m.npy")[-200000:]
     entropy_bar_container = EntropyBarContainer(
         window=52,
         window_vol_t=55,

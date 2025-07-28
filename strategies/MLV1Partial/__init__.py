@@ -22,7 +22,7 @@ from model.config import (
 )
 from model.config import get_meta_model, get_side_model
 from custom_indicators.toolbox.bet_sizing import discretize_position
-from custom_indicators.toolbox.bar.dollar_bar import (
+from bar import (
     DollarBarContainer,
     build_dollar_bar,
 )

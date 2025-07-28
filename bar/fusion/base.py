@@ -5,7 +5,7 @@ import arrow
 import numpy as np
 
 
-from custom_indicators.toolbox.bar.build import build_bar_by_cumsum
+from bar.build import build_bar_by_cumsum
 
 
 class FusionBarContainerBase(ABC):
