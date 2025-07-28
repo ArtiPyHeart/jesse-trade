@@ -94,10 +94,9 @@ class BacktestPipeline:
     def merged_bar(self, value):
         self._merged_bar = value
 
-    def init_bar_container(self, vol_1, vol_2, r_1, r_2, threshold=0.5):
+    def init_bar_container(self, vol_1, r_1, r_2, threshold=0.5):
         self.bar_container = DeapBarV1(
             vol_1,
-            vol_2,
             r_1,
             r_2,
             threshold,
@@ -540,11 +539,10 @@ class BacktestPipeline:
 def tune_pipeline(trial: optuna.Trial):
     pipeline = BacktestPipeline("data/btc_1m.npy")
     vol_1 = trial.suggest_int("vol_1", 1, 300)
-    vol_2 = trial.suggest_int("vol_2", 1, 300)
     r_1 = trial.suggest_int("r_1", 1, 300)
     r_2 = trial.suggest_int("r_2", 1, 300)
 
-    pipeline.init_bar_container(vol_1, vol_2, r_1, r_2)
+    pipeline.init_bar_container(vol_1, r_1, r_2)
     raw_threshold_array = pipeline.get_threshold_array()
     threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 60)
     threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 360)
