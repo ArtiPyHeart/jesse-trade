@@ -1,24 +1,6 @@
 """
 独立的自定义轴调参工作流，用于寻找DEAP、Gplearn找出的自定义轴的最佳参数组合
-
 待评估列表：
-min(
-  sub(
-    vol60,
-    min(
-      price_position,
-      vol60
-    )
-  ),
-  min(
-    min(
-      price_position,
-      abs(r60)
-    ),
-    abs(r120)
-  )
-)
-
 min(
   1-0.9603852058885574,
   min(
@@ -50,14 +32,11 @@ import optuna
 import pandas as pd
 from hmmlearn.hmm import GMMHMM
 from jesse import helpers
-from joblib import Parallel, delayed
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from custom_indicators.all_features import feature_bundle
-from bar.fusion.base import FusionBarContainerBase
-from custom_indicators.toolbox.entropy.apen_sampen import sample_entropy_numba
 from custom_indicators.toolbox.feature_selection.rfcq_selector import RFCQSelector
-from custom_indicators.utils.math_tools import log_ret_from_candles
+from bar.tuning.deap_v1 import DeapBarV1
 
 
 class OptunaLogManager:
@@ -84,49 +63,6 @@ class OptunaLogManager:
 
 
 optuna_log_manager = OptunaLogManager()
-
-
-class TuningBarContainer(FusionBarContainerBase):
-    def __init__(
-        self,
-        n1: int,
-        n2: int,
-        n_entropy: int,
-        en_div_thres: float,
-        threshold: float,
-        max_bars=500000,
-    ):
-        super().__init__(max_bars, threshold)
-        self.N_1 = n1
-        self.N_2 = n2
-        self.N_ENTROPY = n_entropy
-        self.EN_DIV_THRES = en_div_thres
-
-    @property
-    def max_lookback(self) -> int:
-        return max(self.N_1, self.N_2, self.N_ENTROPY)
-
-    def get_thresholds(self, candles: np.ndarray) -> np.ndarray:
-        log_ret_n_1 = np.log(candles[self.N_1 :, 2] / candles[: -self.N_1, 2])
-        if self.max_lookback > self.N_1:
-            log_ret_n_1 = log_ret_n_1[self.max_lookback - self.N_1 :]
-        log_ret_n_2 = np.log(candles[self.N_2 :, 2] / candles[: -self.N_2, 2])
-        if self.max_lookback > self.N_2:
-            log_ret_n_2 = log_ret_n_2[self.max_lookback - self.N_2 :]
-
-        if self.max_lookback > self.N_ENTROPY:
-            entropy_log_ret_list = log_ret_from_candles(
-                candles[self.max_lookback - self.N_ENTROPY :], self.N_ENTROPY
-            )
-        else:
-            entropy_log_ret_list = log_ret_from_candles(candles, self.N_ENTROPY)
-
-        entropy_array = Parallel()(
-            delayed(sample_entropy_numba)(i) for i in entropy_log_ret_list
-        )
-        entropy_array = np.array(entropy_array) / self.EN_DIV_THRES
-
-        return np.min([np.abs(log_ret_n_1), log_ret_n_2 + entropy_array], axis=0)
 
 
 class BacktestPipeline:
@@ -158,9 +94,13 @@ class BacktestPipeline:
     def merged_bar(self, value):
         self._merged_bar = value
 
-    def init_bar_container(self, n1, n2, n_entropy, en_div_thres, threshold=0.5):
-        self.bar_container = TuningBarContainer(
-            n1, n2, n_entropy, en_div_thres, threshold
+    def init_bar_container(self, vol_1, vol_2, r_1, r_2, threshold=0.5):
+        self.bar_container = DeapBarV1(
+            vol_1,
+            vol_2,
+            r_1,
+            r_2,
+            threshold,
         )
 
     def get_threshold_array(self):
@@ -599,15 +539,16 @@ class BacktestPipeline:
 
 def tune_pipeline(trial: optuna.Trial):
     pipeline = BacktestPipeline("data/btc_1m.npy")
-    n1 = trial.suggest_int("n1", 1, 300)
-    n2 = trial.suggest_int("n2", 1, 300)
-    n_entropy = trial.suggest_int("n_entropy", 30, 300)
-    en_div_thres = trial.suggest_float("en_div_thres", 1, 50)
-    pipeline.init_bar_container(n1, n2, n_entropy, en_div_thres)
+    vol_1 = trial.suggest_int("vol_1", 1, 300)
+    vol_2 = trial.suggest_int("vol_2", 1, 300)
+    r_1 = trial.suggest_float("r_1", 1, 300)
+    r_2 = trial.suggest_float("r_2", 1, 300)
+
+    pipeline.init_bar_container(vol_1, vol_2, r_1, r_2)
     raw_threshold_array = pipeline.get_threshold_array()
     threshold_min = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 60)
-    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 540)
-    if threshold_min < 0:
+    threshold_max = np.sum(raw_threshold_array) / (len(pipeline.raw_candles) // 360)
+    if threshold_min < 0 or threshold_max < 0 or threshold_min > threshold_max:
         return -1000
 
     pipeline.set_threshold(
