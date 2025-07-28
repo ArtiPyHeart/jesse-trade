@@ -76,9 +76,9 @@ class FusionBarContainerBase(ABC):
             )
             return
         anchor_index = anchor_index_array[0] - self.max_lookback
-        assert anchor_index > 0, (
-            f"Not enough data to build fusion bars, {anchor_index = }"
-        )
+        assert (
+            anchor_index > 0
+        ), f"Not enough data to build fusion bars, {anchor_index = }"
         # 3. 根据anchor_index来计算新的threshold
         new_thresholds = self.get_thresholds(candles[anchor_index:])
         # 4. 根据新的threshold来更新_unfinished_bars_thresholds

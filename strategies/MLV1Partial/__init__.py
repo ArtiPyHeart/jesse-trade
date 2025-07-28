@@ -95,7 +95,12 @@ class MLV1Partial(Strategy):
     def dollar_bar_short_term_features(self) -> dict:
         self.dollar_bar_short_term_fc.load(self.dollar_bar_short_term)
         feature_names = sorted(
-            [i.replace(f"{DOLLAR_BAR_SHORT_TERM}_", "") for i in set(SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES)]
+            [
+                i.replace(f"{DOLLAR_BAR_SHORT_TERM}_", "")
+                for i in set(
+                    SIDE_DOLLAR_BAR_SHORT_FEATURES + META_DOLLAR_BAR_SHORT_FEATURES
+                )
+            ]
         )
         features = self.dollar_bar_short_term_fc.get(feature_names)
         return {f"{DOLLAR_BAR_SHORT_TERM}_{k}": v for k, v in features.items()}
@@ -105,7 +110,12 @@ class MLV1Partial(Strategy):
     def dollar_bar_mid_term_features(self) -> dict:
         self.dollar_bar_mid_term_fc.load(self.dollar_bar_mid_term)
         feature_names = sorted(
-            [i.replace(f"{DOLLAR_BAR_MID_TERM}_", "") for i in set(SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES)]
+            [
+                i.replace(f"{DOLLAR_BAR_MID_TERM}_", "")
+                for i in set(
+                    SIDE_DOLLAR_BAR_MID_FEATURES + META_DOLLAR_BAR_MID_FEATURES
+                )
+            ]
         )
         features = self.dollar_bar_mid_term_fc.get(feature_names)
         return {f"{DOLLAR_BAR_MID_TERM}_{k}": v for k, v in features.items()}
@@ -115,7 +125,12 @@ class MLV1Partial(Strategy):
     def dollar_bar_long_term_features(self) -> dict:
         self.dollar_bar_long_term_fc.load(self.dollar_bar_long_term)
         feature_names = sorted(
-            [i.replace(f"{DOLLAR_BAR_LONG_TERM}_", "") for i in set(SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES)]
+            [
+                i.replace(f"{DOLLAR_BAR_LONG_TERM}_", "")
+                for i in set(
+                    SIDE_DOLLAR_BAR_LONG_FEATURES + META_DOLLAR_BAR_LONG_FEATURES
+                )
+            ]
         )
         features = self.dollar_bar_long_term_fc.get(feature_names)
         return {f"{DOLLAR_BAR_LONG_TERM}_{k}": v for k, v in features.items()}
