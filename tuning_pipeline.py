@@ -34,9 +34,9 @@ from hmmlearn.hmm import GMMHMM
 from jesse import helpers
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
+from bar.tuning.deap_v1 import DeapBarV1
 from custom_indicators.all_features import feature_bundle
 from custom_indicators.toolbox.feature_selection.rfcq_selector import RFCQSelector
-from bar.tuning.deap_v1 import DeapBarV1
 
 
 class OptunaLogManager:
@@ -541,8 +541,8 @@ def tune_pipeline(trial: optuna.Trial):
     pipeline = BacktestPipeline("data/btc_1m.npy")
     vol_1 = trial.suggest_int("vol_1", 1, 300)
     vol_2 = trial.suggest_int("vol_2", 1, 300)
-    r_1 = trial.suggest_float("r_1", 1, 300)
-    r_2 = trial.suggest_float("r_2", 1, 300)
+    r_1 = trial.suggest_int("r_1", 1, 300)
+    r_2 = trial.suggest_int("r_2", 1, 300)
 
     pipeline.init_bar_container(vol_1, vol_2, r_1, r_2)
     raw_threshold_array = pipeline.get_threshold_array()
@@ -583,7 +583,7 @@ if __name__ == "__main__":
     from optuna_config import create_robust_study, safe_optimize
 
     # 方法1: 创建新的研究
-    study_name = "backtest_tuning_find_v1_bar"
+    study_name = "backtest_tuning_find_deap_v1_bar"
 
     with optuna_log_manager.verbose_optimization():
         study = create_robust_study(
