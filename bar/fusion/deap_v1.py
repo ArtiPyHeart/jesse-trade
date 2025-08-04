@@ -26,16 +26,12 @@ class DeapBarV1(FusionBarContainerBase):
 
     def __init__(
         self,
-        VOL_1: int,
-        R_1: int,
-        R_2: int,
-        threshold: float,
         max_bars=50000,
     ):
-        super().__init__(max_bars, threshold)
-        self.VOL_1 = VOL_1
-        self.R_1 = R_1
-        self.R_2 = R_2
+        super().__init__(max_bars, 0.3044867289147951)
+        self.VOL_1 = 51
+        self.R_1 = 88
+        self.R_2 = 287
 
     @property
     def max_lookback(self) -> int:
