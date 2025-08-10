@@ -29,7 +29,7 @@ from scipy import stats
 from scipy.spatial.distance import cosine
 from sklearn.preprocessing import StandardScaler
 
-from bar import build_bar_by_cumsum
+from bar.build import build_bar_by_cumsum
 
 warnings.filterwarnings("ignore")
 
