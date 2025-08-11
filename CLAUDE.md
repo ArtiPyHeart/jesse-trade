@@ -1,115 +1,53 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+此文件为 Claude Code (claude.ai/code) 在处理本仓库代码时提供指导。
 
-## Project Overview
+## 项目概述
 
-jesse-trade is a sophisticated quantitative trading system built on the Jesse framework, designed to handle million-dollar portfolios with stable profitability through rapid iteration and advanced mathematical/physical concepts applied to trading.
+jesse-trade 是一个基于 Jesse 框架构建的复杂量化交易系统，旨在通过快速迭代和将先进的数学/物理概念应用于交易，稳定盈利地管理百万美元级别的投资组合。
 
-## Key Principles
+## 核心原则
 
-1. **Algorithm Correctness First**: Any calculation error can cause significant financial loss. Always ensure mathematical correctness before optimizing for readability or performance.
-2. **Professional Code Quality**: Review all code before committing. Follow best practices and maintain production-ready standards.
-3. **Scientific Approach**: Apply advanced mathematical and physical concepts to trading. The team consists of excellent mathematicians and physicists.
+1. **算法正确性优先**：任何计算错误都可能造成重大财务损失。在优化可读性或性能之前，始终确保算法计算的正确性。
+2. **专业代码质量**：提交前审查所有代码。遵循最佳实践并维持生产就绪标准。
+3. **科学方法**：将先进的数学和物理概念应用于交易。团队由优秀的数学家和物理学家组成。
 
-## Architecture
+## 架构
 
-### Core Components
-
-- **custom_indicators/**: Custom technical indicators library
-  - `prod_indicator/`: Production-ready indicators (adaptive, entropy-based, signal processing)
-  - `toolbox/`: Alternative bar construction (dollar bars, entropy bars), feature selection
-  - `utils/`: Helper functions including math utilities for trigonometric conversions
-
-- **strategies/**: Trading strategies including ML-driven approaches
-- **tests/**: Unit tests for critical components
-
-### Key Technologies
-
-- **Jesse Framework**: Core trading engine
-- **NumPy/Pandas**: Numerical computations
-- **Numba**: Performance optimization
-- **ML Libraries**: CatBoost, LightGBM, scikit-learn
-- **Database**: PostgreSQL (for optimization results), Redis (caching)
-
-## Development Commands
+## 开发命令
 
 ```bash
-# Install dependencies
+# 安装生产环境依赖
 chmod +x ./install.sh
 ./install.sh
 
-# Install dev dependencies
+# 在生产依赖上添加开发依赖
 pip install -r requirements-dev.txt
 ```
 
-## Coding Guidelines
+## 编码指南
 
-### Python Best Practices
+### Python 最佳实践
 
-1. **Internal Functions**: Use underscore prefix for internal functions/modules to reduce cognitive load
-2. **Numba Optimization**: Always unit test Numba-optimized code to ensure correctness
-3. **Indicator Implementation**: Follow the pattern in `custom_indicators/prod_indicator/accumulated_swing_index.py`:
-   - Handle `sequential` parameter correctly
-   - Return all values when `sequential=True`
-   - Return only latest value when `sequential=False`
+1. **内部函数**：为内部函数/模块使用下划线前缀以减少认知负荷
+2. **算法优化**：优化算法效率（如使用 Numba 优化）时必须进行单元测试以确保算法计算的正确性
+3. **指标实现**：遵循 `custom_indicators/prod_indicator/accumulated_swing_index.py` 中的模式：
+   - 正确处理 `sequential` 参数
+   - 当 `sequential=True` 时返回所有值
+   - 当 `sequential=False` 时仅返回最新值
 
-### Trigonometric Functions
+### 其他语言重构至Python
 
-**CRITICAL**: EasyLanguage uses degrees, Python uses radians. Always use `custom_indicators/utils/math.py` for conversions:
+- **EasyLanguage**：EasyLanguage 使用角度，Python 使用弧度。始终使用 `custom_indicators/utils/math.py` 进行三角函数转换
 
-```python
-from custom_indicators.utils.math import sin_deg, cos_deg, tan_deg, arctan_deg
-```
+## 项目特定模式
 
-### ML Model Integration
+### 自定义K线
 
-1. Models are stored in `ml_models/` directory
-2. Feature engineering follows patterns in `custom_indicators/toolbox/feature_selection.py`
-3. Use checkpoint system for long-running experiments
+项目通常使用由符号回归（gplearn/DEAP）挖掘的自定义K线来替代通常的时间轴k线
 
-## Project-Specific Patterns
+### 指标开发
 
-### Custom Bar Types
-
-The project extensively uses alternative bar construction methods:
-- Dollar bars (volume-weighted)
-- Entropy bars (information-theoretic)
-- Implementation in `custom_indicators/toolbox/`
-
-### Indicator Development
-
-When creating new indicators:
-1. Place production-ready indicators in `custom_indicators/prod_indicator/`
-2. Experimental indicators go in `custom_indicators/experimental_indicator/`
-3. Always handle edge cases and validate inputs
-4. Use vectorized operations where possible
-
-### Strategy Development
-
-1. Strategies should inherit from Jesse's base strategy
-2. Can use custom bar types via `alternative_candles_loader`
-3. ML model integration via pickle files in `ml_models/`
-
-## Important Files
-
-- `custom_indicators/utils/math.py`: Trigonometric conversion utilities
-- `custom_indicators/prod_indicator/accumulated_swing_index.py`: Reference implementation pattern
-- `run_optimization.py`: Main optimization entry point
-- `scripts/extract_data_from_jesse_to_csv.py`: Data extraction pipeline
-- `optimization/optuna_optimize.py`: Optimization framework
-
-## Database Schema
-
-The project uses PostgreSQL for storing optimization results with tables for:
-- Optimization studies
-- Trial results
-- Parameter combinations
-- Performance metrics
-
-## Testing Strategy
-
-1. Unit tests for all custom indicators
-2. Backtesting for strategy validation
-3. Always verify mathematical correctness
-4. Test Numba-optimized code against original implementations
+创建新指标时：
+1. 始终处理边缘情况并验证输入
+2. 尽可能使用向量化操作
