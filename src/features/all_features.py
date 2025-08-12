@@ -1692,9 +1692,11 @@ if __name__ == "__main__":
     check_features = [
         "vmd_win32_0_dt_lag3",
         "cwt_win128_1_ddt_lag1",
+        "ac_2",
+        "williams_r",
     ]
 
     feature_calculator = FeatureCalculator()
-    feature_calculator.load(candles, sequential=False)
+    feature_calculator.load(candles, sequential=True)
     for feature in check_features:
         print(feature, feature_calculator.get([feature]))
