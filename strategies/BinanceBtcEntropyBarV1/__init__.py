@@ -9,7 +9,7 @@ from joblib.externals.loky import get_reusable_executor
 from joblib.parallel import register_parallel_backend
 
 from src.features.all_features import FeatureCalculator
-from src.bars.fusion import FusionBarContainerV0
+from src.bars.fusion.v0 import FusionBarContainerV0
 
 from .config import (
     META_ALL,

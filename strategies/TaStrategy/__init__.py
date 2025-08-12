@@ -3,7 +3,7 @@ import numpy as np
 from jesse import utils
 from jesse.strategies import Strategy, cached
 
-from custom_indicators import roofing_filter
+from src.indicators.prod import roofing_filter
 
 
 class TaStrategy(Strategy):

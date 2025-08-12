@@ -4,7 +4,7 @@ from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
 
 from src.features.all_features import FeatureCalculator
-from bar import (
+from src.bars.traditional.dollar_bar import (
     DollarBarContainer,
     build_dollar_bar,
 )
