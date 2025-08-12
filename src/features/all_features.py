@@ -1690,9 +1690,12 @@ if __name__ == "__main__":
 
     candles = np.load(Path(__file__).parent.parent.parent / "data" / "btc_1m.npy")[-10_0000:]
     check_features = [
+        # class风格，多列返回，额外加工
         "vmd_win32_0_dt_lag3",
         "cwt_win128_1_ddt_lag1",
+        # 函数型，多列返回
         "ac_2",
+        # 函数型，单列返回
         "williams_r",
     ]
 
