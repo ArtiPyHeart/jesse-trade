@@ -3,7 +3,7 @@ import pandas as pd
 from jesse import utils
 from jesse.strategies import Strategy, cached
 
-from custom_indicators.all_features import FeatureCalculator
+from src.features.all_features import FeatureCalculator
 from model.config import (
     DOLLAR_BAR_LONG_TERM,
     DOLLAR_BAR_MID_TERM,
@@ -21,7 +21,7 @@ from model.config import (
     SIDE_DOLLAR_BAR_SHORT_FEATURES,
 )
 from model.config import get_meta_model, get_side_model
-from custom_indicators.toolbox.bet_sizing import discretize_position
+from src.data_process.bet_sizing import discretize_position
 from bar import (
     DollarBarContainer,
     build_dollar_bar,

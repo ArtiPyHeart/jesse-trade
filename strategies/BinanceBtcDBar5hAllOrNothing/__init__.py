@@ -3,7 +3,7 @@ import pandas as pd
 from jesse import helpers, utils
 from jesse.strategies import Strategy, cached
 
-from custom_indicators.all_features import FeatureCalculator
+from src.features.all_features import FeatureCalculator
 from bar import (
     DollarBarContainer,
     build_dollar_bar,

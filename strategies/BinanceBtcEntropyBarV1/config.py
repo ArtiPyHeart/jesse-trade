@@ -1,8 +1,4 @@
 from pathlib import Path
-
-from custom_indicators.utils.import_tools import ensure_package
-
-ensure_package("lightgbm")
 import lightgbm as lgb  # noqa: E402
 
 path_meta_model = Path(__file__).parent / "model" / "model_meta.txt"

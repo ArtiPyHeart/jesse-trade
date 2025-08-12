@@ -15,7 +15,7 @@
 
 ```python
 from tuning_pipeline import tune_pipeline
-from optuna_config import create_robust_study, safe_optimize
+from research.optuna_config import create_robust_study, safe_optimize
 
 # 创建研究（会自动保存到硬盘）
 study = create_robust_study(
@@ -37,7 +37,7 @@ safe_optimize(
 ### 2. 继续中断的实验
 
 ```python
-from optuna_config import OptunaStorageManager, safe_optimize
+from research.optuna_config import OptunaStorageManager, safe_optimize
 
 # 创建存储管理器
 manager = OptunaStorageManager("optuna_storage")
@@ -70,7 +70,7 @@ optuna_storage/
 ### 存储管理器 (OptunaStorageManager)
 
 ```python
-from optuna_config import OptunaStorageManager
+from research.optuna_config import OptunaStorageManager
 
 manager = OptunaStorageManager("optuna_storage")
 
@@ -96,7 +96,7 @@ latest_study = manager.get_latest_study()
 ### 安全优化函数 (safe_optimize)
 
 ```python
-from optuna_config import safe_optimize
+from research.optuna_config import safe_optimize
 
 safe_optimize(
     study=study,
