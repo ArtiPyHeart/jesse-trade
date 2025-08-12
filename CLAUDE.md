@@ -94,6 +94,9 @@ pip install -r requirements-dev.txt
 
 ### 自定义K线
 
+无论是原始时间轴k线还是自定义轴k线，都需要遵循Jesse风格的k线形式：
+- 二维numpy array，6列数据，列含义分别为timestamp, open, close, high, low, volume
+
 项目通常使用由符号回归（gplearn/DEAP）挖掘的自定义K线来替代通常的时间轴K线：
 - **融合算法**：`src/bars/fusion/` 包含DEAP和其他符号回归实现
 - **传统K线**：`src/bars/traditional/` 包含Dollar Bar、Entropy Bar、Range Bar等
