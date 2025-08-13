@@ -264,11 +264,13 @@ class FlexibleFeatureCalculator:
         if spec.returns_multiple:
             # 生成基础缓存键（不带索引）
             base_cache_key = f"{spec.name}_full_seq{use_sequential}"
-            
+
             if base_cache_key not in self.cache:
                 # 计算完整的多列结果
-                full_result = spec.func(self.candles, sequential=use_sequential, **final_params)
-                
+                full_result = spec.func(
+                    self.candles, sequential=use_sequential, **final_params
+                )
+
                 # 缓存所有列
                 if isinstance(full_result, np.ndarray) and full_result.ndim > 1:
                     # 缓存完整结果
@@ -287,7 +289,7 @@ class FlexibleFeatureCalculator:
                         if force_sequential and not self.sequential:
                             col_cache_key = f"{col_cache_key}_seq"
                         self.cache[col_cache_key] = col_data
-            
+
             # 从缓存中获取指定列
             if index is not None:
                 col_cache_key = f"{spec.name}_{index}"
@@ -335,18 +337,20 @@ class FlexibleFeatureCalculator:
         if spec.returns_multiple:
             # 生成基础缓存键（不带索引）
             base_cache_key = f"{spec.name}_full_seq{use_sequential}"
-            
+
             if base_cache_key not in self.cache:
                 # 检查是否已有实例
                 if instance_key not in self.cache_class_instances:
                     # 合并默认参数和传入参数
                     final_params = {**spec.params, **params}
                     # 创建类实例
-                    instance = spec.cls(self.candles, sequential=use_sequential, **final_params)
+                    instance = spec.cls(
+                        self.candles, sequential=use_sequential, **final_params
+                    )
                     self.cache_class_instances[instance_key] = instance
                 else:
                     instance = self.cache_class_instances[instance_key]
-                
+
                 # 获取完整结果
                 if hasattr(instance, "res"):
                     full_result = instance.res()
@@ -355,8 +359,10 @@ class FlexibleFeatureCalculator:
                 elif hasattr(instance, "get"):
                     full_result = instance.get()
                 else:
-                    raise ValueError(f"Class feature {spec.name} doesn't have a result method")
-                
+                    raise ValueError(
+                        f"Class feature {spec.name} doesn't have a result method"
+                    )
+
                 # 缓存所有列
                 if isinstance(full_result, np.ndarray) and full_result.ndim > 1:
                     # 缓存完整结果
@@ -375,7 +381,7 @@ class FlexibleFeatureCalculator:
                         if force_sequential and not self.sequential:
                             col_cache_key = f"{col_cache_key}_seq"
                         self.cache[col_cache_key] = col_data
-            
+
             # 从缓存中获取指定列
             if index is not None:
                 col_cache_key = f"{spec.name}_{index}"
@@ -400,11 +406,13 @@ class FlexibleFeatureCalculator:
                 # 合并默认参数和传入参数
                 final_params = {**spec.params, **params}
                 # 创建类实例
-                instance = spec.cls(self.candles, sequential=use_sequential, **final_params)
+                instance = spec.cls(
+                    self.candles, sequential=use_sequential, **final_params
+                )
                 self.cache_class_instances[instance_key] = instance
             else:
                 instance = self.cache_class_instances[instance_key]
-            
+
             # 获取结果
             if hasattr(instance, "res"):
                 result = instance.res()
@@ -413,8 +421,10 @@ class FlexibleFeatureCalculator:
             elif hasattr(instance, "get"):
                 result = instance.get()
             else:
-                raise ValueError(f"Class feature {spec.name} doesn't have a result method")
-            
+                raise ValueError(
+                    f"Class feature {spec.name} doesn't have a result method"
+                )
+
             return result
 
     def register_feature(
@@ -473,6 +483,27 @@ class FlexibleFeatureCalculator:
             func: 转换函数
         """
         self.pipeline.register_transformer(name, func)
+
+    def remove_features(self, features: Union[str, List[str]]) -> None:
+        """
+        从缓存中移除指定的特征
+
+        Args:
+            features: 要移除的特征名称或特征名称列表
+
+        Raises:
+            ValueError: 如果指定的特征不在缓存中
+        """
+        if isinstance(features, str):
+            features = [features]
+
+        for feature_name in features:
+            # 检查特征是否存在于缓存中
+            if feature_name not in self.cache:
+                raise ValueError(f"Feature '{feature_name}' not found in cache")
+
+            # 移除缓存中的特征
+            del self.cache[feature_name]
 
     def clear_cache(self) -> None:
         """清空缓存"""
