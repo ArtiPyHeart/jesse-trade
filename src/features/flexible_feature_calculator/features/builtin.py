@@ -83,6 +83,18 @@ def adx_feature(
     return adx(candles, period=period, sequential=sequential)
 
 
+@feature(name="adx_7", description="ADX with period 7")
+def adx_7_feature(candles: np.ndarray, sequential: bool = True, **kwargs):
+    """ADX周期7"""
+    return adx(candles, period=7, sequential=sequential)
+
+
+@feature(name="adx_14", description="ADX with period 14")
+def adx_14_feature(candles: np.ndarray, sequential: bool = True, **kwargs):
+    """ADX周期14"""
+    return adx(candles, period=14, sequential=sequential)
+
+
 @feature(name="adaptive_bp", description="Adaptive Bandpass Filter")
 def adaptive_bp_feature(candles: np.ndarray, sequential: bool = True, **kwargs):
     """自适应带通滤波器"""
@@ -320,6 +332,12 @@ def hurst_coef_fast_feature(
     return hurst_coefficient(candles, period=period, sequential=sequential)
 
 
+@feature(name="hurst_coef_30", description="Hurst Coefficient 30")
+def hurst_coef_30_feature(candles: np.ndarray, sequential: bool = True, **kwargs):
+    """Hurst系数30"""
+    return hurst_coefficient(candles, period=30, sequential=sequential)
+
+
 @feature(
     name="hurst_coef_slow", params={"period": 200}, description="Hurst Coefficient Slow"
 )
@@ -328,6 +346,12 @@ def hurst_coef_slow_feature(
 ):
     """Hurst系数慢速"""
     return hurst_coefficient(candles, period=period, sequential=sequential)
+
+
+@feature(name="hurst_coef_200", description="Hurst Coefficient 200")  
+def hurst_coef_200_feature(candles: np.ndarray, sequential: bool = True, **kwargs):
+    """Hurst系数200"""
+    return hurst_coefficient(candles, period=200, sequential=sequential)
 
 
 @feature(name="iqr_ratio", description="IQR Ratio")
