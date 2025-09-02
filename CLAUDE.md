@@ -85,6 +85,8 @@ pip install -r requirements-dev.txt
    - 正确处理 `sequential` 参数
    - 当 `sequential=True` 时返回所有值
    - 当 `sequential=False` 时仅返回最新值
+5. **数据密集型编程**: 对于所有数据密集型文件（npy/csv/excel/parquet等），统一使用numpy与pandas进行操作
+6. **暴露原始错误**: 尽量暴露代码的原始错误，除非需要提供给用户更高的可读性。使用assert拦截非法输入，尽量不要使用try except来掩盖错误
 
 ### 其他语言重构至Python
 
