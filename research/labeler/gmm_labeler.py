@@ -1,0 +1,195 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import optuna
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from hmmlearn.hmm import GMMHMM
+from jesse.helpers import timestamp_to_time
+
+
+def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int) -> dict:
+    def objective(trial: optuna.Trial):
+        close_arr = candles[:, 2]
+        high_arr = candles[:, 3][lag_n:]
+        low_arr = candles[:, 4][lag_n:]
+
+        log_return = np.log(close_arr[1:] / close_arr[:-1])[lag_n - 1 :]
+        log_return_L = np.log(close_arr[lag_n:] / close_arr[:-lag_n])
+        HL_diff = np.log(high_arr / low_arr)
+
+        X = np.column_stack([HL_diff, log_return_L, log_return])
+
+        datelist = np.asarray(
+            [pd.Timestamp(timestamp_to_time(i)) for i in candles[:, 0][lag_n:]]
+        )
+        closeidx = candles[:, 2][lag_n:]
+
+        assert len(datelist) == len(closeidx)
+        assert len(datelist) == len(X)
+
+        gmm = GMMHMM(
+            n_components=2,
+            n_mix=3,
+            covariance_type="diag",
+            n_iter=1000,
+            # weights_prior=2,
+            means_weight=0.5,
+            random_state=trial.suggest_int("random_state", 0, 1000),
+        )
+        gmm.fit(X)
+        latent_states_sequence = gmm.predict(X)
+        data = pd.DataFrame(
+            {
+                "datelist": datelist,
+                "logreturn": log_return,
+                "state": latent_states_sequence,
+            }
+        ).set_index("datelist")
+
+        final_ret = 0
+        for i in data["state"].unique():
+            ret = data[data["state"] == i]["logreturn"].sum()
+            final_ret += np.abs(ret)
+
+        return final_ret
+
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=optuna.samplers.TPESampler(n_startup_trials=5),
+    )
+    study.optimize(objective, n_trials=10)
+    return study.best_params
+
+
+class GMMLabeler:
+    def __init__(self, candles: np.ndarray, lag_n: int):
+        self.lag_n = lag_n
+
+        random_state = gmm_labeler_find_best_params(candles, lag_n)["random_state"]
+        self.gmm_model = GMMHMM(
+            n_components=2,
+            n_mix=3,
+            covariance_type="diag",
+            n_iter=1000,
+            means_weight=0.5,
+            random_state=random_state,
+        )
+
+        close_arr = candles[:, 2]
+        high_arr = candles[:, 3][lag_n:]
+        low_arr = candles[:, 4][lag_n:]
+
+        self._datelist = np.asarray(
+            [pd.Timestamp(timestamp_to_time(i)) for i in candles[:, 0][lag_n:]]
+        )
+        self._closeidx = candles[:, 2][lag_n:]
+
+        self.log_return = np.log(close_arr[1:] / close_arr[:-1])[lag_n - 1 :]
+        log_return_L = np.log(close_arr[lag_n:] / close_arr[:-lag_n])
+        HL_diff = np.log(high_arr / low_arr)
+        X = np.column_stack([HL_diff, log_return_L, self.log_return])
+
+        self.gmm_model.fit(X)
+        self.latent_states_sequence = self.gmm_model.predict(X)  ### 硬标签
+        self.state_probabilities = self.gmm_model.predict_proba(X)  ### 概率标签
+
+        state_0_return = (self.log_return * (self.latent_states_sequence == 0)).sum()
+        state_1_return = (self.log_return * (self.latent_states_sequence == 1)).sum()
+        if state_0_return > state_1_return:
+            self.buy_state = 0
+        else:
+            self.buy_state = 1
+
+    def plot_label_on_candles(self):
+        """
+        在蜡烛图上绘制标签
+        """
+        fig = go.Figure()
+        colors = px.colors.qualitative.Plotly
+
+        for i in range(self.gmm_model.n_components):
+            state = self.latent_states_sequence == i
+            fig.add_trace(
+                go.Scatter(
+                    x=self._datelist[state],
+                    y=self._closeidx[state],
+                    mode="markers",
+                    name=f"latent state {i}",
+                    marker=dict(color=colors[i % len(colors)], size=4),
+                )
+            )
+
+        fig.update_layout(
+            title="隐含状态序列",
+            xaxis_title="时间",
+            yaxis_title="收盘价",
+            showlegend=True,
+        )
+
+        fig.show()
+
+    def plot_label_returns(self):
+        """
+        绘制标签收益
+        """
+        data = pd.DataFrame(
+            {
+                "datelist": self._datelist,
+                "logreturn": self.log_return,
+                "state": self.latent_states_sequence,
+            }
+        ).set_index("datelist")
+
+        for i in data["state"].unique():
+            ret = data[data["state"] == i]["logreturn"].sum()
+            count = data[data["state"] == i].shape[0]
+            print(f"state {i} ({count}) return: {ret:.6%}")
+
+        plt.figure(figsize=(20, 8))
+        for i in range(self.gmm_model.n_components):
+            state = self.latent_states_sequence == i
+            idx = np.append(0, state[1:])
+            data[f"state {i}_return"] = data.logreturn.multiply(idx, axis=0)
+            plt.plot(
+                np.exp(data[f"state {i}_return"].cumsum()),
+                label=f"latent_state {i}",
+            )
+            plt.legend(loc="upper left")
+            plt.grid(1)
+
+        plt.show()
+
+    @property
+    def label_hard_state(self):
+        """
+        多空二分类硬标签，用于分类模型
+        """
+        return (self.latent_states_sequence == self.buy_state).astype(int)
+
+    @property
+    def label_double_prob(self):
+        """
+        双概率标签，完整概率分布，用于多标签回归
+        """
+        buy_prob = self.state_probabilities[:, self.buy_state]
+        sell_prob = self.state_probabilities[:, 1 - self.buy_state]
+        return np.column_stack([sell_prob, buy_prob])
+
+    @property
+    def label_directional_prob(self):
+        """
+        带方向的原始概率标签，方向 + 概率大小（非对称），用于回归
+        """
+        return np.where(
+            self.latent_states_sequence == self.buy_state,
+            self.state_probabilities[:, self.buy_state],
+            -self.state_probabilities[:, 1 - self.buy_state],
+        )
+
+    @property
+    def label_direction_force(self):
+        """
+        方向强度标签，方向 + 相对强度（对称），用于回归
+        """
+        return self.state_probabilities[:, self.buy_state] * 2 - 1
