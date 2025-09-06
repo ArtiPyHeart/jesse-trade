@@ -53,14 +53,15 @@ from src.indicators.prod import (
     roll_impact,
     roll_measure,
     entropy_for_jesse,
-    CWT_SWT
+    CWT_SWT,
 )
 from src.utils.math_tools import ddt, dt, lag
 
 LAG_MAX = 20
 
+
 def feature_bundle(
-        candles: np.ndarray, sequential: bool = False, lightweighted: bool = False
+    candles: np.ndarray, sequential: bool = False, lightweighted: bool = False
 ) -> dict[str, np.ndarray]:
     """
     一次性计算所有特征的函数，主要用于线下训练模型时使用
@@ -980,28 +981,28 @@ def feature_bundle(
         res_fe[f"swamicharts_stochastic_{i}"] = swamicharts_stochastic_[:, i]
 
     # td sequential
-    td_sequential_buy, td_sequential_sell = td_sequential(candles, sequential=True)
-    res_fe["td_sequential_buy"] = td_sequential_buy
-    res_fe["td_sequential_sell"] = td_sequential_sell
-    td_sequential_buy_aggressive, td_sequential_sell_aggressive = td_sequential(
-        candles, sequential=True, aggressive=True
-    )
-    res_fe["td_sequential_buy_aggressive"] = td_sequential_buy_aggressive
-    res_fe["td_sequential_sell_aggressive"] = td_sequential_sell_aggressive
-    td_sequential_buy_stealth, td_sequential_sell_stealth = td_sequential(
-        candles, sequential=True, stealth_actions=True
-    )
-    res_fe["td_sequential_buy_stealth"] = td_sequential_buy_stealth
-    res_fe["td_sequential_sell_stealth"] = td_sequential_sell_stealth
-    td_sequential_buy_aggressive_stealth, td_sequential_sell_aggressive_stealth = (
-        td_sequential(candles, sequential=True, aggressive=True, stealth_actions=True)
-    )
-    res_fe["td_sequential_buy_aggressive_stealth"] = (
-        td_sequential_buy_aggressive_stealth
-    )
-    res_fe["td_sequential_sell_aggressive_stealth"] = (
-        td_sequential_sell_aggressive_stealth
-    )
+    # td_sequential_buy, td_sequential_sell = td_sequential(candles, sequential=True)
+    # res_fe["td_sequential_buy"] = td_sequential_buy
+    # res_fe["td_sequential_sell"] = td_sequential_sell
+    # td_sequential_buy_aggressive, td_sequential_sell_aggressive = td_sequential(
+    #     candles, sequential=True, aggressive=True
+    # )
+    # res_fe["td_sequential_buy_aggressive"] = td_sequential_buy_aggressive
+    # res_fe["td_sequential_sell_aggressive"] = td_sequential_sell_aggressive
+    # td_sequential_buy_stealth, td_sequential_sell_stealth = td_sequential(
+    #     candles, sequential=True, stealth_actions=True
+    # )
+    # res_fe["td_sequential_buy_stealth"] = td_sequential_buy_stealth
+    # res_fe["td_sequential_sell_stealth"] = td_sequential_sell_stealth
+    # td_sequential_buy_aggressive_stealth, td_sequential_sell_aggressive_stealth = (
+    #     td_sequential(candles, sequential=True, aggressive=True, stealth_actions=True)
+    # )
+    # res_fe["td_sequential_buy_aggressive_stealth"] = (
+    #     td_sequential_buy_aggressive_stealth
+    # )
+    # res_fe["td_sequential_sell_aggressive_stealth"] = (
+    #     td_sequential_sell_aggressive_stealth
+    # )
 
     # trendflex
     trendflex_ = ta.trendflex(candles, sequential=True)

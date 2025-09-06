@@ -357,16 +357,3 @@ after_mean = calculator.get(["feature_mean20"])
 after_dt = calculator.get(["feature_mean20_dt"])
 final = calculator.get(["feature_mean20_dt_lag5"])
 ```
-
-## 贡献指南
-
-欢迎贡献新的特征和转换器！请遵循以下规范：
-
-1. 特征命名使用小写下划线
-2. 提供清晰的文档字符串
-3. 包含单元测试
-4. 确保与原FeatureCalculator兼容（如适用）
-
-## 许可证
-
-与主项目相同。

@@ -10,7 +10,9 @@ from .transformations import TransformationPipeline
 class FlexibleFeatureCalculator:
     """灵活的特征计算器"""
 
-    def __init__(self, registry: Optional[FeatureRegistry] = None):
+    def __init__(
+        self, registry: Optional[FeatureRegistry] = None, load_buildin: bool = True
+    ):
         """
         初始化特征计算器
 
@@ -23,6 +25,9 @@ class FlexibleFeatureCalculator:
         self.sequential: bool = False
         self.cache: Dict[str, np.ndarray] = {}
         self.cache_class_instances: Dict[str, Any] = {}
+
+        if load_buildin:
+            from .features import builtin  # noqa
 
     def load(self, candles: np.ndarray, sequential: bool = False) -> None:
         """
