@@ -4,6 +4,7 @@ import optuna
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from hmmlearn.hmm import GMMHMM
 from jesse.helpers import timestamp_to_time
 
@@ -105,10 +106,23 @@ class GMMLabeler:
         """
         在蜡烛图上绘制标签
         """
-        fig = go.Figure()
+        n_states = self.gmm_model.n_components
+        # 主图 + 每个隐含状态一个概率副图
+        prob_heights = [0.4 / n_states] * n_states
+        row_heights = [0.6] + prob_heights
+        subplot_titles = ["隐含状态序列"] + [f"P(state={i})" for i in range(n_states)]
+
+        fig = make_subplots(
+            rows=1 + n_states,
+            cols=1,
+            shared_xaxes=True,
+            row_heights=row_heights,
+            vertical_spacing=0.06,
+            subplot_titles=tuple(subplot_titles),
+        )
         colors = px.colors.qualitative.Plotly
 
-        for i in range(self.gmm_model.n_components):
+        for i in range(n_states):
             state = self.latent_states_sequence == i
             fig.add_trace(
                 go.Scatter(
@@ -117,14 +131,42 @@ class GMMLabeler:
                     mode="markers",
                     name=f"latent state {i}",
                     marker=dict(color=colors[i % len(colors)], size=4),
-                )
+                    legendgroup=f"state_{i}",
+                    showlegend=True,
+                ),
+                row=1,
+                col=1,
             )
 
+        # 概率副图：为每个隐含状态单独绘制概率线图或面积图
+        for i in range(n_states):
+            fig.add_trace(
+                go.Scatter(
+                    x=self._datelist,
+                    y=self.state_probabilities[:, i],
+                    name=f"P(state={i})",
+                    mode='lines',
+                    fill='tozeroy',  # 填充到0，形成面积图
+                    line=dict(color=colors[i % len(colors)], width=1),
+                    fillcolor=colors[i % len(colors)],
+                    opacity=0.7,
+                    legendgroup=f"state_{i}",
+                    showlegend=False,  # 与主图同组颜色，不重复图例
+                ),
+                row=2 + i,
+                col=1,
+            )
+
+        fig.update_yaxes(title_text="收盘价", row=1, col=1)
+        for i in range(n_states):
+            fig.update_yaxes(title_text=f"P(state={i})", range=[0, 1], row=2 + i, col=1)
+        # 仅在最底部子图设置时间轴标题
+        fig.update_xaxes(title_text="时间", row=1 + n_states, col=1)
+
         fig.update_layout(
-            title="隐含状态序列",
-            xaxis_title="时间",
-            yaxis_title="收盘价",
+            title="隐含状态序列与状态概率", 
             showlegend=True,
+            hovermode='x unified'  # 统一的悬停模式，更好地显示多个子图的数据
         )
 
         fig.show()
