@@ -16,8 +16,6 @@ def accumulated_swing_index(
     返回:
         累积摆动指数数组
     """
-    candles = slice_candles(candles, sequential)
-
     # 提取价格数据
     o = get_candle_source(candles, "open")
     c = get_candle_source(candles, "close")
