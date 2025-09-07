@@ -101,40 +101,59 @@ class FeatureOutputValidator:
         else:
             # sequential=False 的验证规则
             if ndim == 1:
-                # 一维数组：长度必须为1（单值）或N（多列单行）
-                if returns_multiple:
-                    # 声明返回多列，长度可以>1
-                    pass  # 任何长度都接受
-                else:
+                # 一维数组：单列特征必须长度为1
+                if not returns_multiple:
                     # 单列，长度必须为1
                     if length != 1:
                         raise ValueError(
                             f"Feature '{feature_name}' output validation failed:\n"
-                            f"  Mode: sequential=False (single value)\n"
+                            f"  Mode: sequential=False (single column)\n"
                             f"  Expected shape: (1,)\n"
                             f"  Got shape: {shape}\n"
                             f"  Fix: When sequential=False and returning single column, "
                             f"output must be 1D array with length 1.\n"
                             f"  Example: np.array([value]) or array[-1:]"
                         )
+                # 多列特征的1D数组不再允许，必须是2D
+                elif returns_multiple:
+                    raise ValueError(
+                        f"Feature '{feature_name}' output validation failed:\n"
+                        f"  Mode: sequential=False (multiple columns)\n"
+                        f"  Issue: Multi-column feature returned 1D array\n"
+                        f"  Got shape: {shape}\n"
+                        f"  Expected shape: (1, N) where N is number of columns\n"
+                        f"  Fix: Multi-column features must return 2D array when sequential=False.\n"
+                        f"  Example: array[[-1, :]] or array.reshape(1, -1)"
+                    )
             elif ndim == 2:
-                # 二维数组在sequential=False时不合理
-                raise ValueError(
-                    f"Feature '{feature_name}' output validation failed:\n"
-                    f"  Mode: sequential=False\n"
-                    f"  Issue: Got 2D array with shape {shape}\n"
-                    f"  Expected: 1D array with length 1 (single column) or N (multiple columns)\n"
-                    f"  Fix: When sequential=False, output must be 1D array.\n"
-                    f"  For multiple columns, return np.array([col1_val, col2_val, ...])"
-                )
+                # 二维数组：必须只有1行
+                if length != 1:
+                    raise ValueError(
+                        f"Feature '{feature_name}' output validation failed:\n"
+                        f"  Mode: sequential=False\n"
+                        f"  Expected shape: (1, N)\n"
+                        f"  Got shape: {shape}\n"
+                        f"  Fix: When sequential=False with 2D array, must have exactly 1 row.\n"
+                        f"  Example: array[-1:, :] or array[[last_index], :]"
+                    )
+                # 如果声明为单列但返回多列，报错
+                if not returns_multiple and shape[1] > 1:
+                    raise ValueError(
+                        f"Feature '{feature_name}' output validation failed:\n"
+                        f"  Mode: sequential=False\n"
+                        f"  Issue: Feature returns {shape[1]} columns but wasn't registered with returns_multiple=True\n"
+                        f"  Got shape: {shape}\n"
+                        f"  Fix: Either register the feature with returns_multiple=True, "
+                        f"or return shape (1, 1) for single column."
+                    )
             else:
                 # 不支持3维及以上
                 raise ValueError(
                     f"Feature '{feature_name}' output validation failed:\n"
                     f"  Mode: sequential=False\n"
-                    f"  Issue: Output has {ndim} dimensions (only 1D allowed)\n"
+                    f"  Issue: Output has {ndim} dimensions (only 1D or 2D allowed)\n"
                     f"  Got shape: {shape}\n"
-                    f"  Fix: When sequential=False, output must be 1D numpy array."
+                    f"  Fix: Feature output must be 1D or 2D numpy array."
                 )
 
     @staticmethod

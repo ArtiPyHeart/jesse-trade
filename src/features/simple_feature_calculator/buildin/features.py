@@ -62,20 +62,29 @@ from src.indicators.prod import (
 @feature(name="adx_7", description="ADX with period 7")
 def adx_7_feature(candles: np.ndarray, sequential: bool = True):
     """ADX周期7"""
-    return adx(candles, period=7, sequential=sequential)
+    if sequential:
+        return adx(candles, period=7, sequential=sequential)
+    else:
+        return np.array([adx(candles, period=7, sequential=sequential)])
 
 
 @feature(name="adx_14", description="ADX with period 14")
 def adx_14_feature(candles: np.ndarray, sequential: bool = True):
     """ADX周期14"""
-    return adx(candles, period=14, sequential=sequential)
+    if sequential:
+        return adx(candles, period=14, sequential=sequential)
+    else:
+        return np.array([adx(candles, period=14, sequential=sequential)])
 
 
 @feature(name="aroon_diff", description="Aroon Difference")
 def aroon_diff_feature(candles: np.ndarray, sequential: bool = True):
     """Aroon差值"""
     aroon_: AROON = aroon(candles, sequential=sequential)
-    return aroon_.up - aroon_.down
+    if sequential:
+        return aroon_.up - aroon_.down
+    else:
+        return np.array([aroon_.up - aroon_.down])
 
 
 @feature(name="ac", returns_multiple=True, description="Autocorrelation")

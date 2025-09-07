@@ -161,4 +161,4 @@ def autocorrelation_periodogram(
     if sequential:
         return dom_cycle_series, pwr_series[:, 10:49]  # 返回所有K线的结果
     else:
-        return dom_cycle_series[-1], pwr_series[-1, 10:49]  # 返回最新K线的结果
+        return dom_cycle_series[-1:], pwr_series[-1:, 10:49]  # 返回最新K线的结果

@@ -105,16 +105,37 @@ class SimpleFeatureCalculator:
 
         # 处理多列索引
         if column_index is not None:
-            if base_value.ndim == 2 and column_index < base_value.shape[1]:
-                base_value = base_value[:, column_index]
-            elif base_value.ndim == 1 and column_index == 0:
-                # 单列特征，索引0是合法的
-                pass
+            # 获取特征元信息
+            metadata = self.registry.get_metadata(base_name)
+            returns_multiple = metadata and metadata.get("returns_multiple", False)
+            
+            if not returns_multiple:
+                # 单列特征不应该有列索引（除了_0）
+                if column_index != 0:
+                    raise ValueError(
+                        f"Feature '{feature_name}' is not a multi-column feature, "
+                        f"column index {column_index} is invalid. "
+                        f"Single-column features only accept index 0."
+                    )
+                # 索引0对于单列特征是允许的，但不做任何操作
             else:
-                raise ValueError(
-                    f"Feature '{feature_name}' column index {column_index} out of range. "
-                    f"Feature shape: {base_value.shape}"
-                )
+                # 多列特征必须是2D数组
+                if base_value.ndim != 2:
+                    raise ValueError(
+                        f"Feature '{feature_name}' is registered as multi-column but returned {base_value.ndim}D array. "
+                        f"Multi-column features must return 2D arrays. "
+                        f"Got shape: {base_value.shape}"
+                    )
+                
+                # 检查列索引是否有效
+                if column_index >= base_value.shape[1]:
+                    raise ValueError(
+                        f"Feature '{feature_name}' column index {column_index} out of range. "
+                        f"Feature has {base_value.shape[1]} columns."
+                    )
+                
+                # 提取指定列，保持维度
+                base_value = base_value[:, column_index:column_index+1]
 
         # 应用转换链
         if transforms:
@@ -124,14 +145,15 @@ class SimpleFeatureCalculator:
             )
             # 应用转换
             transformed_value = self.transform_chain.apply_chain(base_value, transforms)
-
-            # 如果用户要求非sequential，只取最后一个值
+            
+            # 如果用户要求非sequential，但我们使用了sequential数据进行转换
+            # 需要截取最后一行
             if not self.sequential:
                 if transformed_value.ndim == 1:
                     transformed_value = transformed_value[-1:]
-                else:
-                    transformed_value = transformed_value[-1, :]
-
+                elif transformed_value.ndim == 2:
+                    transformed_value = transformed_value[-1:, :]
+            
             result = transformed_value
         else:
             result = base_value
@@ -192,25 +214,7 @@ class SimpleFeatureCalculator:
 
         # 缓存结果
         self.cache[cache_key] = output
-
-        # 如果不是强制sequential，也按用户需求返回
-        if not force_sequential and not self.sequential and use_sequential:
-            # 用户要求非sequential，但我们计算了sequential
-            if output.ndim == 1:
-                output = output[-1:]
-            else:
-                # 2D数组，取最后一行并展平成1D
-                output = output[-1, :]
-
-            # 重新验证
-            self.validator.validate(
-                output=output,
-                feature_name=feature_name,
-                candles_length=len(self.candles),
-                sequential=False,
-                returns_multiple=returns_multiple,
-            )
-
+        
         return output
 
     def _parse_feature_name(
