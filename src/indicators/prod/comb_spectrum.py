@@ -145,4 +145,4 @@ def comb_spectrum(
         return dominant_cycle, pwr_list[:, shortest_period : longest_period + 1]
     else:
         # 仅返回最后一根K线
-        return dominant_cycle[-1], pwr_list[-1, shortest_period : longest_period + 1]
+        return dominant_cycle[-1:], pwr_list[-1:, shortest_period : longest_period + 1]

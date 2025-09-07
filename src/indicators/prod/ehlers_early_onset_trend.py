@@ -82,4 +82,4 @@ def ehlers_early_onset_trend(
     if sequential:
         return quotient
     else:
-        return quotient[-1]
+        return quotient[-1:]

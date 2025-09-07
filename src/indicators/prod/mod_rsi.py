@@ -102,4 +102,4 @@ def mod_rsi(
     # 计算改进版RSI
     rsi = _calculate_mod_rsi(filt, length)
 
-    return rsi if sequential else rsi[-1]
+    return rsi if sequential else rsi[-1:]

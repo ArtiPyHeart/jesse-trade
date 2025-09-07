@@ -24,4 +24,4 @@ def cmma(candles, period=14, matype=0, C=1.0, source_type="close", sequential=Fa
     if sequential:
         return cmma
     else:
-        return cmma[-1]
+        return cmma[-1:]

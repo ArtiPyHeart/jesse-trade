@@ -79,4 +79,4 @@ def decycler_oscillator(
 
     decycle = HP2 - HP1
 
-    return decycle if sequential else decycle[-1]
+    return decycle if sequential else decycle[-1:]

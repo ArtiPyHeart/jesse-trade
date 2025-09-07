@@ -23,4 +23,4 @@ def iqr_ratio(candles, source_type="close", period=20, sequential=False):
     if sequential:
         return iqr
     else:
-        return iqr[-1]
+        return iqr[-1:]

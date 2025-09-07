@@ -195,4 +195,4 @@ def adaptive_cci(
     if sequential:
         return mycci
     else:
-        return mycci[-1]
+        return mycci[-1:]

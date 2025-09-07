@@ -166,4 +166,4 @@ def phase_accumulation(
     if sequential:
         return DomCycle  # 返回整个周期数组
     else:
-        return DomCycle[-1]  # 返回最后一个周期值
+        return DomCycle[-1:]  # 返回最后一个周期值

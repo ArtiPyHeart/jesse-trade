@@ -81,4 +81,4 @@ def norm_on_balance_volume(
     if sequential:
         return result
     else:
-        return result[-1]
+        return result[-1:]

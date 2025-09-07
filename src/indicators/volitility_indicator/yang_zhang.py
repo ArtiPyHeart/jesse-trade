@@ -45,4 +45,4 @@ def yang_zhang_volatility(
     if sequential:
         return res
     else:
-        return res[-1]
+        return res[-1:]

@@ -190,4 +190,4 @@ def adaptive_stochastic(
     if sequential:
         return AdaptiveStochastic
     else:
-        return AdaptiveStochastic[-1]
+        return AdaptiveStochastic[-1:]

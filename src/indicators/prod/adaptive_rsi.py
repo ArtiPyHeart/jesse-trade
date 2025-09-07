@@ -274,4 +274,4 @@ def adaptive_rsi(
     if sequential:
         return MyRSI
     else:
-        return MyRSI[-1]
+        return MyRSI[-1:]

@@ -87,4 +87,4 @@ def mod_stochastic(
         source = _roofing_filter(source, hp_period=hp_period, lp_period=lp_period)
     res = _compute_stochastic(source, length)
 
-    return res if sequential else res[-1]
+    return res if sequential else res[-1:]

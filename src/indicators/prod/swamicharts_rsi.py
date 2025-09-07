@@ -153,4 +153,4 @@ def swamicharts_rsi(
         output = np.empty(num_levels)
         for idx in range(num_levels):
             output[idx] = results_matrix[idx, -1]
-        return lookbacks, output
+        return lookbacks.reshape(1, -1), output.reshape(1, -1)

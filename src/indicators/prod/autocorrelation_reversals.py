@@ -114,4 +114,4 @@ def autocorrelation_reversals(
     else:
         r = Filt[::-1]
         reversal = _compute_reversal(r, hplength, avglength)
-        return reversal
+        return np.array([reversal])

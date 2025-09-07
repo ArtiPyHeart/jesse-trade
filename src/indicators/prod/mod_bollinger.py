@@ -67,4 +67,4 @@ def mod_bollinger(
     if sequential:
         return dt, but, blt, width
     else:
-        return dt[-1], but[-1], blt[-1], width[-1]
+        return dt[-1:], but[-1:], blt[-1:], width[-1:]

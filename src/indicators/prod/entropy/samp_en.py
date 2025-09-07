@@ -35,4 +35,4 @@ def sample_entropy_indicator(
             log_ret = src[-period:-1] / src[-period - 1 : -2]
         else:
             log_ret = src[-1] / src[-period - 1 : -1]
-        return sample_entropy_numba(log_ret)
+        return np.array([sample_entropy_numba(log_ret)])

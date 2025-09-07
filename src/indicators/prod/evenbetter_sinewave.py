@@ -65,4 +65,4 @@ def evenbetter_sinewave(
     if sequential:
         return Wave
     else:
-        return Wave[-1]
+        return Wave[-1:]

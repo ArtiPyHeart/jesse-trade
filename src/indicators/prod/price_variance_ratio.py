@@ -100,4 +100,4 @@ def price_variance_ratio(
     if sequential:
         return result
     else:
-        return result[-1]
+        return result[-1:]

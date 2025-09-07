@@ -28,4 +28,4 @@ def ma_difference(
     )
 
     ma_difference = short_ma - long_ma
-    return ma_difference if sequential else ma_difference[-1]
+    return ma_difference if sequential else ma_difference[-1:]

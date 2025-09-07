@@ -90,4 +90,4 @@ def roofing_filter(
 
     filt = _roofing_filter(source, hp_period, lp_period, zero_mean)
 
-    return filt if sequential else filt[-1]
+    return filt if sequential else filt[-1:]

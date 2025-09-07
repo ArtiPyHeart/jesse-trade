@@ -421,4 +421,4 @@ def entropy_for_jesse(
         return result
     else:
         # 否则只返回最后一个值
-        return entropy_array[-1]
+        return entropy_array[-1:]

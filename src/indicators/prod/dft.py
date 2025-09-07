@@ -108,4 +108,4 @@ def dft(
     if sequential:
         return dominant_cycle, spectrum
     else:
-        return dominant_cycle[-1], spectrum[-1]
+        return dominant_cycle[-1:], spectrum[-1:]

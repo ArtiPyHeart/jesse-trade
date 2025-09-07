@@ -110,4 +110,4 @@ def ehlers_convolution(
     if sequential:
         return corr_arr[:, 2:], slope_arr[:, 2:], conv_arr[:, 2:]
     else:
-        return corr_arr[-1, 2:], slope_arr[-1, 2:], conv_arr[-1, 2:]
+        return corr_arr[-1:, 2:], slope_arr[-1:, 2:], conv_arr[-1:, 2:]

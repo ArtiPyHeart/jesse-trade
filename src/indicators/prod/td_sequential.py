@@ -155,4 +155,4 @@ def td_sequential(
     if sequential:
         return buy_count, sell_count
     else:
-        return buy_count[-1], sell_count[-1]
+        return buy_count[-1:], sell_count[-1:]

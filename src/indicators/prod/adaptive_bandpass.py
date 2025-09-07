@@ -258,4 +258,4 @@ def adaptive_bandpass(
     if sequential:
         return signal, lead_signal, bp
     else:
-        return signal[-1], lead_signal[-1], bp[-1]
+        return signal[-1:], lead_signal[-1:], bp[-1:]

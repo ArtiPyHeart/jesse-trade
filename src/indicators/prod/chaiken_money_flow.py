@@ -81,4 +81,4 @@ def chaiken_money_flow(
     if sequential:
         return result
     else:
-        return result[-1]
+        return result[-1:]

@@ -122,4 +122,4 @@ def hasbrouck_lambda(
     # Convert to numpy array and replace NaN with 0
     res = np.nan_to_num(res_pd.to_numpy())
 
-    return res if sequential else res[-1]
+    return res if sequential else res[-1:]

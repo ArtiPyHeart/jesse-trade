@@ -35,4 +35,4 @@ def approximate_entropy_indicator(
             log_ret = src[-period:-1] / src[-period - 1 : -2]
         else:
             log_ret = src[-1] / src[-period - 1 : -1]
-        return approximate_entropy_numba(log_ret)
+        return np.array([approximate_entropy_numba(log_ret)])

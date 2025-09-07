@@ -199,4 +199,4 @@ def bekker_parkinson_vol(
     # 确保窗口期之前的值为0
     sigma[:window] = 0
 
-    return sigma if sequential else sigma[-1]
+    return sigma if sequential else sigma[-1:]

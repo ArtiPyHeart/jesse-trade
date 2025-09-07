@@ -87,4 +87,4 @@ def hurst_coefficient(
     if sequential:
         return smooth_hurst
     else:
-        return smooth_hurst[-1]
+        return smooth_hurst[-1:]

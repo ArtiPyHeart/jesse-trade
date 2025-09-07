@@ -111,4 +111,4 @@ def homodyne(
     # 使用numba加速的子函数计算Dominant Cycle序列
     DomCycle = _calc_homodyne_core(close, n, alpha1, c1, c2, c3)
 
-    return DomCycle if sequential else DomCycle[-1]
+    return DomCycle if sequential else DomCycle[-1:]

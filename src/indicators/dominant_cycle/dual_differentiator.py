@@ -131,4 +131,4 @@ def dual_differentiator(
     if sequential:
         return DomCycle
     else:
-        return DomCycle[-1]
+        return DomCycle[-1:]

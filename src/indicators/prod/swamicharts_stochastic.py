@@ -139,4 +139,4 @@ def swamicharts_stochastic(
     else:
         # 返回每个 Lookback 对应的最新指标值
         output = results_matrix[:, -1]
-        return lookbacks, output
+        return lookbacks.reshape(1, -1), output.reshape(1, -1)
