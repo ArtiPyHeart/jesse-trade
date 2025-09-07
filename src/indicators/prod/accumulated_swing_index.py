@@ -1,6 +1,6 @@
 import numpy as np
 import numpy.typing as npt
-from jesse.helpers import get_candle_source, slice_candles
+from jesse.helpers import get_candle_source
 
 
 def accumulated_swing_index(
