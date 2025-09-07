@@ -7,31 +7,32 @@
 3. 不自动修正，只报错并提供详细信息
 """
 
+from typing import Any
+
 import numpy as np
-from typing import Any, Tuple
 
 
 class FeatureOutputValidator:
     """特征输出验证器"""
-    
+
     @staticmethod
     def validate(
         output: Any,
         feature_name: str,
         candles_length: int,
         sequential: bool,
-        returns_multiple: bool = False
+        returns_multiple: bool = False,
     ) -> None:
         """
         验证特征输出格式
-        
+
         Args:
             output: 特征计算的输出
             feature_name: 特征名称（用于错误信息）
             candles_length: 输入K线的长度
             sequential: 是否要求序列输出
             returns_multiple: 是否声明返回多列
-            
+
         Raises:
             TypeError: 输出类型不正确
             ValueError: 输出形状不符合要求
@@ -47,12 +48,12 @@ class FeatureOutputValidator:
                 f"not {type(output).__name__}. "
                 f"Use np.array() to convert if necessary."
             )
-        
+
         # 获取输出形状信息
         shape = output.shape
         ndim = output.ndim
         length = shape[0] if len(shape) > 0 else 0
-        
+
         if sequential:
             # sequential=True 的验证规则
             if ndim == 1:
@@ -96,7 +97,7 @@ class FeatureOutputValidator:
                     f"  Got shape: {shape}\n"
                     f"  Fix: Feature output must be 1D or 2D numpy array."
                 )
-                
+
         else:
             # sequential=False 的验证规则
             if ndim == 1:
@@ -135,21 +136,19 @@ class FeatureOutputValidator:
                     f"  Got shape: {shape}\n"
                     f"  Fix: When sequential=False, output must be 1D numpy array."
                 )
-    
+
     @staticmethod
     def validate_transform_input(
-        data: Any,
-        transform_name: str,
-        feature_name: str
+        data: Any, transform_name: str, feature_name: str
     ) -> None:
         """
         验证转换函数的输入
-        
+
         Args:
             data: 输入数据
             transform_name: 转换函数名称
             feature_name: 特征名称
-            
+
         Raises:
             TypeError: 输入类型不正确
             ValueError: 输入不满足转换要求
@@ -163,7 +162,7 @@ class FeatureOutputValidator:
                 f"  This is likely an internal error. "
                 f"Please check the feature '{feature_name}' returns proper numpy array."
             )
-        
+
         if data.ndim > 2:
             raise ValueError(
                 f"Transform '{transform_name}' input validation failed:\n"
@@ -172,9 +171,9 @@ class FeatureOutputValidator:
                 f"  Shape: {data.shape}\n"
                 f"  Transforms only work with 1D or 2D arrays."
             )
-        
+
         # 对于需要历史数据的转换，检查是否有足够的数据
-        if len(data) < 2 and transform_name in ['dt', 'ddt']:
+        if len(data) < 2 and transform_name in ["dt", "ddt"]:
             raise ValueError(
                 f"Transform '{transform_name}' validation failed:\n"
                 f"  Feature: {feature_name}\n"
