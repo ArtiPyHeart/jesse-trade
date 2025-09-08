@@ -1,7 +1,7 @@
 from typing import Union
 
 import numpy as np
-from jesse.helpers import get_candle_source, slice_candles
+from jesse.helpers import get_candle_source
 from numba import njit
 
 from src.utils.math_tools import deg_cos
@@ -78,7 +78,6 @@ def hurst_coefficient(
     :param sequential: bool - default: False
     :return: Union[float, np.ndarray]
     """
-    candles = slice_candles(candles, sequential)
     source = get_candle_source(candles, source_type=source_type)
 
     # Calculate using numba optimized function

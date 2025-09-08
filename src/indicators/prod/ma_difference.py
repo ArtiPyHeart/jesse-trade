@@ -1,4 +1,3 @@
-from jesse import helpers
 from jesse.indicators import ma
 
 
@@ -11,7 +10,6 @@ def ma_difference(
     source_type="close",
     sequential=False,
 ):
-    candles = helpers.slice_candles(candles, sequential)
     short_ma = ma(
         candles,
         period=short_period,

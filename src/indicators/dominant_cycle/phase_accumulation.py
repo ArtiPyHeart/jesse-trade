@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from jesse.helpers import get_candle_source, slice_candles
+from jesse.helpers import get_candle_source
 from numba import njit
 
 from src.utils.math_tools import deg_cos, deg_sin
@@ -126,8 +126,6 @@ def phase_accumulation(
     返回:
         主导周期 (numpy 数组或单个值)
     """
-    # 如果不返回全序列时取截断的最后一部分
-    candles = slice_candles(candles, sequential)
     close = get_candle_source(candles, source_type)
     n = len(close)
     if n < 3:

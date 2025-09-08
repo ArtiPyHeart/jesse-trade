@@ -196,7 +196,6 @@ def frac_diff_ffd_candle(
     :param sequential: 是否返回整个序列
     :return: 分数阶差分后的数组
     """
-    candles = slice_candles(candles, sequential)
     source = get_candle_source(candles, source_type=source_type)
 
     log_price = np.log(source)

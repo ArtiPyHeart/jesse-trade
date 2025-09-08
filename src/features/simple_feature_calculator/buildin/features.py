@@ -1,5 +1,5 @@
-import jesse.indicators as ta
 import numpy as np
+import jesse.indicators as ta
 from jesse.indicators import adx, aroon
 from jesse.indicators.aroon import AROON
 
@@ -42,8 +42,6 @@ from src.indicators.prod import (
     kyle_lambda,
     entropy_for_jesse,
     CWT_SWT,
-    sample_entropy_indicator,
-    approximate_entropy_indicator,
     ma_difference,
     mod_rsi,
     mod_stochastic,
@@ -56,6 +54,8 @@ from src.indicators.prod import (
     roofing_filter,
     swamicharts_rsi,
     swamicharts_stochastic,
+    bandpass,
+    voss,
 )
 
 
@@ -179,11 +179,8 @@ def bandpass_feature(
     sequential: bool = True,
 ):
     """带通滤波器"""
-    bandpass_tuple = ta.bandpass(candles, sequential=sequential)
-    if sequential:
-        return bandpass_tuple.bp_normalized
-    else:
-        return np.array([bandpass_tuple.bp_normalized])
+    bandpass_tuple = bandpass(candles, sequential=sequential)
+    return bandpass_tuple.bp_normalized
 
 
 @feature(name="highpass_bp", description="Highpass Bandpass Trigger")
@@ -192,11 +189,8 @@ def highpass_bp_feature(
     sequential: bool = True,
 ):
     """高通带通触发器"""
-    bandpass_tuple = ta.bandpass(candles, sequential=sequential)
-    if sequential:
-        return bandpass_tuple.trigger
-    else:
-        return np.array([bandpass_tuple.trigger])
+    bandpass_tuple = bandpass(candles, sequential=sequential)
+    return bandpass_tuple.trigger
 
 
 @feature(name="bekker_parkinson_vol", description="Bekker-Parkinson Volatility")
@@ -685,11 +679,8 @@ def trendflex_feature(candles: np.ndarray, sequential: bool = True):
     description="VOSS",
 )
 def voss_feature(candles: np.ndarray, sequential: bool = True):
-    voss_filter_ = ta.voss(candles, sequential=sequential)
-    if sequential:
-        return voss_filter_.voss
-    else:
-        return np.array([voss_filter_.voss])
+    voss_filter_ = voss(candles, sequential=sequential)
+    return voss_filter_.voss
 
 
 @feature(
@@ -697,11 +688,8 @@ def voss_feature(candles: np.ndarray, sequential: bool = True):
     description="VOSS",
 )
 def voss_feature(candles: np.ndarray, sequential: bool = True):
-    voss_filter_ = ta.voss(candles, sequential=sequential)
-    if sequential:
-        return voss_filter_.filt
-    else:
-        return np.array([voss_filter_.filt])
+    voss_filter_ = voss(candles, sequential=sequential)
+    return voss_filter_.filt
 
 
 @feature(
@@ -728,18 +716,26 @@ def williams_r_feature(candles: np.ndarray, sequential: bool = True):
 
 # 注册类型特征
 
+
 # 基础特征类
 class BaseIndicatorFeature:
     """指标特征基类"""
-    
-    def __init__(self, indicator_class, candles: np.ndarray, window: int, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self,
+        indicator_class,
+        candles: np.ndarray,
+        window: int,
+        sequential: bool = False,
+        **kwargs
+    ):
         self.indicator = indicator_class(candles, window, sequential=sequential)
-    
+
     @property
     def raw_result(self):
         """暴露indicator的raw_result供转换链使用"""
         return self.indicator.raw_result
-    
+
     def res(self, **kwargs):
         return self.indicator.res(**kwargs)
 
@@ -747,14 +743,16 @@ class BaseIndicatorFeature:
 # 工厂函数
 def create_indicator_feature_class(indicator_class, class_name):
     """创建指标特征类的工厂函数"""
-    
+
     class DynamicFeature(BaseIndicatorFeature):
-        def __init__(self, candles: np.ndarray, window: int, sequential: bool = False, **kwargs):
+        def __init__(
+            self, candles: np.ndarray, window: int, sequential: bool = False, **kwargs
+        ):
             super().__init__(indicator_class, candles, window, sequential, **kwargs)
-    
+
     DynamicFeature.__name__ = class_name
     DynamicFeature.__qualname__ = class_name
-    
+
     return DynamicFeature
 
 
@@ -772,6 +770,7 @@ VMDFeature128 = create_indicator_feature_class(VMD_NRBO, "VMDFeature128")
 VMDFeature256 = create_indicator_feature_class(VMD_NRBO, "VMDFeature256")
 VMDFeature512 = create_indicator_feature_class(VMD_NRBO, "VMDFeature512")
 
+
 # 注册CWT特征
 @class_feature(
     name="cwt_w32",
@@ -781,8 +780,12 @@ VMDFeature512 = create_indicator_feature_class(VMD_NRBO, "VMDFeature512")
 )
 class _CWTFeature32(CWTFeature32):
     """CWT SWT特征 - Window 32"""
-    def __init__(self, candles: np.ndarray, window: int = 32, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 32, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="cwt_w64",
@@ -792,8 +795,12 @@ class _CWTFeature32(CWTFeature32):
 )
 class _CWTFeature64(CWTFeature64):
     """CWT SWT特征 - Window 64"""
-    def __init__(self, candles: np.ndarray, window: int = 64, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 64, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="cwt_w128",
@@ -803,8 +810,12 @@ class _CWTFeature64(CWTFeature64):
 )
 class _CWTFeature128(CWTFeature128):
     """CWT SWT特征 - Window 128"""
-    def __init__(self, candles: np.ndarray, window: int = 128, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 128, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="cwt_w256",
@@ -814,8 +825,12 @@ class _CWTFeature128(CWTFeature128):
 )
 class _CWTFeature256(CWTFeature256):
     """CWT SWT特征 - Window 256"""
-    def __init__(self, candles: np.ndarray, window: int = 256, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 256, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="cwt_w512",
@@ -825,8 +840,12 @@ class _CWTFeature256(CWTFeature256):
 )
 class _CWTFeature512(CWTFeature512):
     """CWT SWT特征 - Window 512"""
-    def __init__(self, candles: np.ndarray, window: int = 512, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 512, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 # 注册VMD特征
 @class_feature(
@@ -837,8 +856,12 @@ class _CWTFeature512(CWTFeature512):
 )
 class _VMDFeature32(VMDFeature32):
     """VMD NRBO特征 - Window 32"""
-    def __init__(self, candles: np.ndarray, window: int = 32, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 32, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="vmd_w64",
@@ -848,8 +871,12 @@ class _VMDFeature32(VMDFeature32):
 )
 class _VMDFeature64(VMDFeature64):
     """VMD NRBO特征 - Window 64"""
-    def __init__(self, candles: np.ndarray, window: int = 64, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 64, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="vmd_w128",
@@ -859,8 +886,12 @@ class _VMDFeature64(VMDFeature64):
 )
 class _VMDFeature128(VMDFeature128):
     """VMD NRBO特征 - Window 128"""
-    def __init__(self, candles: np.ndarray, window: int = 128, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 128, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="vmd_w256",
@@ -870,8 +901,12 @@ class _VMDFeature128(VMDFeature128):
 )
 class _VMDFeature256(VMDFeature256):
     """VMD NRBO特征 - Window 256"""
-    def __init__(self, candles: np.ndarray, window: int = 256, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 256, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)
+
 
 @class_feature(
     name="vmd_w512",
@@ -881,5 +916,8 @@ class _VMDFeature256(VMDFeature256):
 )
 class _VMDFeature512(VMDFeature512):
     """VMD NRBO特征 - Window 512"""
-    def __init__(self, candles: np.ndarray, window: int = 512, sequential: bool = False, **kwargs):
+
+    def __init__(
+        self, candles: np.ndarray, window: int = 512, sequential: bool = False, **kwargs
+    ):
         super().__init__(candles, window, sequential, **kwargs)

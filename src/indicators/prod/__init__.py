@@ -12,6 +12,7 @@ from .autocorrelation_periodogram import (
 from .autocorrelation_reversals import (
     autocorrelation_reversals,
 )
+from .bandpass import bandpass
 from .chaiken_money_flow import chaiken_money_flow
 from .change_variance_ratio import change_variance_ratio
 from .cmma import cmma
@@ -59,4 +60,5 @@ from .swamicharts_stochastic import (
     swamicharts_stochastic,
 )
 from .td_sequential import td_sequential
+from .voss import voss
 from .wavelets.cls_cwt_swt import CWT_SWT

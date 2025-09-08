@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from jesse.helpers import get_candle_source, slice_candles
+from jesse.helpers import get_candle_source
 from numba import njit
 
 from src.utils.math_tools import deg_cos, deg_sin
@@ -127,7 +127,6 @@ def comb_spectrum(
     bandwidth: float = 0.3,
 ):
     # 预处理
-    candles = slice_candles(candles, sequential)
     src = get_candle_source(candles, source_type)
     length = src.shape[0]
     # 调用 numba 加速函数
