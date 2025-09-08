@@ -115,7 +115,7 @@ def roll_measure(
     close = get_candle_source(candles, source_type="close")
     res = _get_roll_measure(close, window)
 
-    return res if sequential else res[-1]
+    return res if sequential else res[-1:]
 
 
 def roll_impact(
@@ -140,7 +140,7 @@ def roll_impact(
     dollar_volume = np.where(dollar_volume == 0, np.inf, dollar_volume)
     res = roll_measure_values / dollar_volume
 
-    return res if sequential else res[-1]
+    return res if sequential else res[-1:]
 
 
 def corwin_schultz_estimator(
@@ -166,7 +166,7 @@ def corwin_schultz_estimator(
     valid = alpha > 0
     spread[valid] = 2 * (np.exp(alpha[valid]) - 1) / (1 + np.exp(alpha[valid]))
 
-    return spread if sequential else spread[-1]
+    return spread if sequential else spread[-1:]
 
 
 def bekker_parkinson_vol(

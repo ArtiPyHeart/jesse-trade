@@ -180,7 +180,10 @@ def bandpass_feature(
 ):
     """带通滤波器"""
     bandpass_tuple = ta.bandpass(candles, sequential=sequential)
-    return bandpass_tuple.bp_normalized
+    if sequential:
+        return bandpass_tuple.bp_normalized
+    else:
+        return np.array([bandpass_tuple.bp_normalized])
 
 
 @feature(name="highpass_bp", description="Highpass Bandpass Trigger")
@@ -190,7 +193,10 @@ def highpass_bp_feature(
 ):
     """高通带通触发器"""
     bandpass_tuple = ta.bandpass(candles, sequential=sequential)
-    return bandpass_tuple.trigger
+    if sequential:
+        return bandpass_tuple.trigger
+    else:
+        return np.array([bandpass_tuple.trigger])
 
 
 @feature(name="bekker_parkinson_vol", description="Bekker-Parkinson Volatility")
@@ -393,7 +399,10 @@ def fisher_feature(
 ):
     """Fisher变换"""
     fisher_ind = ta.fisher(candles, sequential=sequential)
-    return fisher_ind.fisher
+    if sequential:
+        return fisher_ind.fisher
+    else:
+        return np.array([fisher_ind.fisher])
 
 
 @feature(
@@ -436,7 +445,10 @@ def forecast_oscillator_feature(
     sequential: bool = True,
 ):
     """预测振荡器"""
-    return ta.fosc(candles, sequential=sequential)
+    if sequential:
+        return ta.fosc(candles, sequential=sequential)
+    else:
+        return np.array([ta.fosc(candles, sequential=sequential)])
 
 
 @feature(name="hasbrouck_lambda", description="Hasbrouck Lambda")
@@ -540,7 +552,10 @@ def natr_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
-    return ta.natr(candles, sequential=sequential)
+    if sequential:
+        return ta.natr(candles, sequential=sequential)
+    else:
+        return np.array([ta.natr(candles, sequential=sequential)])
 
 
 @feature(
@@ -573,7 +588,10 @@ def pfe_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
-    return ta.pfe(candles, sequential=sequential)
+    if sequential:
+        return ta.pfe(candles, sequential=sequential)
+    else:
+        return np.array([ta.pfe(candles, sequential=sequential)])
 
 
 @feature(
@@ -650,7 +668,10 @@ def stc_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
-    return ta.stc(candles, sequential=sequential)
+    if sequential:
+        return ta.stc(candles, sequential=sequential)
+    else:
+        return np.array([ta.stc(candles, sequential=sequential)])
 
 
 @feature(
@@ -686,7 +707,10 @@ def swamicharts_stochastic_feature(
     description="Trendflex",
 )
 def trendflex_feature(candles: np.ndarray, sequential: bool = True):
-    return ta.trendflex(candles, sequential=sequential)
+    if sequential:
+        return ta.trendflex(candles, sequential=sequential)
+    else:
+        return np.array([ta.trendflex(candles, sequential=sequential)])
 
 
 @feature(
@@ -695,7 +719,10 @@ def trendflex_feature(candles: np.ndarray, sequential: bool = True):
 )
 def voss_feature(candles: np.ndarray, sequential: bool = True):
     voss_filter_ = ta.voss(candles, sequential=sequential)
-    return voss_filter_.voss
+    if sequential:
+        return voss_filter_.voss
+    else:
+        return np.array([voss_filter_.voss])
 
 
 @feature(
@@ -704,7 +731,10 @@ def voss_feature(candles: np.ndarray, sequential: bool = True):
 )
 def voss_feature(candles: np.ndarray, sequential: bool = True):
     voss_filter_ = ta.voss(candles, sequential=sequential)
-    return voss_filter_.filt
+    if sequential:
+        return voss_filter_.filt
+    else:
+        return np.array([voss_filter_.filt])
 
 
 @feature(
@@ -712,7 +742,10 @@ def voss_feature(candles: np.ndarray, sequential: bool = True):
     description="VWAP",
 )
 def vwap_feature(candles: np.ndarray, sequential: bool = True):
-    return ta.vwap(candles, sequential=sequential)
+    if sequential:
+        return ta.vwap(candles, sequential=sequential)
+    else:
+        return np.array([ta.vwap(candles, sequential=sequential)])
 
 
 @feature(
@@ -720,7 +753,10 @@ def vwap_feature(candles: np.ndarray, sequential: bool = True):
     description="Williams R",
 )
 def williams_r_feature(candles: np.ndarray, sequential: bool = True):
-    return ta.willr(candles, sequential=sequential)
+    if sequential:
+        return ta.willr(candles, sequential=sequential)
+    else:
+        return np.array([ta.willr(candles, sequential=sequential)])
 
 
 # 注册类型特征
