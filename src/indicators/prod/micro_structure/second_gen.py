@@ -46,7 +46,7 @@ def kyle_lambda(
     # Convert to numpy array and replace NaN with 0
     res = np.nan_to_num(res_pd.to_numpy())
 
-    return res if sequential else res[-1]
+    return res if sequential else res[-1:]
 
 
 def amihud_lambda(
@@ -76,7 +76,7 @@ def amihud_lambda(
     # Convert to numpy array and replace NaN with 0
     res = np.nan_to_num(res_pd.to_numpy())
 
-    return res if sequential else res[-1]
+    return res if sequential else res[-1:]
 
 
 def hasbrouck_lambda(
