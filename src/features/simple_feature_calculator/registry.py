@@ -70,13 +70,23 @@ class SimpleFeatureRegistry:
             description: 特征描述
             returns_multiple: 是否返回多列
         """
-        def class_wrapper(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
-            """将类包装成函数"""
+        def class_wrapper(candles: np.ndarray, sequential: bool = True, return_raw: bool = False) -> np.ndarray:
+            """将类包装成函数
+            
+            Args:
+                candles: K线数据
+                sequential: 是否返回序列
+                return_raw: 是否返回raw_result（用于需要转换链处理的情况）
+            """
             # 创建实例
             if params:
                 instance = cls(candles, sequential=sequential, **params)
             else:
                 instance = cls(candles, sequential=sequential)
+            
+            # 如果需要raw_result（用于转换链处理）
+            if return_raw and hasattr(instance, 'raw_result'):
+                return instance.raw_result
             
             # 获取结果
             if hasattr(instance, 'res'):

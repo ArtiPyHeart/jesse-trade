@@ -1,6 +1,6 @@
 import numpy as np
+from jesse.helpers import get_candle_source
 from joblib import delayed, Parallel
-from jesse.helpers import slice_candles, get_candle_source
 
 from src.data_process.entropy.apen_sampen import approximate_entropy_numba
 from src.utils.math_tools import (
@@ -16,7 +16,6 @@ def approximate_entropy_indicator(
     source_type: str = "close",
     sequential: bool = False,
 ):
-    candles = slice_candles(candles, sequential)
     src = get_candle_source(candles, source_type)
 
     if sequential:

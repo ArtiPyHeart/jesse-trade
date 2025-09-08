@@ -9,7 +9,6 @@
 
 import numpy as np
 from typing import Dict, List, Union, Optional, Tuple
-from jesse import helpers
 
 from .registry import SimpleFeatureRegistry, get_global_registry
 from .validator import FeatureOutputValidator
@@ -50,7 +49,8 @@ class SimpleFeatureCalculator:
             candles: K线数据（Jesse格式）
             sequential: 是否返回序列数据
         """
-        self.candles = helpers.slice_candles(candles, sequential)
+        # 不截断数据，让特征自己处理
+        self.candles = candles
         self.sequential = sequential
         # 清空缓存
         self.cache.clear()
@@ -98,7 +98,19 @@ class SimpleFeatureCalculator:
         # 计算基础特征
         if transforms:
             # 如果有转换，需要先获取完整序列
-            base_value = self._compute_base_feature(base_name, force_sequential=True)
+            # 检查是否是类特征
+            metadata = self.registry.get_metadata(base_name)
+            is_class_feature = metadata and metadata.get("type") == "class"
+            
+            if is_class_feature:
+                # 对于类特征，获取raw_result用于转换
+                raw_result = self._compute_base_feature(base_name, force_sequential=True, return_raw=True)
+                # 处理raw_result为适合转换链的格式
+                # 注意：这里暂不处理column_index，留到后面统一处理
+                base_value = self._process_raw_result_for_transform(raw_result, None)
+            else:
+                # 函数型特征，正常处理
+                base_value = self._compute_base_feature(base_name, force_sequential=True)
         else:
             # 没有转换，直接按用户需求计算
             base_value = self._compute_base_feature(base_name, force_sequential=False)
@@ -134,8 +146,13 @@ class SimpleFeatureCalculator:
                         f"Feature has {base_value.shape[1]} columns."
                     )
                 
-                # 提取指定列，保持维度
-                base_value = base_value[:, column_index:column_index+1]
+                # 提取指定列
+                if self.sequential:
+                    # sequential模式：保持二维数组
+                    base_value = base_value[:, column_index:column_index+1]
+                else:
+                    # 非sequential模式：提取为一维数组
+                    base_value = base_value[:, column_index]
 
         # 应用转换链
         if transforms:
@@ -152,18 +169,62 @@ class SimpleFeatureCalculator:
                 if transformed_value.ndim == 1:
                     transformed_value = transformed_value[-1:]
                 elif transformed_value.ndim == 2:
-                    transformed_value = transformed_value[-1:, :]
+                    # 对于多列特征，返回一维数组而不是 (1, n_columns) 的二维数组
+                    transformed_value = transformed_value[-1, :]
             
             result = transformed_value
         else:
-            result = base_value
+            # 没有转换的情况
+            # 如果是非sequential且是多列特征，需要确保返回正确的维度
+            if not self.sequential and base_value.ndim == 2:
+                # 返回最后一行作为一维数组
+                result = base_value[-1, :]
+            else:
+                result = base_value
 
         # 缓存结果
         self.cache[cache_key] = result
         return result
 
+    def _process_raw_result_for_transform(self, raw_result: list, column_index: Optional[int]) -> np.ndarray:
+        """
+        处理类特征的raw_result，转换为适合转换链处理的格式
+        
+        Args:
+            raw_result: 类特征的raw_result列表
+            column_index: 列索引（如果有）
+            
+        Returns:
+            处理后的数组，适合转换链处理
+        """
+        if not raw_result:
+            raise ValueError("raw_result is empty")
+        
+        # raw_result是一个列表，每个元素是(窗口大小, 列数)的数组
+        # 我们需要从每个窗口提取最后一行，组成时间序列
+        
+        # 提取每个窗口的最后一行
+        time_series = []
+        for window_data in raw_result:
+            if window_data.ndim == 2:
+                # 多列数据，取最后一行
+                last_row = window_data[-1, :]
+            else:
+                # 单列数据
+                last_row = window_data[-1]
+            time_series.append(last_row)
+        
+        # 转换为数组
+        result = np.array(time_series)
+        
+        # 如果有列索引，提取指定列
+        if column_index is not None and result.ndim == 2:
+            result = result[:, column_index]
+        
+        return result
+    
     def _compute_base_feature(
-        self, feature_name: str, force_sequential: bool
+        self, feature_name: str, force_sequential: bool, return_raw: bool = False
     ) -> np.ndarray:
         """
         计算基础特征（不含转换）
@@ -171,6 +232,7 @@ class SimpleFeatureCalculator:
         Args:
             feature_name: 基础特征名
             force_sequential: 是否强制使用sequential=True
+            return_raw: 是否返回raw_result（用于类特征的转换链处理）
 
         Returns:
             特征数组
@@ -186,12 +248,16 @@ class SimpleFeatureCalculator:
         # 获取特征元信息
         metadata = self.registry.get_metadata(feature_name)
         returns_multiple = metadata.get("returns_multiple", False)
+        is_class_feature = metadata.get("type") == "class"
 
         # 决定使用的sequential参数
         use_sequential = force_sequential or self.sequential
 
         # 如果是强制sequential但用户要求非sequential，使用不同的缓存键
-        if force_sequential and not self.sequential:
+        # 如果是return_raw，需要特殊的缓存键
+        if return_raw:
+            cache_key = (f"{feature_name}_raw", use_sequential)
+        elif force_sequential and not self.sequential:
             cache_key = (f"{feature_name}_seq", True)
         else:
             cache_key = (feature_name, use_sequential)
@@ -201,9 +267,18 @@ class SimpleFeatureCalculator:
             return self.cache[cache_key]
 
         # 计算特征
-        output = feature_func(self.candles, use_sequential)
+        # 对于类特征，如果需要raw数据（用于转换），传递return_raw参数
+        if is_class_feature and return_raw:
+            # 类特征支持return_raw参数
+            output = feature_func(self.candles, use_sequential, return_raw=True)
+            # raw_result是列表，不需要验证，直接返回
+            self.cache[cache_key] = output
+            return output
+        else:
+            # 普通调用
+            output = feature_func(self.candles, use_sequential)
 
-        # 验证输出格式
+        # 验证输出格式（只对非raw_result进行验证）
         self.validator.validate(
             output=output,
             feature_name=feature_name,

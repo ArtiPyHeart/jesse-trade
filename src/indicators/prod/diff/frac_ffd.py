@@ -204,7 +204,7 @@ def frac_diff_ffd_candle(
     if sequential:
         return diff_series
     else:
-        return diff_series[-1]
+        return diff_series[-1:]
 
 
 def _frac_diff_ffd_original(

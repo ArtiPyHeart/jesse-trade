@@ -336,145 +336,145 @@ def feature_bundle(
         cwt_win32 = CWT_SWT(candles, 32, sequential=True)
         cwt_win32_res = cwt_win32.res()
         for i in range(cwt_win32_res.shape[1]):
-            res_fe[f"cwt_win32_{i}"] = cwt_win32_res[:, i]
+            res_fe[f"cwt_w32_{i}"] = cwt_win32_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win32_lag_res = cwt_win32.res(lag=lg)
             for i in range(cwt_win32_lag_res.shape[1]):
-                res_fe[f"cwt_win32_{i}_lag{lg}"] = cwt_win32_lag_res[:, i]
+                res_fe[f"cwt_w32_{i}_lag{lg}"] = cwt_win32_lag_res[:, i]
         cwt_win32_dt_res = cwt_win32.res(dt=True)
         for i in range(cwt_win32_dt_res.shape[1]):
-            res_fe[f"cwt_win32_{i}_dt"] = cwt_win32_dt_res[:, i]
+            res_fe[f"cwt_w32_{i}_dt"] = cwt_win32_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win32_dt_lag_res = cwt_win32.res(dt=True, lag=lg)
             for i in range(cwt_win32_dt_lag_res.shape[1]):
-                res_fe[f"cwt_win32_{i}_dt_lag{lg}"] = cwt_win32_dt_lag_res[:, i]
+                res_fe[f"cwt_w32_{i}_dt_lag{lg}"] = cwt_win32_dt_lag_res[:, i]
         cwt_win32_ddt_res = cwt_win32.res(ddt=True)
         for i in range(cwt_win32_ddt_res.shape[1]):
-            res_fe[f"cwt_win32_{i}_ddt"] = cwt_win32_ddt_res[:, i]
+            res_fe[f"cwt_w32_{i}_ddt"] = cwt_win32_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win32_ddt_lag_res = cwt_win32.res(ddt=True, lag=lg)
             for i in range(cwt_win32_ddt_lag_res.shape[1]):
-                res_fe[f"cwt_win32_{i}_ddt_lag{lg}"] = cwt_win32_ddt_lag_res[:, i]
+                res_fe[f"cwt_w32_{i}_ddt_lag{lg}"] = cwt_win32_ddt_lag_res[:, i]
 
     if not lightweighted:
         cwt_win64 = CWT_SWT(candles, 64, sequential=True)
         cwt_win64_res = cwt_win64.res()
         for i in range(cwt_win64_res.shape[1]):
-            res_fe[f"cwt_win64_{i}"] = cwt_win64_res[:, i]
+            res_fe[f"cwt_w64_{i}"] = cwt_win64_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win64_lag_res = cwt_win64.res(lag=lg)
             for i in range(cwt_win64_lag_res.shape[1]):
-                res_fe[f"cwt_win64_{i}_lag{lg}"] = cwt_win64_lag_res[:, i]
+                res_fe[f"cwt_w64_{i}_lag{lg}"] = cwt_win64_lag_res[:, i]
         cwt_win64_dt_res = cwt_win64.res(dt=True)
         for i in range(cwt_win64_dt_res.shape[1]):
-            res_fe[f"cwt_win64_{i}_dt"] = cwt_win64_dt_res[:, i]
+            res_fe[f"cwt_w64_{i}_dt"] = cwt_win64_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win64_dt_lag_res = cwt_win64.res(dt=True, lag=lg)
             for i in range(cwt_win64_dt_lag_res.shape[1]):
-                res_fe[f"cwt_win64_{i}_dt_lag{lg}"] = cwt_win64_dt_lag_res[:, i]
+                res_fe[f"cwt_w64_{i}_dt_lag{lg}"] = cwt_win64_dt_lag_res[:, i]
         cwt_win64_ddt_res = cwt_win64.res(ddt=True)
         for i in range(cwt_win64_ddt_res.shape[1]):
-            res_fe[f"cwt_win64_{i}_ddt"] = cwt_win64_ddt_res[:, i]
+            res_fe[f"cwt_w64_{i}_ddt"] = cwt_win64_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win64_ddt_lag_res = cwt_win64.res(ddt=True, lag=lg)
             for i in range(cwt_win64_ddt_lag_res.shape[1]):
-                res_fe[f"cwt_win64_{i}_ddt_lag{lg}"] = cwt_win64_ddt_lag_res[:, i]
+                res_fe[f"cwt_w64_{i}_ddt_lag{lg}"] = cwt_win64_ddt_lag_res[:, i]
 
     if not lightweighted:
         cwt_win128 = CWT_SWT(candles, 128, sequential=True)
         cwt_win128_res = cwt_win128.res()
         for i in range(cwt_win128_res.shape[1]):
-            res_fe[f"cwt_win128_{i}"] = cwt_win128_res[:, i]
+            res_fe[f"cwt_w128_{i}"] = cwt_win128_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win128_lag_res = cwt_win128.res(lag=lg)
             for i in range(cwt_win128_lag_res.shape[1]):
-                res_fe[f"cwt_win128_{i}_lag{lg}"] = cwt_win128_lag_res[:, i]
+                res_fe[f"cwt_w128_{i}_lag{lg}"] = cwt_win128_lag_res[:, i]
         cwt_win128_dt_res = cwt_win128.res(dt=True)
         for i in range(cwt_win128_dt_res.shape[1]):
-            res_fe[f"cwt_win128_{i}_dt"] = cwt_win128_dt_res[:, i]
+            res_fe[f"cwt_w128_{i}_dt"] = cwt_win128_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win128_dt_lag_res = cwt_win128.res(dt=True, lag=lg)
             for i in range(cwt_win128_dt_lag_res.shape[1]):
-                res_fe[f"cwt_win128_{i}_dt_lag{lg}"] = cwt_win128_dt_lag_res[:, i]
+                res_fe[f"cwt_w128_{i}_dt_lag{lg}"] = cwt_win128_dt_lag_res[:, i]
         cwt_win128_ddt_res = cwt_win128.res(ddt=True)
         for i in range(cwt_win128_ddt_res.shape[1]):
-            res_fe[f"cwt_win128_{i}_ddt"] = cwt_win128_ddt_res[:, i]
+            res_fe[f"cwt_w128_{i}_ddt"] = cwt_win128_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win128_ddt_lag_res = cwt_win128.res(ddt=True, lag=lg)
             for i in range(cwt_win128_ddt_lag_res.shape[1]):
-                res_fe[f"cwt_win128_{i}_ddt_lag{lg}"] = cwt_win128_ddt_lag_res[:, i]
+                res_fe[f"cwt_w128_{i}_ddt_lag{lg}"] = cwt_win128_ddt_lag_res[:, i]
 
     if not lightweighted:
         cwt_win256 = CWT_SWT(candles, 256, sequential=True)
         cwt_win256_res = cwt_win256.res()
         for i in range(cwt_win256_res.shape[1]):
-            res_fe[f"cwt_win256_{i}"] = cwt_win256_res[:, i]
+            res_fe[f"cwt_w256_{i}"] = cwt_win256_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win256_lag_res = cwt_win256.res(lag=lg)
             for i in range(cwt_win256_lag_res.shape[1]):
-                res_fe[f"cwt_win256_{i}_lag{lg}"] = cwt_win256_lag_res[:, i]
+                res_fe[f"cwt_w256_{i}_lag{lg}"] = cwt_win256_lag_res[:, i]
         cwt_win256_dt_res = cwt_win256.res(dt=True)
         for i in range(cwt_win256_dt_res.shape[1]):
-            res_fe[f"cwt_win256_{i}_dt"] = cwt_win256_dt_res[:, i]
+            res_fe[f"cwt_w256_{i}_dt"] = cwt_win256_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win256_dt_lag_res = cwt_win256.res(dt=True, lag=lg)
             for i in range(cwt_win256_dt_lag_res.shape[1]):
-                res_fe[f"cwt_win256_{i}_dt_lag{lg}"] = cwt_win256_dt_lag_res[:, i]
+                res_fe[f"cwt_w256_{i}_dt_lag{lg}"] = cwt_win256_dt_lag_res[:, i]
         cwt_win256_ddt_res = cwt_win256.res(ddt=True)
         for i in range(cwt_win256_ddt_res.shape[1]):
-            res_fe[f"cwt_win256_{i}_ddt"] = cwt_win256_ddt_res[:, i]
+            res_fe[f"cwt_w256_{i}_ddt"] = cwt_win256_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win256_ddt_lag_res = cwt_win256.res(ddt=True, lag=lg)
             for i in range(cwt_win256_ddt_lag_res.shape[1]):
-                res_fe[f"cwt_win256_{i}_ddt_lag{lg}"] = cwt_win256_ddt_lag_res[:, i]
+                res_fe[f"cwt_w256_{i}_ddt_lag{lg}"] = cwt_win256_ddt_lag_res[:, i]
 
     # lightweighted模式下仅保留512长度特征防止耗尽内存
     cwt_win512 = CWT_SWT(candles, 512, sequential=True)
     cwt_win512_res = cwt_win512.res()
     for i in range(cwt_win512_res.shape[1]):
-        res_fe[f"cwt_win512_{i}"] = cwt_win512_res[:, i]
+        res_fe[f"cwt_w512_{i}"] = cwt_win512_res[:, i]
     for lg in range(1, LAG_MAX):
         cwt_win512_lag_res = cwt_win512.res(lag=lg)
         for i in range(cwt_win512_lag_res.shape[1]):
-            res_fe[f"cwt_win512_{i}_lag{lg}"] = cwt_win512_lag_res[:, i]
+            res_fe[f"cwt_w512_{i}_lag{lg}"] = cwt_win512_lag_res[:, i]
     cwt_win512_dt_res = cwt_win512.res(dt=True)
     for i in range(cwt_win512_dt_res.shape[1]):
-        res_fe[f"cwt_win512_{i}_dt"] = cwt_win512_dt_res[:, i]
+        res_fe[f"cwt_w512_{i}_dt"] = cwt_win512_dt_res[:, i]
     for lg in range(1, LAG_MAX):
         cwt_win512_dt_lag_res = cwt_win512.res(dt=True, lag=lg)
         for i in range(cwt_win512_dt_lag_res.shape[1]):
-            res_fe[f"cwt_win512_{i}_dt_lag{lg}"] = cwt_win512_dt_lag_res[:, i]
+            res_fe[f"cwt_w512_{i}_dt_lag{lg}"] = cwt_win512_dt_lag_res[:, i]
     cwt_win512_ddt_res = cwt_win512.res(ddt=True)
     for i in range(cwt_win512_ddt_res.shape[1]):
-        res_fe[f"cwt_win512_{i}_ddt"] = cwt_win512_ddt_res[:, i]
+        res_fe[f"cwt_w512_{i}_ddt"] = cwt_win512_ddt_res[:, i]
     for lg in range(1, LAG_MAX):
         cwt_win512_ddt_lag_res = cwt_win512.res(ddt=True, lag=lg)
         for i in range(cwt_win512_ddt_lag_res.shape[1]):
-            res_fe[f"cwt_win512_{i}_ddt_lag{lg}"] = cwt_win512_ddt_lag_res[:, i]
+            res_fe[f"cwt_w512_{i}_ddt_lag{lg}"] = cwt_win512_ddt_lag_res[:, i]
 
     if not lightweighted:
         cwt_win1024 = CWT_SWT(candles, 1024, sequential=True)
         cwt_win1024_res = cwt_win1024.res()
         for i in range(cwt_win1024_res.shape[1]):
-            res_fe[f"cwt_win1024_{i}"] = cwt_win1024_res[:, i]
+            res_fe[f"cwt_w1024_{i}"] = cwt_win1024_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win1024_lag_res = cwt_win1024.res(lag=lg)
             for i in range(cwt_win1024_lag_res.shape[1]):
-                res_fe[f"cwt_win1024_{i}_lag{lg}"] = cwt_win1024_lag_res[:, i]
+                res_fe[f"cwt_w1024_{i}_lag{lg}"] = cwt_win1024_lag_res[:, i]
         cwt_win1024_dt_res = cwt_win1024.res(dt=True)
         for i in range(cwt_win1024_dt_res.shape[1]):
-            res_fe[f"cwt_win1024_{i}_dt"] = cwt_win1024_dt_res[:, i]
+            res_fe[f"cwt_w1024_{i}_dt"] = cwt_win1024_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win1024_dt_lag_res = cwt_win1024.res(dt=True, lag=lg)
             for i in range(cwt_win1024_dt_lag_res.shape[1]):
-                res_fe[f"cwt_win1024_{i}_dt_lag{lg}"] = cwt_win1024_dt_lag_res[:, i]
+                res_fe[f"cwt_w1024_{i}_dt_lag{lg}"] = cwt_win1024_dt_lag_res[:, i]
         cwt_win1024_ddt_res = cwt_win1024.res(ddt=True)
         for i in range(cwt_win1024_ddt_res.shape[1]):
-            res_fe[f"cwt_win1024_{i}_ddt"] = cwt_win1024_ddt_res[:, i]
+            res_fe[f"cwt_w1024_{i}_ddt"] = cwt_win1024_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             cwt_win1024_ddt_lag_res = cwt_win1024.res(ddt=True, lag=lg)
             for i in range(cwt_win1024_ddt_lag_res.shape[1]):
-                res_fe[f"cwt_win1024_{i}_ddt_lag{lg}"] = cwt_win1024_ddt_lag_res[:, i]
+                res_fe[f"cwt_w1024_{i}_ddt_lag{lg}"] = cwt_win1024_ddt_lag_res[:, i]
 
     # dft
     dft_dom_cycle, spectrum = dft(candles, sequential=True)
@@ -523,104 +523,104 @@ def feature_bundle(
         sample_entropy_win32_spot = sample_entropy_indicator(
             candles, period=32, use_array_price=False, sequential=True
         )
-        res_fe["sample_entropy_win32_spot"] = sample_entropy_win32_spot
+        res_fe["sample_entropy_w32_spot"] = sample_entropy_win32_spot
 
         sample_entropy_win32_array = sample_entropy_indicator(
             candles, period=32, use_array_price=True, sequential=True
         )
-        res_fe["sample_entropy_win32_array"] = sample_entropy_win32_array
+        res_fe["sample_entropy_w32_array"] = sample_entropy_win32_array
 
         sample_entropy_win64_spot = sample_entropy_indicator(
             candles, period=64, use_array_price=False, sequential=True
         )
-        res_fe["sample_entropy_win64_spot"] = sample_entropy_win64_spot
+        res_fe["sample_entropy_w64_spot"] = sample_entropy_win64_spot
 
         sample_entropy_win64_array = sample_entropy_indicator(
             candles, period=64, use_array_price=True, sequential=True
         )
-        res_fe["sample_entropy_win64_array"] = sample_entropy_win64_array
+        res_fe["sample_entropy_w64_array"] = sample_entropy_win64_array
 
         sample_entropy_win128_spot = sample_entropy_indicator(
             candles, period=128, use_array_price=False, sequential=True
         )
-        res_fe["sample_entropy_win128_spot"] = sample_entropy_win128_spot
+        res_fe["sample_entropy_w128_spot"] = sample_entropy_win128_spot
 
         sample_entropy_win128_array = sample_entropy_indicator(
             candles, period=128, use_array_price=True, sequential=True
         )
-        res_fe["sample_entropy_win128_array"] = sample_entropy_win128_array
+        res_fe["sample_entropy_w128_array"] = sample_entropy_win128_array
 
         sample_entropy_win256_spot = sample_entropy_indicator(
             candles, period=256, use_array_price=False, sequential=True
         )
-        res_fe["sample_entropy_win256_spot"] = sample_entropy_win256_spot
+        res_fe["sample_entropy_w256_spot"] = sample_entropy_win256_spot
 
         sample_entropy_win256_array = sample_entropy_indicator(
             candles, period=256, use_array_price=True, sequential=True
         )
-        res_fe["sample_entropy_win256_array"] = sample_entropy_win256_array
+        res_fe["sample_entropy_w256_array"] = sample_entropy_win256_array
 
     sample_entropy_win512_spot = sample_entropy_indicator(
         candles, period=512, use_array_price=False, sequential=True
     )
-    res_fe["sample_entropy_win512_spot"] = sample_entropy_win512_spot
+    res_fe["sample_entropy_w512_spot"] = sample_entropy_win512_spot
 
     sample_entropy_win512_array = sample_entropy_indicator(
         candles, period=512, use_array_price=True, sequential=True
     )
-    res_fe["sample_entropy_win512_array"] = sample_entropy_win512_array
+    res_fe["sample_entropy_w512_array"] = sample_entropy_win512_array
 
     # entropy approximate
     if not lightweighted:
         approximate_entropy_win32_spot = approximate_entropy_indicator(
             candles, period=32, use_array_price=False, sequential=True
         )
-        res_fe["approximate_entropy_win32_spot"] = approximate_entropy_win32_spot
+        res_fe["approximate_entropy_w32_spot"] = approximate_entropy_win32_spot
 
         approximate_entropy_win32_array = approximate_entropy_indicator(
             candles, period=32, use_array_price=True, sequential=True
         )
-        res_fe["approximate_entropy_win32_array"] = approximate_entropy_win32_array
+        res_fe["approximate_entropy_w32_array"] = approximate_entropy_win32_array
 
         approximate_entropy_win64_spot = approximate_entropy_indicator(
             candles, period=64, use_array_price=False, sequential=True
         )
-        res_fe["approximate_entropy_win64_spot"] = approximate_entropy_win64_spot
+        res_fe["approximate_entropy_w64_spot"] = approximate_entropy_win64_spot
 
         approximate_entropy_win64_array = approximate_entropy_indicator(
             candles, period=64, use_array_price=True, sequential=True
         )
-        res_fe["approximate_entropy_win64_array"] = approximate_entropy_win64_array
+        res_fe["approximate_entropy_w64_array"] = approximate_entropy_win64_array
 
         approximate_entropy_win128_spot = approximate_entropy_indicator(
             candles, period=128, use_array_price=False, sequential=True
         )
-        res_fe["approximate_entropy_win128_spot"] = approximate_entropy_win128_spot
+        res_fe["approximate_entropy_w128_spot"] = approximate_entropy_win128_spot
 
         approximate_entropy_win128_array = approximate_entropy_indicator(
             candles, period=128, use_array_price=True, sequential=True
         )
-        res_fe["approximate_entropy_win128_array"] = approximate_entropy_win128_array
+        res_fe["approximate_entropy_w128_array"] = approximate_entropy_win128_array
 
         approximate_entropy_win256_spot = approximate_entropy_indicator(
             candles, period=256, use_array_price=False, sequential=True
         )
-        res_fe["approximate_entropy_win256_spot"] = approximate_entropy_win256_spot
+        res_fe["approximate_entropy_w256_spot"] = approximate_entropy_win256_spot
 
         approximate_entropy_win256_array = approximate_entropy_indicator(
             candles, period=256, use_array_price=True, sequential=True
         )
-        res_fe["approximate_entropy_win256_array"] = approximate_entropy_win256_array
+        res_fe["approximate_entropy_w256_array"] = approximate_entropy_win256_array
 
     approximate_entropy_win512_spot = approximate_entropy_indicator(
         candles, period=512, use_array_price=False, sequential=True
     )
-    res_fe["approximate_entropy_win512_spot"] = approximate_entropy_win512_spot
+    res_fe["approximate_entropy_w512_spot"] = approximate_entropy_win512_spot
 
     approximate_entropy_win512_array = approximate_entropy_indicator(
         candles, period=512, use_array_price=True, sequential=True
     )
-    res_fe["approximate_entropy_win512_array"] = approximate_entropy_win512_array
+    res_fe["approximate_entropy_w512_array"] = approximate_entropy_win512_array
 
     # entropy for jesse
     if not lightweighted:
@@ -1021,144 +1021,144 @@ def feature_bundle(
         vmd_win32 = VMD_NRBO(candles, 32, sequential=True)
         vmd_win32_res = vmd_win32.res()
         for i in range(vmd_win32_res.shape[1]):
-            res_fe[f"vmd_win32_{i}"] = vmd_win32_res[:, i]
+            res_fe[f"vmd_w32_{i}"] = vmd_win32_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win32_lag_res = vmd_win32.res(lag=lg)
             for i in range(vmd_win32_lag_res.shape[1]):
-                res_fe[f"vmd_win32_{i}_lag{lg}"] = vmd_win32_lag_res[:, i]
+                res_fe[f"vmd_w32_{i}_lag{lg}"] = vmd_win32_lag_res[:, i]
         vmd_win32_dt_res = vmd_win32.res(dt=True)
         for i in range(vmd_win32_dt_res.shape[1]):
-            res_fe[f"vmd_win32_{i}_dt"] = vmd_win32_dt_res[:, i]
+            res_fe[f"vmd_w32_{i}_dt"] = vmd_win32_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win32_dt_lag_res = vmd_win32.res(dt=True, lag=lg)
             for i in range(vmd_win32_dt_lag_res.shape[1]):
-                res_fe[f"vmd_win32_{i}_dt_lag{lg}"] = vmd_win32_dt_lag_res[:, i]
+                res_fe[f"vmd_w32_{i}_dt_lag{lg}"] = vmd_win32_dt_lag_res[:, i]
         vmd_win32_ddt_res = vmd_win32.res(ddt=True)
         for i in range(vmd_win32_ddt_res.shape[1]):
-            res_fe[f"vmd_win32_{i}_ddt"] = vmd_win32_ddt_res[:, i]
+            res_fe[f"vmd_w32_{i}_ddt"] = vmd_win32_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win32_ddt_lag_res = vmd_win32.res(ddt=True, lag=lg)
             for i in range(vmd_win32_ddt_lag_res.shape[1]):
-                res_fe[f"vmd_win32_{i}_ddt_lag{lg}"] = vmd_win32_ddt_lag_res[:, i]
+                res_fe[f"vmd_w32_{i}_ddt_lag{lg}"] = vmd_win32_ddt_lag_res[:, i]
 
     if not lightweighted:
         vmd_win64 = VMD_NRBO(candles, 64, sequential=True)
         vmd_win64_res = vmd_win64.res()
         for i in range(vmd_win64_res.shape[1]):
-            res_fe[f"vmd_win64_{i}"] = vmd_win64_res[:, i]
+            res_fe[f"vmd_w64_{i}"] = vmd_win64_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win64_lag_res = vmd_win64.res(lag=lg)
             for i in range(vmd_win64_lag_res.shape[1]):
-                res_fe[f"vmd_win64_{i}_lag{lg}"] = vmd_win64_lag_res[:, i]
+                res_fe[f"vmd_w64_{i}_lag{lg}"] = vmd_win64_lag_res[:, i]
         vmd_win64_dt_res = vmd_win64.res(dt=True)
         for i in range(vmd_win64_dt_res.shape[1]):
-            res_fe[f"vmd_win64_{i}_dt"] = vmd_win64_dt_res[:, i]
+            res_fe[f"vmd_w64_{i}_dt"] = vmd_win64_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win64_dt_lag_res = vmd_win64.res(dt=True, lag=lg)
             for i in range(vmd_win64_dt_lag_res.shape[1]):
-                res_fe[f"vmd_win64_{i}_dt_lag{lg}"] = vmd_win64_dt_lag_res[:, i]
+                res_fe[f"vmd_w64_{i}_dt_lag{lg}"] = vmd_win64_dt_lag_res[:, i]
         vmd_win64_ddt_res = vmd_win64.res(ddt=True)
         for i in range(vmd_win64_ddt_res.shape[1]):
-            res_fe[f"vmd_win64_{i}_ddt"] = vmd_win64_ddt_res[:, i]
+            res_fe[f"vmd_w64_{i}_ddt"] = vmd_win64_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win64_ddt_lag_res = vmd_win64.res(ddt=True, lag=lg)
             for i in range(vmd_win64_ddt_lag_res.shape[1]):
-                res_fe[f"vmd_win64_{i}_ddt_lag{lg}"] = vmd_win64_ddt_lag_res[:, i]
+                res_fe[f"vmd_w64_{i}_ddt_lag{lg}"] = vmd_win64_ddt_lag_res[:, i]
 
     if not lightweighted:
         vmd_win128 = VMD_NRBO(candles, 128, sequential=True)
         vmd_win128_res = vmd_win128.res()
         for i in range(vmd_win128_res.shape[1]):
-            res_fe[f"vmd_win128_{i}"] = vmd_win128_res[:, i]
+            res_fe[f"vmd_w128_{i}"] = vmd_win128_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win128_lag_res = vmd_win128.res(lag=lg)
             for i in range(vmd_win128_lag_res.shape[1]):
-                res_fe[f"vmd_win128_{i}_lag{lg}"] = vmd_win128_lag_res[:, i]
+                res_fe[f"vmd_w128_{i}_lag{lg}"] = vmd_win128_lag_res[:, i]
         vmd_win128_dt_res = vmd_win128.res(dt=True)
         for i in range(vmd_win128_dt_res.shape[1]):
-            res_fe[f"vmd_win128_{i}_dt"] = vmd_win128_dt_res[:, i]
+            res_fe[f"vmd_w128_{i}_dt"] = vmd_win128_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win128_dt_lag_res = vmd_win128.res(dt=True, lag=lg)
             for i in range(vmd_win128_dt_lag_res.shape[1]):
-                res_fe[f"vmd_win128_{i}_dt_lag{lg}"] = vmd_win128_dt_lag_res[:, i]
+                res_fe[f"vmd_w128_{i}_dt_lag{lg}"] = vmd_win128_dt_lag_res[:, i]
         vmd_win128_ddt_res = vmd_win128.res(ddt=True)
         for i in range(vmd_win128_ddt_res.shape[1]):
-            res_fe[f"vmd_win128_{i}_ddt"] = vmd_win128_ddt_res[:, i]
+            res_fe[f"vmd_w128_{i}_ddt"] = vmd_win128_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win128_ddt_lag_res = vmd_win128.res(ddt=True, lag=lg)
             for i in range(vmd_win128_ddt_lag_res.shape[1]):
-                res_fe[f"vmd_win128_{i}_ddt_lag{lg}"] = vmd_win128_ddt_lag_res[:, i]
+                res_fe[f"vmd_w128_{i}_ddt_lag{lg}"] = vmd_win128_ddt_lag_res[:, i]
 
     if not lightweighted:
         vmd_win256 = VMD_NRBO(candles, 256, sequential=True)
         vmd_win256_res = vmd_win256.res()
         for i in range(vmd_win256_res.shape[1]):
-            res_fe[f"vmd_win256_{i}"] = vmd_win256_res[:, i]
+            res_fe[f"vmd_w256_{i}"] = vmd_win256_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win256_lag_res = vmd_win256.res(lag=lg)
             for i in range(vmd_win256_lag_res.shape[1]):
-                res_fe[f"vmd_win256_{i}_lag{lg}"] = vmd_win256_lag_res[:, i]
+                res_fe[f"vmd_w256_{i}_lag{lg}"] = vmd_win256_lag_res[:, i]
         vmd_win256_dt_res = vmd_win256.res(dt=True)
         for i in range(vmd_win256_dt_res.shape[1]):
-            res_fe[f"vmd_win256_{i}_dt"] = vmd_win256_dt_res[:, i]
+            res_fe[f"vmd_w256_{i}_dt"] = vmd_win256_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win256_dt_lag_res = vmd_win256.res(dt=True, lag=lg)
             for i in range(vmd_win256_dt_lag_res.shape[1]):
-                res_fe[f"vmd_win256_{i}_dt_lag{lg}"] = vmd_win256_dt_lag_res[:, i]
+                res_fe[f"vmd_w256_{i}_dt_lag{lg}"] = vmd_win256_dt_lag_res[:, i]
         vmd_win256_ddt_res = vmd_win256.res(ddt=True)
         for i in range(vmd_win256_ddt_res.shape[1]):
-            res_fe[f"vmd_win256_{i}_ddt"] = vmd_win256_ddt_res[:, i]
+            res_fe[f"vmd_w256_{i}_ddt"] = vmd_win256_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win256_ddt_lag_res = vmd_win256.res(ddt=True, lag=lg)
             for i in range(vmd_win256_ddt_lag_res.shape[1]):
-                res_fe[f"vmd_win256_{i}_ddt_lag{lg}"] = vmd_win256_ddt_lag_res[:, i]
+                res_fe[f"vmd_w256_{i}_ddt_lag{lg}"] = vmd_win256_ddt_lag_res[:, i]
 
     vmd_win512 = VMD_NRBO(candles, 512, sequential=True)
     vmd_win512_res = vmd_win512.res()
     for i in range(vmd_win512_res.shape[1]):
-        res_fe[f"vmd_win512_{i}"] = vmd_win512_res[:, i]
+        res_fe[f"vmd_w512_{i}"] = vmd_win512_res[:, i]
     for lg in range(1, LAG_MAX):
         vmd_win512_lag_res = vmd_win512.res(lag=lg)
         for i in range(vmd_win512_lag_res.shape[1]):
-            res_fe[f"vmd_win512_{i}_lag{lg}"] = vmd_win512_lag_res[:, i]
+            res_fe[f"vmd_w512_{i}_lag{lg}"] = vmd_win512_lag_res[:, i]
     vmd_win512_dt_res = vmd_win512.res(dt=True)
     for i in range(vmd_win512_dt_res.shape[1]):
-        res_fe[f"vmd_win512_{i}_dt"] = vmd_win512_dt_res[:, i]
+        res_fe[f"vmd_w512_{i}_dt"] = vmd_win512_dt_res[:, i]
     for lg in range(1, LAG_MAX):
         vmd_win512_dt_lag_res = vmd_win512.res(dt=True, lag=lg)
         for i in range(vmd_win512_dt_lag_res.shape[1]):
-            res_fe[f"vmd_win512_{i}_dt_lag{lg}"] = vmd_win512_dt_lag_res[:, i]
+            res_fe[f"vmd_w512_{i}_dt_lag{lg}"] = vmd_win512_dt_lag_res[:, i]
     vmd_win512_ddt_res = vmd_win512.res(ddt=True)
     for i in range(vmd_win512_ddt_res.shape[1]):
-        res_fe[f"vmd_win512_{i}_ddt"] = vmd_win512_ddt_res[:, i]
+        res_fe[f"vmd_w512_{i}_ddt"] = vmd_win512_ddt_res[:, i]
     for lg in range(1, LAG_MAX):
         vmd_win512_ddt_lag_res = vmd_win512.res(ddt=True, lag=lg)
         for i in range(vmd_win512_ddt_lag_res.shape[1]):
-            res_fe[f"vmd_win512_{i}_ddt_lag{lg}"] = vmd_win512_ddt_lag_res[:, i]
+            res_fe[f"vmd_w512_{i}_ddt_lag{lg}"] = vmd_win512_ddt_lag_res[:, i]
 
     if not lightweighted:
         vmd_win1024 = VMD_NRBO(candles, 1024, sequential=True)
         vmd_win1024_res = vmd_win1024.res()
         for i in range(vmd_win1024_res.shape[1]):
-            res_fe[f"vmd_win1024_{i}"] = vmd_win1024_res[:, i]
+            res_fe[f"vmd_w1024_{i}"] = vmd_win1024_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win1024_lag_res = vmd_win1024.res(lag=lg)
             for i in range(vmd_win1024_lag_res.shape[1]):
-                res_fe[f"vmd_win1024_{i}_lag{lg}"] = vmd_win1024_lag_res[:, i]
+                res_fe[f"vmd_w1024_{i}_lag{lg}"] = vmd_win1024_lag_res[:, i]
         vmd_win1024_dt_res = vmd_win1024.res(dt=True)
         for i in range(vmd_win1024_dt_res.shape[1]):
-            res_fe[f"vmd_win1024_{i}_dt"] = vmd_win1024_dt_res[:, i]
+            res_fe[f"vmd_w1024_{i}_dt"] = vmd_win1024_dt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win1024_dt_lag_res = vmd_win1024.res(dt=True, lag=lg)
             for i in range(vmd_win1024_dt_lag_res.shape[1]):
-                res_fe[f"vmd_win1024_{i}_dt_lag{lg}"] = vmd_win1024_dt_lag_res[:, i]
+                res_fe[f"vmd_w1024_{i}_dt_lag{lg}"] = vmd_win1024_dt_lag_res[:, i]
         vmd_win1024_ddt_res = vmd_win1024.res(ddt=True)
         for i in range(vmd_win1024_ddt_res.shape[1]):
-            res_fe[f"vmd_win1024_{i}_ddt"] = vmd_win1024_ddt_res[:, i]
+            res_fe[f"vmd_w1024_{i}_ddt"] = vmd_win1024_ddt_res[:, i]
         for lg in range(1, LAG_MAX):
             vmd_win1024_ddt_lag_res = vmd_win1024.res(ddt=True, lag=lg)
             for i in range(vmd_win1024_ddt_lag_res.shape[1]):
-                res_fe[f"vmd_win1024_{i}_ddt_lag{lg}"] = vmd_win1024_ddt_lag_res[:, i]
+                res_fe[f"vmd_w1024_{i}_ddt_lag{lg}"] = vmd_win1024_ddt_lag_res[:, i]
 
     # Voss Filter
     voss_filter_ = ta.voss(candles, sequential=True)

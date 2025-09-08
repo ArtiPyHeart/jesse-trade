@@ -312,47 +312,8 @@ def ehlers_early_onset_trend_feature(
     return ehlers_early_onset_trend(candles, sequential=sequential)
 
 
-for wind in [32, 64, 128, 256, 512]:
-
-    @feature(name=f"sample_entropy_win{wind}_spot", description="Sample Entropy")
-    def sample_entropy_spot(
-        candles: np.ndarray,
-        sequential: bool = True,
-    ):
-        return sample_entropy_indicator(
-            candles, period=wind, use_array_price=False, sequential=sequential
-        )
-
-    @feature(name=f"sample_entropy_win{wind}_array", description="Sample Entropy")
-    def sample_entropy_array(
-        candles: np.ndarray,
-        sequential: bool = True,
-    ):
-        return sample_entropy_indicator(
-            candles, period=wind, use_array_price=True, sequential=sequential
-        )
-
-    @feature(
-        name=f"approximate_entropy_win{wind}_spot", description="Approximate Entropy"
-    )
-    def approximate_entropy_spot(
-        candles: np.ndarray,
-        sequential: bool = True,
-    ):
-        return approximate_entropy_indicator(
-            candles, period=wind, use_array_price=False, sequential=sequential
-        )
-
-    @feature(
-        name=f"approximate_entropy_win{wind}_array", description="Approximate Entropy"
-    )
-    def approximate_entropy_array(
-        candles: np.ndarray,
-        sequential: bool = True,
-    ):
-        return approximate_entropy_indicator(
-            candles, period=wind, use_array_price=True, sequential=sequential
-        )
+# 多窗口熵特征 - 从独立模块导入
+from . import entropy_features  # 这会自动注册所有熵特征  # noqa
 
 
 @feature(name="entropy_for_jesse", description="Entropy for Jesse")
@@ -371,8 +332,8 @@ def entropy_for_jesse_feature(
 )
 def evenbetter_sinewave_long_feature(
     candles: np.ndarray,
-    duration: int = 40,
     sequential: bool = True,
+    duration: int = 40,
 ):
     """改进正弦波长期"""
     return evenbetter_sinewave(candles, duration=duration, sequential=sequential)
@@ -385,8 +346,8 @@ def evenbetter_sinewave_long_feature(
 )
 def evenbetter_sinewave_short_feature(
     candles: np.ndarray,
-    duration: int = 20,
     sequential: bool = True,
+    duration: int = 20,
 ):
     """改进正弦波短期"""
     return evenbetter_sinewave(candles, duration=duration, sequential=sequential)
@@ -412,8 +373,8 @@ def fisher_feature(
 )
 def frac_diff_ffd_feature(
     candles: np.ndarray,
-    diff_amt: float = 0.35,
     sequential: bool = True,
+    diff_amt: float = 0.35,
 ):
     """分数阶差分FFD"""
     return frac_diff_ffd_candle(candles, diff_amt=diff_amt, sequential=sequential)
@@ -426,7 +387,10 @@ def fti_feature(
 ):
     """Fisher变换指标"""
     fti_: FTIResult = fti(candles, sequential=sequential)
-    return fti_.fti
+    if sequential:
+        return fti_.fti
+    else:
+        return np.array([fti_.fti])
 
 
 @feature(name="fti_best_period", description="FTI Best Period")
@@ -436,7 +400,10 @@ def fti_best_period_feature(
 ):
     """FTI最佳周期"""
     fti_: FTIResult = fti(candles, sequential=sequential)
-    return fti_.best_period
+    if sequential:
+        return fti_.best_period
+    else:
+        return np.array([fti_.best_period])
 
 
 @feature(name="forecast_oscillator", description="Forecast Oscillator")
@@ -474,8 +441,8 @@ def homodyne_feature(
 )
 def hurst_coef_fast_feature(
     candles: np.ndarray,
-    period: int = 30,
     sequential: bool = True,
+    period: int = 30,
 ):
     """Hurst系数快速"""
     return hurst_coefficient(candles, period=period, sequential=sequential)
@@ -486,8 +453,8 @@ def hurst_coef_fast_feature(
 )
 def hurst_coef_slow_feature(
     candles: np.ndarray,
-    period: int = 200,
     sequential: bool = True,
+    period: int = 200,
 ):
     """Hurst系数慢速"""
     return hurst_coefficient(candles, period=period, sequential=sequential)
@@ -760,49 +727,159 @@ def williams_r_feature(candles: np.ndarray, sequential: bool = True):
 
 
 # 注册类型特征
-for wind in [32, 64, 128, 256, 512]:
 
-    @class_feature(
-        name=f"cwt_win{wind}",
-        params={"window": wind},
-        returns_multiple=True,
-        description="CWT SWT Indicator",
-    )
-    class CWTFeature:
-        """CWT SWT特征"""
-
-        def __init__(
-            self,
-            candles: np.ndarray,
-            window: int = wind,
-            sequential: bool = False,
-            **kwargs,
-        ):
-            self.indicator = CWT_SWT(candles, window, sequential=sequential)
-
-        def res(self, **kwargs):
-            return self.indicator.res(**kwargs)
+# 基础特征类
+class BaseIndicatorFeature:
+    """指标特征基类"""
+    
+    def __init__(self, indicator_class, candles: np.ndarray, window: int, sequential: bool = False, **kwargs):
+        self.indicator = indicator_class(candles, window, sequential=sequential)
+    
+    @property
+    def raw_result(self):
+        """暴露indicator的raw_result供转换链使用"""
+        return self.indicator.raw_result
+    
+    def res(self, **kwargs):
+        return self.indicator.res(**kwargs)
 
 
-for wind in [32, 64, 128, 256, 512]:
+# 工厂函数
+def create_indicator_feature_class(indicator_class, class_name):
+    """创建指标特征类的工厂函数"""
+    
+    class DynamicFeature(BaseIndicatorFeature):
+        def __init__(self, candles: np.ndarray, window: int, sequential: bool = False, **kwargs):
+            super().__init__(indicator_class, candles, window, sequential, **kwargs)
+    
+    DynamicFeature.__name__ = class_name
+    DynamicFeature.__qualname__ = class_name
+    
+    return DynamicFeature
 
-    @class_feature(
-        name=f"vmd_win{wind}",
-        params={"window": wind},
-        returns_multiple=True,
-        description="VMD NRBO Indicator",
-    )
-    class VMDFeature:
-        """VMD NRBO特征"""
 
-        def __init__(
-            self,
-            candles: np.ndarray,
-            window: int = wind,
-            sequential: bool = False,
-            **kwargs,
-        ):
-            self.indicator = VMD_NRBO(candles, window, sequential=sequential)
+# 创建CWT特征类
+CWTFeature32 = create_indicator_feature_class(CWT_SWT, "CWTFeature32")
+CWTFeature64 = create_indicator_feature_class(CWT_SWT, "CWTFeature64")
+CWTFeature128 = create_indicator_feature_class(CWT_SWT, "CWTFeature128")
+CWTFeature256 = create_indicator_feature_class(CWT_SWT, "CWTFeature256")
+CWTFeature512 = create_indicator_feature_class(CWT_SWT, "CWTFeature512")
 
-        def res(self, **kwargs):
-            return self.indicator.res(**kwargs)
+# 创建VMD特征类
+VMDFeature32 = create_indicator_feature_class(VMD_NRBO, "VMDFeature32")
+VMDFeature64 = create_indicator_feature_class(VMD_NRBO, "VMDFeature64")
+VMDFeature128 = create_indicator_feature_class(VMD_NRBO, "VMDFeature128")
+VMDFeature256 = create_indicator_feature_class(VMD_NRBO, "VMDFeature256")
+VMDFeature512 = create_indicator_feature_class(VMD_NRBO, "VMDFeature512")
+
+# 注册CWT特征
+@class_feature(
+    name="cwt_w32",
+    params={"window": 32},
+    returns_multiple=True,
+    description="CWT SWT Indicator",
+)
+class _CWTFeature32(CWTFeature32):
+    """CWT SWT特征 - Window 32"""
+    def __init__(self, candles: np.ndarray, window: int = 32, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="cwt_w64",
+    params={"window": 64},
+    returns_multiple=True,
+    description="CWT SWT Indicator",
+)
+class _CWTFeature64(CWTFeature64):
+    """CWT SWT特征 - Window 64"""
+    def __init__(self, candles: np.ndarray, window: int = 64, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="cwt_w128",
+    params={"window": 128},
+    returns_multiple=True,
+    description="CWT SWT Indicator",
+)
+class _CWTFeature128(CWTFeature128):
+    """CWT SWT特征 - Window 128"""
+    def __init__(self, candles: np.ndarray, window: int = 128, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="cwt_w256",
+    params={"window": 256},
+    returns_multiple=True,
+    description="CWT SWT Indicator",
+)
+class _CWTFeature256(CWTFeature256):
+    """CWT SWT特征 - Window 256"""
+    def __init__(self, candles: np.ndarray, window: int = 256, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="cwt_w512",
+    params={"window": 512},
+    returns_multiple=True,
+    description="CWT SWT Indicator",
+)
+class _CWTFeature512(CWTFeature512):
+    """CWT SWT特征 - Window 512"""
+    def __init__(self, candles: np.ndarray, window: int = 512, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+# 注册VMD特征
+@class_feature(
+    name="vmd_w32",
+    params={"window": 32},
+    returns_multiple=True,
+    description="VMD NRBO Indicator",
+)
+class _VMDFeature32(VMDFeature32):
+    """VMD NRBO特征 - Window 32"""
+    def __init__(self, candles: np.ndarray, window: int = 32, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="vmd_w64",
+    params={"window": 64},
+    returns_multiple=True,
+    description="VMD NRBO Indicator",
+)
+class _VMDFeature64(VMDFeature64):
+    """VMD NRBO特征 - Window 64"""
+    def __init__(self, candles: np.ndarray, window: int = 64, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="vmd_w128",
+    params={"window": 128},
+    returns_multiple=True,
+    description="VMD NRBO Indicator",
+)
+class _VMDFeature128(VMDFeature128):
+    """VMD NRBO特征 - Window 128"""
+    def __init__(self, candles: np.ndarray, window: int = 128, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="vmd_w256",
+    params={"window": 256},
+    returns_multiple=True,
+    description="VMD NRBO Indicator",
+)
+class _VMDFeature256(VMDFeature256):
+    """VMD NRBO特征 - Window 256"""
+    def __init__(self, candles: np.ndarray, window: int = 256, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
+
+@class_feature(
+    name="vmd_w512",
+    params={"window": 512},
+    returns_multiple=True,
+    description="VMD NRBO Indicator",
+)
+class _VMDFeature512(VMDFeature512):
+    """VMD NRBO特征 - Window 512"""
+    def __init__(self, candles: np.ndarray, window: int = 512, sequential: bool = False, **kwargs):
+        super().__init__(candles, window, sequential, **kwargs)
