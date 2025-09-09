@@ -1,13 +1,24 @@
+import numpy as np
+from functools import lru_cache
 from .find_truncation import find_truncation
 from .frac_weights import frac_weights
-from .apply_weights import apply_weights
-import numpy as np
+from .apply_weights import apply_weights, apply_weights_2d
+
+
+@lru_cache(maxsize=128)
+def get_cached_weights(d: float, truncation: int = None, tau: float = 1e-5, mmax: int = 20000):
+    """缓存权重计算结果，避免重复计算相同参数的权重"""
+    if truncation is not None:
+        weights = frac_weights(d, truncation)
+    else:
+        _, weights = find_truncation(d, tau=tau, mmax=mmax)
+    return np.array(weights)
 
 
 def fracdiff(
     X: np.ndarray,
     order: float = None,
-    weights: list = None,
+    weights: np.ndarray = None,
     truncation: int = None,
     tau: float = 1e-5,
     mmax: int = 20000,
@@ -32,7 +43,7 @@ def fracdiff(
         - 0<d<1: 分数阶差分（平衡记忆性和平稳性）
         - d=1: 一阶差分（完全平稳但失去记忆）
     
-    weights : list, optional
+    weights : np.ndarray, optional
         预计算的权重系数，如果提供则忽略order参数
     
     truncation : int, optional
@@ -55,32 +66,29 @@ def fracdiff(
     np.ndarray
         分数阶差分后的时间序列，形状与输入X相同
     """
-    # 步骤1: 确定权重系数
+    # 步骤1: 获取权重（使用缓存）
     if weights is None:
-        d = order if order else 0  # 默认值d=0，表示不进行差分
-        if isinstance(truncation, int):
-            # 使用固定截断长度计算权重
-            weights = frac_weights(d, truncation)
-        else:  # truncation为None或其他值
-            # 自动寻找最优截断点并计算权重
-            _, weights = find_truncation(d, tau=tau, mmax=mmax)
-
-    # 步骤2: 确定数据类型
+        d = order if order else 0
+        weights = get_cached_weights(d, truncation, tau, mmax)
+    elif not isinstance(weights, np.ndarray):
+        weights = np.array(weights)
+    
+    # 步骤2: 确定数据类型（优化类型检查）
     if dtype is None:
-        # 优先使用输入数据的类型，否则默认为float
-        dtype = X[0].dtype if isinstance(X[0], float) else float
-
-    # 步骤3: 应用权重进行分数阶差分计算
-    weights = np.array(weights)
-    if len(X.shape) == 1:
-        # 处理1维数组（单个时间序列）
-        Z = apply_weights(X.astype(dtype), weights)
+        dtype = X.dtype if X.dtype in [np.float32, np.float64] else np.float64
+    
+    # 步骤3: 应用权重
+    if X.ndim == 1:
+        # 1D处理
+        if X.dtype != dtype:
+            X = X.astype(dtype)
+        Z = apply_weights(X, weights)
+    elif X.ndim == 2:
+        # 2D向量化处理
+        if X.dtype != dtype:
+            X = X.astype(dtype)
+        Z = apply_weights_2d(X, weights)
     else:
-        # 处理2维数组（多个时间序列）
-        Z = np.empty(shape=X.shape)
-        for j in range(X.shape[1]):
-            # 对每一列（每个时间序列）分别应用权重
-            Z[:, j] = apply_weights(X[:, j].astype(dtype), weights)
-
-    # 返回分数阶差分后的结果
+        raise ValueError(f"Input must be 1D or 2D array, got {X.ndim}D")
+    
     return Z
