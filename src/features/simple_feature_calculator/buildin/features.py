@@ -1,5 +1,5 @@
-import numpy as np
 import jesse.indicators as ta
+import numpy as np
 from jesse.indicators import adx, aroon
 from jesse.indicators.aroon import AROON
 
@@ -32,7 +32,6 @@ from src.indicators.prod import (
     fti,
     hurst_coefficient,
     iqr_ratio,
-    frac_diff_ffd_candle,
     FTIResult,
     VMD_NRBO,
     amihud_lambda,
@@ -90,7 +89,7 @@ def aroon_diff_feature(candles: np.ndarray, sequential: bool = True):
 @feature(name="ac", returns_multiple=True, description="Autocorrelation")
 def autocorrelation_feature(candles: np.ndarray, sequential: bool = True):
     """自相关"""
-    return autocorrelation(candles, sequential=sequential)
+    return autocorrelation(candles, sequential=sequential)  # 47列
 
 
 @feature(name="acc_swing_index", description="Accumulated Swing Index")
@@ -105,7 +104,7 @@ def acc_swing_index_feature(candles: np.ndarray, sequential: bool = True):
 def acp_feature(candles: np.ndarray, sequential: bool = True):
     """自相关周期图"""
     dom_cycle, pwr = autocorrelation_periodogram(candles, sequential=sequential)
-    return pwr  # 返回功率谱
+    return pwr  # 返回功率谱,39列
 
 
 @feature(name="acr", description="Autocorrelation Reversals")
@@ -117,24 +116,21 @@ def acr_feature(
     return autocorrelation_reversals(candles, sequential=sequential)
 
 
-@feature(name="adaptive_bp", description="Adaptive Bandpass Filter")
+@feature(
+    name="adaptive_bp", returns_multiple=True, description="Adaptive Bandpass Filter"
+)
 def adaptive_bp_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
     """自适应带通滤波器"""
     bp, bp_lead, _ = adaptive_bandpass(candles, sequential=sequential)
-    return bp
-
-
-@feature(name="adaptive_bp_lead", description="Adaptive Bandpass Lead")
-def adaptive_bp_lead_feature(
-    candles: np.ndarray,
-    sequential: bool = True,
-):
-    """自适应带通滤波器领先值"""
-    bp, bp_lead, _ = adaptive_bandpass(candles, sequential=sequential)
-    return bp_lead
+    # 一维数列先堆叠（candles长度 * 列），再转置
+    res = np.array([bp, bp_lead]).T  # 2列
+    if sequential:
+        return res
+    else:
+        return res.reshape(1, -1)
 
 
 @feature(name="adaptive_cci", description="Adaptive CCI")
@@ -173,24 +169,23 @@ def amihud_lambda_feature(
     return amihud_lambda(candles, sequential=sequential)
 
 
-@feature(name="bandpass", description="Bandpass Filter")
+@feature(name="bandpass", returns_multiple=True, description="Bandpass Filter")
 def bandpass_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
     """带通滤波器"""
     bandpass_tuple = bandpass(candles, sequential=sequential)
-    return bandpass_tuple.bp_normalized
-
-
-@feature(name="highpass_bp", description="Highpass Bandpass Trigger")
-def highpass_bp_feature(
-    candles: np.ndarray,
-    sequential: bool = True,
-):
-    """高通带通触发器"""
-    bandpass_tuple = bandpass(candles, sequential=sequential)
-    return bandpass_tuple.trigger
+    res = np.array(
+        [
+            bandpass_tuple.bp_normalized,
+            bandpass_tuple.trigger,
+        ]
+    ).T
+    if sequential:
+        return res
+    else:
+        return res.reshape(1, -1)
 
 
 @feature(name="bekker_parkinson_vol", description="Bekker-Parkinson Volatility")
@@ -238,24 +233,18 @@ def corwin_schultz_estimator_feature(
     return corwin_schultz_estimator(candles, sequential=sequential)
 
 
-@feature(name="comb_spectrum_dom_cycle", description="Comb Spectrum Dominant Cycle")
+@feature(
+    name="comb_spectrum",
+    returns_multiple=True,
+    description="Comb Spectrum Dominant Cycle",
+)
 def comb_spectrum_dom_cycle_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
     """梳状谱主导周期"""
     dom_cycle, pwr = comb_spectrum(candles, sequential=sequential)
-    return dom_cycle
-
-
-@feature(name="comb_spectrum_pwr", returns_multiple=True, description="Comb Spectrum")
-def comb_spectrum_feature(
-    candles: np.ndarray,
-    sequential: bool = True,
-):
-    """梳状谱"""
-    dom_cycle, pwr = comb_spectrum(candles, sequential=sequential)
-    return pwr
+    return np.hstack([dom_cycle.reshape(-1, 1), pwr])  # 40列
 
 
 @feature(name="conv", returns_multiple=True, description="Ehlers Convolution")
@@ -265,27 +254,17 @@ def conv_feature(
 ):
     """Ehlers卷积"""
     _, _, conv = ehlers_convolution(candles, sequential=sequential)
-    return conv
+    return conv  # 46列
 
 
-@feature(name="dft_dom_cycle", description="DFT Dominant Cycle")
+@feature(name="dft", returns_multiple=True, description="DFT Dominant Cycle")
 def dft_dom_cycle_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
     """DFT主导周期"""
     dom_cycle, spectrum = dft(candles, sequential=sequential)
-    return dom_cycle
-
-
-@feature(name="dft_spectrum", returns_multiple=True, description="DFT Spectrum")
-def dft_spectrum_feature(
-    candles: np.ndarray,
-    sequential: bool = True,
-):
-    """DFT频谱"""
-    dom_cycle, spectrum = dft(candles, sequential=sequential)
-    return spectrum
+    return np.hstack([dom_cycle.reshape(-1, 1), spectrum])  # 40列
 
 
 @feature(name="dual_diff", description="Dual Differentiator")
@@ -360,44 +339,37 @@ def fisher_feature(
         return np.array([fisher_ind.fisher])
 
 
-@feature(
-    name="frac_diff_ffd",
-    params={"diff_amt": 0.35},
-    description="Fractional Differentiation FFD",
-)
-def frac_diff_ffd_feature(
-    candles: np.ndarray,
-    sequential: bool = True,
-    diff_amt: float = 0.35,
-):
-    """分数阶差分FFD"""
-    return frac_diff_ffd_candle(candles, diff_amt=diff_amt, sequential=sequential)
+# @feature(
+#     name="frac_diff_ffd",
+#     params={"diff_amt": 0.35},
+#     description="Fractional Differentiation FFD",
+# )
+# def frac_diff_ffd_feature(
+#     candles: np.ndarray,
+#     sequential: bool = True,
+#     diff_amt: float = 0.35,
+# ):
+#     """分数阶差分FFD"""
+#     return frac_diff_ffd_candle(candles, diff_amt=diff_amt, sequential=sequential)
 
 
-@feature(name="fti", description="Fishers Transform Indicator")
+@feature(name="fti", returns_multiple=True, description="Fishers Transform Indicator")
 def fti_feature(
     candles: np.ndarray,
     sequential: bool = True,
 ):
     """Fisher变换指标"""
     fti_: FTIResult = fti(candles, sequential=sequential)
+    res = np.array(
+        [
+            fti_.fti,
+            fti_.best_period,
+        ]
+    ).T  # 2列
     if sequential:
-        return fti_.fti
+        return res
     else:
-        return np.array([fti_.fti])
-
-
-@feature(name="fti_best_period", description="FTI Best Period")
-def fti_best_period_feature(
-    candles: np.ndarray,
-    sequential: bool = True,
-):
-    """FTI最佳周期"""
-    fti_: FTIResult = fti(candles, sequential=sequential)
-    if sequential:
-        return fti_.best_period
-    else:
-        return np.array([fti_.best_period])
+        return res.reshape(1, -1)
 
 
 @feature(name="forecast_oscillator", description="Forecast Oscillator")
@@ -645,7 +617,7 @@ def swamicharts_rsi_feature(
     sequential: bool = True,
 ):
     lookback, swamicharts_rsi_ = swamicharts_rsi(candles, sequential=sequential)
-    return swamicharts_rsi_
+    return swamicharts_rsi_  # 44列
 
 
 @feature(
@@ -660,7 +632,7 @@ def swamicharts_stochastic_feature(
     lookback, swamicharts_stochastic_ = swamicharts_stochastic(
         candles, sequential=sequential
     )
-    return swamicharts_stochastic_
+    return swamicharts_stochastic_  # 44列
 
 
 @feature(
@@ -677,19 +649,20 @@ def trendflex_feature(candles: np.ndarray, sequential: bool = True):
 @feature(
     name="voss",
     description="VOSS",
+    returns_multiple=True,
 )
 def voss_feature(candles: np.ndarray, sequential: bool = True):
     voss_filter_ = voss(candles, sequential=sequential)
-    return voss_filter_.voss
-
-
-@feature(
-    name="voss_filt",
-    description="VOSS",
-)
-def voss_feature(candles: np.ndarray, sequential: bool = True):
-    voss_filter_ = voss(candles, sequential=sequential)
-    return voss_filter_.filt
+    res = np.array(
+        [
+            voss_filter_.voss,
+            voss_filter_.filt,
+        ]
+    ).T
+    if sequential:
+        return res
+    else:
+        return res.reshape(1, -1)
 
 
 @feature(

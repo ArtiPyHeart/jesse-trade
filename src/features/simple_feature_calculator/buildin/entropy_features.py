@@ -9,7 +9,7 @@ from src.indicators.prod import sample_entropy_indicator, approximate_entropy_in
 from ..registry import feature
 
 
-# 批量注册多窗口熵特征 - 简化版
+# 批量注册多窗口熵特征
 windows = [32, 64, 128, 256, 512]
 
 for w in windows:
