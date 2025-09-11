@@ -34,9 +34,11 @@
 - `archive/` - Historical experiments and deprecated code
 
 ### External Resources
-- `extern/` - Reference materials and third-party code (DO NOT import)
-  - Contains trading literature and reference implementations
+- `extern/` - **⚠️IMPORTANT: Reference only - MUST reimplement, NEVER import any code**
+  - Contains trading literature and reference implementations  
   - Includes "Trading Systems and Methods" resources
+  - MLFinLab library (reference implementation only)
+  - Signal processing examples from various books
 
 ### Infrastructure
 - `docker/` - Docker stack (Jesse, PostgreSQL, Redis, pgbouncer)
