@@ -51,6 +51,22 @@ class DeepSSM(nn.Module):
             "initial_state_log_var", nn.initializers.zeros, (self.state_dim,)
         )
 
+    def lstm_init_carry(self, sample_input: jnp.ndarray):
+        """根据输入样本初始化LSTM状态(carry)。
+
+        兼容不同Flax版本的initialize_carry签名：
+        - 新API: initialize_carry(key, sample_input)
+        - 旧API: initialize_carry(key, batch_dims, size)
+        """
+        try:
+            # Newer API: pass a sample input (without time dimension)
+            return self.lstm_cell.initialize_carry(random.PRNGKey(0), sample_input)
+        except TypeError:
+            # Fallback to legacy API: batch_dims=(), size=features
+            return self.lstm_cell.initialize_carry(
+                random.PRNGKey(0), (), self.lstm_hidden
+            )
+
     def get_transition_dist(
         self, lstm_out: jnp.ndarray, z_prev: jnp.ndarray
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -105,17 +121,18 @@ class DeepSSM(nn.Module):
             LSTM输出序列 [T, lstm_hidden]
         """
         T = y.shape[0]
-        lstm_outputs = []
 
-        # 初始化LSTM状态
-        carry = self.lstm_cell.initialize_carry(random.PRNGKey(0), (self.lstm_hidden,))
+        # 初始化LSTM状态（使用首个时间步的形状做参考）
+        sample_input = y[0]
+        carry = self.lstm_init_carry(sample_input)
 
-        # 逐时间步处理
-        for t in range(T):
-            carry, lstm_out = self.lstm_cell(carry, y[t])
-            lstm_outputs.append(lstm_out)
+        def step(c, x):
+            c_new, h = self.lstm_cell(c, x)
+            return c_new, h
 
-        return jnp.stack(lstm_outputs)
+        # 使用lax.scan以获得更好的性能和jit兼容性
+        carry, outputs = jax.lax.scan(step, carry, y)
+        return outputs
 
     def __call__(self, y: jnp.ndarray) -> jnp.ndarray:
         """
@@ -134,6 +151,10 @@ class DeepSSM(nn.Module):
         lstm_batch = jax.vmap(self.lstm_sequence)
         return lstm_batch(y)
 
+    def lstm_step(self, carry, x: jnp.ndarray):
+        """单步LSTM前向（用于实时推理，复用模型内参数）。"""
+        return self.lstm_cell(carry, x)
+
 
 def deep_ssm_model(y: jnp.ndarray, model: DeepSSM, model_params: dict):
     """
@@ -150,37 +171,38 @@ def deep_ssm_model(y: jnp.ndarray, model: DeepSSM, model_params: dict):
     # 使用模型参数处理LSTM
     lstm_out = model.apply(model_params, y)  # [batch_size, T, lstm_hidden]
 
-    # 初始状态的先验分布
-    z0_mean = jnp.broadcast_to(
-        model_params["params"]["initial_state_mean"], (batch_size, state_dim)
-    )
-    z0_log_var = jnp.broadcast_to(
-        model_params["params"]["initial_state_log_var"], (batch_size, state_dim)
-    )
-    z = numpyro.sample(
-        "z0", dist.Normal(z0_mean, jnp.exp(0.5 * z0_log_var)).to_event(1)
-    )
-
-    # 按时间步迭代
-    for t in range(1, T):
-        # 状态转移
-        transition_mean, transition_log_var = model.apply(
-            model_params, lstm_out[:, t, :], z, method=model.get_transition_dist
-        )
+    # 使用plate明确批维度
+    with numpyro.plate("batch", batch_size):
+        # 初始状态先验
+        z0_mean = model_params["params"]["initial_state_mean"]
+        z0_log_var = model_params["params"]["initial_state_log_var"]
         z = numpyro.sample(
-            f"z{t}",
-            dist.Normal(transition_mean, jnp.exp(0.5 * transition_log_var)).to_event(1),
+            "z0", dist.Normal(z0_mean, jnp.exp(0.5 * z0_log_var)).to_event(1)
         )
 
-        # 观测
-        obs_mean, obs_log_var = model.apply(
-            model_params, z, method=model.get_observation_dist
-        )
-        numpyro.sample(
-            f"y{t}",
-            dist.Normal(obs_mean, jnp.exp(0.5 * obs_log_var)).to_event(1),
-            obs=y[:, t, :],
-        )
+        # 按时间步（从t=1起）
+        for t in range(1, T):
+            transition_mean, transition_log_var = model.apply(
+                model_params,
+                lstm_out[:, t, :],
+                z,
+                method=model.get_transition_dist,
+            )
+            z = numpyro.sample(
+                f"z{t}",
+                dist.Normal(
+                    transition_mean, jnp.exp(0.5 * transition_log_var)
+                ).to_event(1),
+            )
+
+            obs_mean, obs_log_var = model.apply(
+                model_params, z, method=model.get_observation_dist
+            )
+            numpyro.sample(
+                f"y{t}",
+                dist.Normal(obs_mean, jnp.exp(0.5 * obs_log_var)).to_event(1),
+                obs=y[:, t, :],
+            )
 
 
 def deep_ssm_guide(y: jnp.ndarray, model: DeepSSM, model_params: dict):
@@ -204,10 +226,11 @@ def deep_ssm_guide(y: jnp.ndarray, model: DeepSSM, model_params: dict):
     )
 
     # 按时间步定义变分分布
-    for t in range(T):
-        numpyro.sample(
-            f"z{t}", dist.Normal(z_loc[:, t, :], z_scale[:, t, :]).to_event(1)
-        )
+    with numpyro.plate("batch", batch_size):
+        for t in range(T):
+            numpyro.sample(
+                f"z{t}", dist.Normal(z_loc[:, t, :], z_scale[:, t, :]).to_event(1)
+            )
 
 
 def compute_jacobian_numerical(f, x: jnp.ndarray, eps: float = 1e-6) -> jnp.ndarray:

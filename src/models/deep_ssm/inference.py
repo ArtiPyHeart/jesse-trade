@@ -8,7 +8,6 @@ from typing import Optional, Tuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from flax.linen import LSTMCell
 from jax import jit
 
 from .kalman_filter import kalman_filter_step
@@ -53,13 +52,10 @@ class DeepSSMRealTime:
         # 获取模型配置
         self.state_dim = self.model.state_dim
         self.obs_dim = self.model.obs_dim
-        self.lstm_hidden = self.model.lstm_hidden
+        self.lstm_hidden_size = self.model.lstm_hidden
 
         # 初始化状态变量
         self._reset_state()
-
-        # 创建LSTM单元用于逐步处理
-        self.lstm_cell = LSTMCell(features=self.lstm_hidden)
 
         # JIT编译处理函数以提高性能
         self._process_jit = jit(self._process_step)
@@ -72,12 +68,10 @@ class DeepSSMRealTime:
         # 协方差矩阵
         self.P = jnp.diag(jnp.exp(self.model_params["params"]["initial_state_log_var"]))
 
-        # LSTM状态
-        self.lstm_hidden = jnp.zeros((1, self.lstm_hidden))
-        self.lstm_cell_state = jnp.zeros((1, self.lstm_hidden))
-
-        # 初始化LSTM carry
-        self.lstm_carry = (self.lstm_hidden, self.lstm_cell_state)
+        # LSTM状态（h, c）
+        h = jnp.zeros((1, self.lstm_hidden_size))
+        c = jnp.zeros((1, self.lstm_hidden_size))
+        self.lstm_carry = (h, c)
 
     def _process_step(
         self,
@@ -107,7 +101,6 @@ class DeepSSMRealTime:
             y_new=new_data_scaled,
             model=self.model,
             model_params=self.model_params,
-            lstm_cell=self.lstm_cell,
         )
 
         return z_new, P_new, (lstm_hidden_new, lstm_cell_new)

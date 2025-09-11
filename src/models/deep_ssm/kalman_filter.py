@@ -41,11 +41,11 @@ def ekf_predict(
     # 预测状态
     z_pred = transition_mean
 
-    # 过程噪声协方差
+    # 过程噪声协方差（与原始PyTorch版本对齐：直接使用预测方差）
     Q = jnp.diag(jnp.exp(transition_log_var.squeeze(0)))
 
-    # 预测协方差（简化：假设线性转移）
-    P_pred = P + Q
+    # 预测协方差：与原版保持一致（不累加上一时刻P）
+    P_pred = Q
 
     return z_pred, P_pred
 
@@ -78,13 +78,14 @@ def ekf_update(
         model_params, z_pred, method=model.get_observation_dist
     )
 
-    # 观测函数的雅可比矩阵
-    def obs_func(z):
-        mean, _ = model.apply(model_params, z, method=model.get_observation_dist)
-        return mean.squeeze()
+    # 观测函数的雅可比矩阵：确保函数输入是一维(state_dim,)
+    def obs_func(z_vec):
+        z_in = z_vec.reshape(1, -1)
+        mean, _ = model.apply(model_params, z_in, method=model.get_observation_dist)
+        return mean.squeeze(0)
 
-    H = jax.jacfwd(obs_func)(z_pred)
-    if len(H.shape) == 1:
+    H = jax.jacfwd(obs_func)(z_pred.squeeze(0))
+    if H.ndim == 1:
         H = H.reshape(1, -1)
 
     # 观测噪声协方差
@@ -102,7 +103,7 @@ def ekf_update(
     z_new = z_pred.T + K @ innovation
     z_new = z_new.T
 
-    # 协方差更新
+    # 协方差更新（简单形式；如需更稳定可用Joseph形式）
     P_new = (jnp.eye(state_dim) - K @ H) @ P_pred
 
     return z_new, P_new
@@ -129,7 +130,7 @@ def deep_ssm_kalman_filter(
     # 扩展输入维度以适配模型
     y_batch = y_seq.reshape(1, T, obs_dim)
 
-    # 获取LSTM特征
+    # 获取LSTM特征（整段前向，与逐步一致，因为carry从零开始）
     lstm_features = model.apply(model_params, y_batch)  # [1, T, lstm_hidden]
     lstm_features = lstm_features.squeeze(0)  # [T, lstm_hidden]
 
@@ -162,7 +163,6 @@ def kalman_filter_step(
     y_new: jnp.ndarray,
     model: DeepSSM,
     model_params: dict,
-    lstm_cell,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     单步卡尔曼滤波（用于实时推理）
@@ -180,9 +180,11 @@ def kalman_filter_step(
     Returns:
         (新状态, 新协方差, 新LSTM隐藏状态, 新LSTM细胞状态)
     """
-    # LSTM处理新观测
+    # LSTM处理新观测（复用模型内部LSTM权重）
     carry = (lstm_hidden, lstm_cell_state)
-    carry, lstm_out = lstm_cell.apply(model_params, carry, y_new.reshape(1, -1))
+    carry, lstm_out = model.apply(
+        model_params, carry, y_new.reshape(1, -1), method=model.lstm_step
+    )
     lstm_hidden_new, lstm_cell_new = carry
 
     # 扩展卡尔曼滤波
