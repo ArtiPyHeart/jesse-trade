@@ -234,19 +234,6 @@ jesse optimize
 jesse report
 ```
 
-## External Libraries Integration
-
-### MLFinLab
-- Advanced financial ML tools
-- Located in `extern/mlfinlab/`
-- Features: labeling, microstructural features, portfolio optimization
-- Reference only - don't import directly
-
-### Signal Processing
-- Cycle Analytics for Traders resources
-- Digital signal processing techniques
-- Located in `extern/` subdirectories
-
 ## Notes for AI Assistants
 
 - When modifying indicators, ensure both `sequential=True` and `sequential=False` work correctly
