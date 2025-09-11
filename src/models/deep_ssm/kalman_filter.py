@@ -12,7 +12,6 @@ from jax import jit
 from .model import DeepSSM
 
 
-@jit
 def ekf_predict(
     z: jnp.ndarray,
     P: jnp.ndarray,
@@ -50,7 +49,6 @@ def ekf_predict(
     return z_pred, P_pred
 
 
-@jit
 def ekf_update(
     z_pred: jnp.ndarray,
     P_pred: jnp.ndarray,

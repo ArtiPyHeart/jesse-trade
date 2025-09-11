@@ -10,8 +10,15 @@ import jax
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
-from flax.linen import LSTMCell
 from jax import random
+
+# 导入PyTorch风格的初始化器
+from .pytorch_init import (
+    PyTorchLSTMCell,
+    pytorch_lstm_init,
+    pytorch_linear_init,
+    pytorch_zeros_init
+)
 
 
 class DeepSSM(nn.Module):
@@ -29,43 +36,48 @@ class DeepSSM(nn.Module):
     lstm_hidden: int = 64
 
     def setup(self):
-        """初始化网络层"""
-        # LSTM层用于提取时序特征
-        self.lstm_cell = LSTMCell(features=self.lstm_hidden)
+        """初始化网络层（使用PyTorch风格的初始化）"""
+        # LSTM层用于提取时序特征（使用PyTorch风格的LSTM）
+        self.lstm_cell = PyTorchLSTMCell(features=self.lstm_hidden)
 
-        # 状态转移网络
-        self.transition = nn.Sequential(
-            [nn.Dense(128), nn.tanh, nn.Dense(2 * self.state_dim)]  # 输出均值和对数方差
-        )
+        # 状态转移网络（使用PyTorch风格的初始化）
+        # 输入维度是 lstm_hidden + state_dim
+        transition_input_dim = self.lstm_hidden + self.state_dim
+        self.transition = nn.Sequential([
+            nn.Dense(128, 
+                    kernel_init=pytorch_linear_init(transition_input_dim),
+                    bias_init=pytorch_zeros_init()),
+            nn.activation.tanh,
+            nn.Dense(2 * self.state_dim,
+                    kernel_init=pytorch_linear_init(128),
+                    bias_init=pytorch_zeros_init())
+        ])
 
-        # 观测网络
-        self.observation = nn.Sequential(
-            [nn.Dense(128), nn.tanh, nn.Dense(2 * self.obs_dim)]  # 输出均值和对数方差
-        )
+        # 观测网络（使用PyTorch风格的初始化）
+        self.observation = nn.Sequential([
+            nn.Dense(128,
+                    kernel_init=pytorch_linear_init(self.state_dim),
+                    bias_init=pytorch_zeros_init()),
+            nn.activation.tanh,
+            nn.Dense(2 * self.obs_dim,
+                    kernel_init=pytorch_linear_init(128),
+                    bias_init=pytorch_zeros_init())
+        ])
 
-        # 初始状态参数
+        # 初始状态参数（使用零初始化，与PyTorch一致）
         self.initial_state_mean = self.param(
-            "initial_state_mean", nn.initializers.zeros, (self.state_dim,)
+            "initial_state_mean", pytorch_zeros_init(), (self.state_dim,)
         )
         self.initial_state_log_var = self.param(
-            "initial_state_log_var", nn.initializers.zeros, (self.state_dim,)
+            "initial_state_log_var", pytorch_zeros_init(), (self.state_dim,)
         )
 
     def lstm_init_carry(self, sample_input: jnp.ndarray):
         """根据输入样本初始化LSTM状态(carry)。
-
-        兼容不同Flax版本的initialize_carry签名：
-        - 新API: initialize_carry(key, sample_input)
-        - 旧API: initialize_carry(key, batch_dims, size)
+        
+        使用PyTorchLSTMCell的initialize_carry方法
         """
-        try:
-            # Newer API: pass a sample input (without time dimension)
-            return self.lstm_cell.initialize_carry(random.PRNGKey(0), sample_input)
-        except TypeError:
-            # Fallback to legacy API: batch_dims=(), size=features
-            return self.lstm_cell.initialize_carry(
-                random.PRNGKey(0), (), self.lstm_hidden
-            )
+        return self.lstm_cell.initialize_carry(random.PRNGKey(0), sample_input.shape)
 
     def get_transition_dist(
         self, lstm_out: jnp.ndarray, z_prev: jnp.ndarray
@@ -126,13 +138,13 @@ class DeepSSM(nn.Module):
         sample_input = y[0]
         carry = self.lstm_init_carry(sample_input)
 
-        def step(c, x):
-            c_new, h = self.lstm_cell(c, x)
-            return c_new, h
-
-        # 使用lax.scan以获得更好的性能和jit兼容性
-        carry, outputs = jax.lax.scan(step, carry, y)
-        return outputs
+        # Process sequence step by step
+        outputs = []
+        for t in range(T):
+            carry, h = self.lstm_cell(carry, y[t])
+            outputs.append(h)
+        
+        return jnp.stack(outputs)
 
     def __call__(self, y: jnp.ndarray) -> jnp.ndarray:
         """
@@ -149,7 +161,16 @@ class DeepSSM(nn.Module):
 
         # 使用vmap处理批次
         lstm_batch = jax.vmap(self.lstm_sequence)
-        return lstm_batch(y)
+        lstm_out = lstm_batch(y)
+        
+        # 初始化transition和observation网络（通过调用一次来确保参数创建）
+        # 这是为了确保网络参数被正确初始化
+        dummy_lstm = jnp.zeros((batch_size, self.lstm_hidden))
+        dummy_z = jnp.zeros((batch_size, self.state_dim))
+        _ = self.get_transition_dist(dummy_lstm, dummy_z)
+        _ = self.get_observation_dist(dummy_z)
+        
+        return lstm_out
 
     def lstm_step(self, carry, x: jnp.ndarray):
         """单步LSTM前向（用于实时推理，复用模型内参数）。"""
