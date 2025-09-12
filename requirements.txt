@@ -6,8 +6,5 @@ tqdm
 PyWavelets
 numba
 chardet
-jax
-jaxlib
-numpyro
-flax
-optax
+torch
+pyro-ppl
