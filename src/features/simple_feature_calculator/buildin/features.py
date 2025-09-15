@@ -57,6 +57,12 @@ from src.indicators.prod import (
     voss,
 )
 
+# 多窗口熵特征 - 从独立模块导入
+from . import _entropy_features  # 这会自动注册所有熵特征  # noqa
+
+# 分数阶差分特征
+from . import _np_fracdiff_features  # noqa
+
 
 @feature(name="adx_7", description="ADX with period 7")
 def adx_7_feature(candles: np.ndarray, sequential: bool = True):
@@ -283,10 +289,6 @@ def ehlers_early_onset_trend_feature(
 ):
     """Ehlers早期趋势"""
     return ehlers_early_onset_trend(candles, sequential=sequential)
-
-
-# 多窗口熵特征 - 从独立模块导入
-from . import entropy_features  # 这会自动注册所有熵特征  # noqa
 
 
 @feature(name="entropy_for_jesse", description="Entropy for Jesse")
