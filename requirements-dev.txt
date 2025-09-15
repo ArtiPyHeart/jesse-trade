@@ -1,11 +1,8 @@
 black
-catboost-extensions
 plotly
 nbformat
 ipywidgets
 fastparquet
-feature-engine
-scikit-learn
 optuna
 joblib
 lightweight-charts
@@ -13,3 +10,4 @@ matplotlib
 seaborn
 hmmlearn
 deap
+pyro-ppl

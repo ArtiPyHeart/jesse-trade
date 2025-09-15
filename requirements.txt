@@ -1,5 +1,4 @@
 lightgbm
-catboost
 jesse
 joblib
 tqdm
@@ -7,4 +6,4 @@ PyWavelets
 numba
 chardet
 torch
-pyro-ppl
+giotto-tda
