@@ -11,6 +11,7 @@ from typing import Dict, List, Union, Optional, Tuple
 
 import numpy as np
 
+from src.utils.math_tools import np_array_fill_nan
 from .registry import SimpleFeatureRegistry, get_global_registry
 from .transforms import TransformChain
 from .validator import FeatureOutputValidator
@@ -218,23 +219,24 @@ class SimpleFeatureCalculator:
         result = np.array(time_series)
 
         # 检查结果长度是否与candles一致，如果不一致则填充
-        if self.candles is not None:
-            candles_len = len(self.candles)
-            result_len = len(result)
-
-            if result_len < candles_len:
-                # 需要在前面填充 np.nan
-                pad_len = candles_len - result_len
-
-                if result.ndim == 1:
-                    # 一维数组
-                    result = np.concatenate([np.full(pad_len, np.nan), result])
-                elif result.ndim == 2:
-                    # 二维数组
-                    pad_shape = (pad_len, result.shape[1])
-                    result = np.concatenate(
-                        [np.full(pad_shape, np.nan), result], axis=0
-                    )
+        result = np_array_fill_nan(result, self.candles)
+        # if self.candles is not None:
+        #     candles_len = len(self.candles)
+        #     result_len = len(result)
+        #
+        #     if result_len < candles_len:
+        #         # 需要在前面填充 np.nan
+        #         pad_len = candles_len - result_len
+        #
+        #         if result.ndim == 1:
+        #             # 一维数组
+        #             result = np.concatenate([np.full(pad_len, np.nan), result])
+        #         elif result.ndim == 2:
+        #             # 二维数组
+        #             pad_shape = (pad_len, result.shape[1])
+        #             result = np.concatenate(
+        #                 [np.full(pad_shape, np.nan), result], axis=0
+        #             )
 
         return result
 

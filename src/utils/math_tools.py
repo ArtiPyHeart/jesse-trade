@@ -171,8 +171,19 @@ def np_shift(array: np.ndarray, n: int) -> np.ndarray:
 def np_array_fill_nan(todo: np.ndarray, target: np.ndarray) -> np.ndarray:
     """
     在todo数组开头填充nan，使得todo和target数组长度相同
+    支持一维和二维数组
     """
-    res = np.concatenate((np.full(len(target) - len(todo), np.nan), todo))
+    if todo.ndim == 1:
+        # 一维数组
+        res = np.concatenate((np.full(len(target) - len(todo), np.nan), todo))
+    elif todo.ndim == 2:
+        # 二维数组
+        fill_rows = len(target) - len(todo)
+        nan_fill = np.full((fill_rows, todo.shape[1]), np.nan)
+        res = np.concatenate((nan_fill, todo), axis=0)
+    else:
+        raise ValueError("Only 1D and 2D arrays are supported")
+
     return res
 
 
@@ -195,6 +206,35 @@ def rolling_sum_with_nan(arr: np.ndarray, window: int) -> np.ndarray:
         result[i] = current_sum
 
     return result
+
+
+def np_rolling_window(arr: np.ndarray, window: int):
+    """
+    适用于numpy的一维、二维数组的，类似于pandas的rolling window方法，以yield方式返回所有window切片
+
+    参数:
+        arr: 一维或二维numpy数组
+        window: 窗口大小
+
+    Yields:
+        每个窗口的切片
+    """
+    if arr.ndim == 1:
+        # 一维数组
+        n = len(arr)
+        if window > n:
+            return
+        for i in range(n - window + 1):
+            yield arr[i:i+window]
+    elif arr.ndim == 2:
+        # 二维数组，沿着第0轴滚动
+        n = arr.shape[0]
+        if window > n:
+            return
+        for i in range(n - window + 1):
+            yield arr[i:i+window]
+    else:
+        raise ValueError(f"仅支持一维和二维数组，当前数组维度: {arr.ndim}")
 
 
 if __name__ == "__main__":
