@@ -30,11 +30,11 @@ class DeepSSMConfig:
     transition_hidden: int = 128
     observation_hidden: int = 128
 
-    learning_rate: float = 1e-3
-    max_epochs: int = 100
+    learning_rate: float = 0.001
+    max_epochs: int = 50
     batch_size: int = 32
-    patience: int = 10
-    min_delta: float = 1e-4
+    patience: int = 5
+    min_delta: float = 0.01
 
     dropout: float = 0.1
     weight_decay: float = 1e-5
@@ -44,7 +44,7 @@ class DeepSSMConfig:
 
     device: str = "auto"
     dtype: str = "float32"
-    seed: Optional[int] = None
+    seed: Optional[int] = 42
 
     def __post_init__(self):
         if self.device == "auto":
@@ -352,7 +352,6 @@ class DeepSSM:
     def fit(
         self,
         X: Union[np.ndarray, pd.DataFrame, torch.Tensor],
-        y: Optional[Union[np.ndarray, pd.DataFrame, torch.Tensor]] = None,
         val_data: Optional[Union[np.ndarray, pd.DataFrame, torch.Tensor]] = None,
         seed: Optional[int] = None,
     ) -> "DeepSSM":
@@ -361,7 +360,6 @@ class DeepSSM:
 
         Args:
             X: Training data [n_samples, n_features] or [n_timesteps, n_features]
-            y: Ignored (for sklearn compatibility)
             val_data: Validation data (optional)
             seed: Random seed for training
 
