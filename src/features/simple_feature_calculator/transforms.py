@@ -325,6 +325,426 @@ def rolling_median(array: np.ndarray, window: int) -> np.ndarray:
         return result
 
 
+@njit(cache=True)
+def rolling_curvature(array: np.ndarray, window: int) -> np.ndarray:
+    """
+    滚动曲率
+
+    曲率衡量曲线的弯曲程度：
+    - 高曲率：急转弯，可能是趋势反转点
+    - 低曲率：平滑趋势或直线运动
+    - 中等曲率：正常的价格波动
+
+    异常处理策略：
+    - 数据不足（<3点）: 返回0（无弯曲）
+    - 恒定序列: 返回0（直线无弯曲）
+    - 分母接近0: 返回0（避免除零）
+
+    Args:
+        array: 输入数组
+        window: 窗口大小
+
+    Returns:
+        滚动曲率均值，前window-1个值为0
+    """
+    if array.ndim == 1:
+        result = np.full_like(array, 0.0, dtype=np.float64)
+
+        for i in range(window - 1, len(array)):
+            window_data = array[i - window + 1 : i + 1]
+
+            # 检查数据有效性
+            valid_mask = ~np.isnan(window_data)
+            valid_data = window_data[valid_mask]
+
+            # 需要至少3个点计算曲率
+            if len(valid_data) < 3:
+                result[i] = 0.0
+                continue
+
+            # 创建时间索引
+            x = np.arange(len(valid_data), dtype=np.float64)
+            y = valid_data.astype(np.float64)
+
+            # 计算一阶导数（使用中心差分）
+            dx_dt = np.zeros_like(x)
+            dy_dt = np.zeros_like(y)
+
+            # 边界使用前向/后向差分
+            dx_dt[0] = x[1] - x[0]
+            dy_dt[0] = y[1] - y[0]
+
+            dx_dt[-1] = x[-1] - x[-2]
+            dy_dt[-1] = y[-1] - y[-2]
+
+            # 中间使用中心差分
+            for j in range(1, len(x) - 1):
+                dx_dt[j] = (x[j + 1] - x[j - 1]) / 2.0
+                dy_dt[j] = (y[j + 1] - y[j - 1]) / 2.0
+
+            # 计算二阶导数
+            d2x_dt2 = np.zeros_like(x)
+            d2y_dt2 = np.zeros_like(y)
+
+            # 边界使用前向/后向差分
+            d2x_dt2[0] = dx_dt[1] - dx_dt[0]
+            d2y_dt2[0] = dy_dt[1] - dy_dt[0]
+
+            d2x_dt2[-1] = dx_dt[-1] - dx_dt[-2]
+            d2y_dt2[-1] = dy_dt[-1] - dy_dt[-2]
+
+            # 中间使用中心差分
+            for j in range(1, len(dx_dt) - 1):
+                d2x_dt2[j] = (dx_dt[j + 1] - dx_dt[j - 1]) / 2.0
+                d2y_dt2[j] = (dy_dt[j + 1] - dy_dt[j - 1]) / 2.0
+
+            # 计算曲率
+            curvature_values = np.zeros(len(x))
+            for j in range(len(x)):
+                numerator = np.abs(d2x_dt2[j] * dy_dt[j] - d2y_dt2[j] * dx_dt[j])
+                denominator = (dx_dt[j] ** 2 + dy_dt[j] ** 2) ** 1.5
+
+                if denominator > 1e-10:
+                    curvature_values[j] = numerator / denominator
+                else:
+                    curvature_values[j] = 0.0
+
+            # 返回平均曲率
+            result[i] = np.mean(curvature_values)
+
+        return result
+    else:
+        # 处理2D数组
+        result = np.full_like(array, 0.0, dtype=np.float64)
+
+        for col in range(array.shape[1]):
+            for i in range(window - 1, array.shape[0]):
+                window_data = array[i - window + 1 : i + 1, col]
+
+                # 检查数据有效性
+                valid_mask = ~np.isnan(window_data)
+                valid_data = window_data[valid_mask]
+
+                # 需要至少3个点计算曲率
+                if len(valid_data) < 3:
+                    result[i, col] = 0.0
+                    continue
+
+                # 创建时间索引
+                x = np.arange(len(valid_data), dtype=np.float64)
+                y = valid_data.astype(np.float64)
+
+                # 计算一阶导数
+                dx_dt = np.zeros_like(x)
+                dy_dt = np.zeros_like(y)
+
+                dx_dt[0] = x[1] - x[0]
+                dy_dt[0] = y[1] - y[0]
+
+                dx_dt[-1] = x[-1] - x[-2]
+                dy_dt[-1] = y[-1] - y[-2]
+
+                for j in range(1, len(x) - 1):
+                    dx_dt[j] = (x[j + 1] - x[j - 1]) / 2.0
+                    dy_dt[j] = (y[j + 1] - y[j - 1]) / 2.0
+
+                # 计算二阶导数
+                d2x_dt2 = np.zeros_like(x)
+                d2y_dt2 = np.zeros_like(y)
+
+                d2x_dt2[0] = dx_dt[1] - dx_dt[0]
+                d2y_dt2[0] = dy_dt[1] - dy_dt[0]
+
+                d2x_dt2[-1] = dx_dt[-1] - dx_dt[-2]
+                d2y_dt2[-1] = dy_dt[-1] - dy_dt[-2]
+
+                for j in range(1, len(dx_dt) - 1):
+                    d2x_dt2[j] = (dx_dt[j + 1] - dx_dt[j - 1]) / 2.0
+                    d2y_dt2[j] = (dy_dt[j + 1] - dy_dt[j - 1]) / 2.0
+
+                # 计算曲率
+                curvature_values = np.zeros(len(x))
+                for j in range(len(x)):
+                    numerator = np.abs(d2x_dt2[j] * dy_dt[j] - d2y_dt2[j] * dx_dt[j])
+                    denominator = (dx_dt[j] ** 2 + dy_dt[j] ** 2) ** 1.5
+
+                    if denominator > 1e-10:
+                        curvature_values[j] = numerator / denominator
+                    else:
+                        curvature_values[j] = 0.0
+
+                # 返回平均曲率
+                result[i, col] = np.mean(curvature_values)
+
+        return result
+
+
+@njit(cache=True)
+def rolling_hurst(array: np.ndarray, window: int, min_lag: int = 2) -> np.ndarray:
+    """
+    滚动Hurst指数（使用R/S分析法）
+
+    Hurst指数衡量时间序列的长期记忆性：
+    - H < 0.5: 均值回复（反持续性）
+    - H = 0.5: 随机游走（布朗运动）
+    - H > 0.5: 趋势持续（正持续性）
+
+    拟合异常处理策略：
+    - 数据恒定（无波动）: 返回0.5，表示无趋势特征
+    - 数据量不足: 返回0.5，保守估计为随机游走
+    - 拟合失败: 返回0.5，避免引入极端值
+
+    Args:
+        array: 输入数组
+        window: 窗口大小
+        min_lag: 最小滞后期数（默认2）
+
+    Returns:
+        滚动Hurst指数，前window-1个值为0.5（中性值）
+    """
+    if array.ndim == 1:
+        result = np.full_like(array, 0.5, dtype=np.float64)
+
+        for i in range(window - 1, len(array)):
+            window_data = array[i - window + 1 : i + 1]
+
+            # 检查数据有效性
+            if np.any(np.isnan(window_data)):
+                # 如果有nan，使用前一个值或保持0.5
+                if i > window - 1:
+                    result[i] = result[i - 1]
+                continue
+
+            # 计算均值调整后的序列
+            mean = np.mean(window_data)
+            centered = window_data - mean
+
+            # 检查是否为恒定序列
+            if np.std(centered) < 1e-10:
+                result[i] = 0.5
+                continue
+
+            # R/S 分析
+            max_lag = min(window // 2, 20)  # 限制最大滞后
+            lags = []
+            rs_values = []
+
+            for lag in range(min_lag, max_lag + 1):
+                if lag >= window:
+                    break
+
+                # 将数据分成多个子序列
+                n_segments = window // lag
+                if n_segments < 1:
+                    continue
+
+                # 预分配数组存储R/S值
+                rs_segment = np.zeros(n_segments)
+                valid_count = 0
+
+                for seg in range(n_segments):
+                    start = seg * lag
+                    end = start + lag
+                    if end > window:
+                        break
+
+                    segment = window_data[start:end]
+
+                    # 计算均值调整的累积和
+                    seg_mean = np.mean(segment)
+                    deviations = segment - seg_mean
+                    cumsum = np.cumsum(deviations)
+
+                    # 计算Range
+                    if len(cumsum) > 0:
+                        R = np.max(cumsum) - np.min(cumsum)
+                    else:
+                        R = 0.0
+
+                    # 计算标准差
+                    S = np.std(segment)
+
+                    # 计算R/S
+                    if S > 1e-10:
+                        rs_segment[valid_count] = R / S
+                        valid_count += 1
+
+                if valid_count > 0:
+                    lags.append(float(lag))
+                    rs_values.append(np.mean(rs_segment[:valid_count]))
+
+            # 至少需要3个点进行拟合
+            if len(rs_values) < 3:
+                result[i] = 0.5
+                continue
+
+            # 拟合 log(R/S) = H * log(lag) + c
+            try:
+                log_lags = np.log(np.array(lags))
+                log_rs = np.log(np.array(rs_values))
+
+                # 过滤掉无效值
+                valid_mask = np.isfinite(log_lags) & np.isfinite(log_rs)
+                if np.sum(valid_mask) < 3:
+                    result[i] = 0.5
+                    continue
+
+                log_lags = log_lags[valid_mask]
+                log_rs = log_rs[valid_mask]
+
+                # 最小二乘法拟合
+                x_mean = np.mean(log_lags)
+                y_mean = np.mean(log_rs)
+
+                numerator = np.sum((log_lags - x_mean) * (log_rs - y_mean))
+                denominator = np.sum((log_lags - x_mean) ** 2)
+
+                if abs(denominator) < 1e-10:
+                    result[i] = 0.5
+                    continue
+
+                hurst = numerator / denominator
+
+                # 确保Hurst值在合理范围内
+                if 0.0 < hurst < 1.0:
+                    result[i] = hurst
+                elif hurst <= 0.0:
+                    result[i] = 0.1
+                elif hurst >= 1.0:
+                    result[i] = 0.9
+                else:
+                    result[i] = 0.5
+
+            except:
+                # 拟合异常，使用前一个值或0.5
+                if i > window - 1:
+                    result[i] = result[i - 1]
+                else:
+                    result[i] = 0.5
+
+        return result
+    else:
+        # 处理2D数组
+        result = np.full_like(array, 0.5, dtype=np.float64)
+
+        for col in range(array.shape[1]):
+            for i in range(window - 1, array.shape[0]):
+                window_data = array[i - window + 1 : i + 1, col]
+
+                if np.any(np.isnan(window_data)):
+                    if i > window - 1:
+                        result[i, col] = result[i - 1, col]
+                    continue
+
+                # 计算均值调整后的序列
+                mean = np.mean(window_data)
+                centered = window_data - mean
+
+                # 检查是否为恒定序列
+                if np.std(centered) < 1e-10:
+                    result[i, col] = 0.5
+                    continue
+
+                # R/S 分析
+                max_lag = min(window // 2, 20)
+                lags = []
+                rs_values = []
+
+                for lag in range(min_lag, max_lag + 1):
+                    if lag >= window:
+                        break
+
+                    # 将数据分成多个子序列
+                    n_segments = window // lag
+                    if n_segments < 1:
+                        continue
+
+                    # 预分配数组存储R/S值
+                    rs_segment = np.zeros(n_segments)
+                    valid_count = 0
+
+                    for seg in range(n_segments):
+                        start = seg * lag
+                        end = start + lag
+                        if end > window:
+                            break
+
+                        segment = window_data[start:end]
+
+                        # 计算均值调整的累积和
+                        seg_mean = np.mean(segment)
+                        deviations = segment - seg_mean
+                        cumsum = np.cumsum(deviations)
+
+                        # 计算Range
+                        if len(cumsum) > 0:
+                            R = np.max(cumsum) - np.min(cumsum)
+                        else:
+                            R = 0.0
+
+                        # 计算标准差
+                        S = np.std(segment)
+
+                        # 计算R/S
+                        if S > 1e-10:
+                            rs_segment[valid_count] = R / S
+                            valid_count += 1
+
+                    if valid_count > 0:
+                        lags.append(float(lag))
+                        rs_values.append(np.mean(rs_segment[:valid_count]))
+
+                # 至少需要3个点进行拟合
+                if len(rs_values) < 3:
+                    result[i, col] = 0.5
+                    continue
+
+                # 拟合 log(R/S) = H * log(lag) + c
+                try:
+                    log_lags = np.log(np.array(lags))
+                    log_rs = np.log(np.array(rs_values))
+
+                    # 过滤掉无效值
+                    valid_mask = np.isfinite(log_lags) & np.isfinite(log_rs)
+                    if np.sum(valid_mask) < 3:
+                        result[i, col] = 0.5
+                        continue
+
+                    log_lags = log_lags[valid_mask]
+                    log_rs = log_rs[valid_mask]
+
+                    # 最小二乘法拟合
+                    x_mean = np.mean(log_lags)
+                    y_mean = np.mean(log_rs)
+
+                    numerator = np.sum((log_lags - x_mean) * (log_rs - y_mean))
+                    denominator = np.sum((log_lags - x_mean) ** 2)
+
+                    if abs(denominator) < 1e-10:
+                        result[i, col] = 0.5
+                        continue
+
+                    hurst = numerator / denominator
+
+                    # 确保Hurst值在合理范围内
+                    if 0.0 < hurst < 1.0:
+                        result[i, col] = hurst
+                    elif hurst <= 0.0:
+                        result[i, col] = 0.1
+                    elif hurst >= 1.0:
+                        result[i, col] = 0.9
+                    else:
+                        result[i, col] = 0.5
+
+                except:
+                    if i > window - 1:
+                        result[i, col] = result[i - 1, col]
+                    else:
+                        result[i, col] = 0.5
+
+        return result
+
+
 class TransformChain:
     """转换链处理器"""
 
@@ -340,6 +760,8 @@ class TransformChain:
         "skew": rolling_skew,
         "kurt": rolling_kurt,
         "median": rolling_median,
+        "hurst": rolling_hurst,
+        "curvature": rolling_curvature,
     }
 
     @classmethod
