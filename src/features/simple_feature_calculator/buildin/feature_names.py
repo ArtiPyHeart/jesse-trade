@@ -43,10 +43,10 @@ BUILDIN_FEATURES = (
     + [f"frac_c_h{l}_diff" for l in range(1, 6)]
     + [f"frac_c_l{l}_diff" for l in range(1, 6)]
     + [f"frac_c_c{l}_diff" for l in range(1, 6)]
-    + [f"sample_entropy_w{w}_spot" for w in [32, 64, 128, 256, 512]]
-    + [f"sample_entropy_w{w}_array" for w in [32, 64, 128, 256, 512]]
-    + [f"approximate_entropy_w{w}_spot" for w in [32, 64, 128, 256, 512]]
-    + [f"approximate_entropy_w{w}_array" for w in [32, 64, 128, 256, 512]]
+    + [f"sample_entropy_w{w}_spot" for w in [32, 64, 128, 256]]
+    + [f"sample_entropy_w{w}_array" for w in [32, 64, 128, 256]]
+    + [f"approximate_entropy_w{w}_spot" for w in [32, 64, 128, 256]]
+    + [f"approximate_entropy_w{w}_array" for w in [32, 64, 128, 256]]
     + [
         "entropy_for_jesse",
         "evenbetter_sinewave_long",
@@ -79,6 +79,6 @@ BUILDIN_FEATURES = (
     + [f"swamicharts_rsi_{i}" for i in range(44)]
     + [f"swamicharts_stochastic_{i}" for i in range(44)]
     + ["trendflex", "voss_0", "voss_1", "vwap", "williams_r"]
-    + [f"cwt_w{w}_{i}" for w in [32, 64, 128, 256, 512] for i in range(21)]
-    + [f"vmd_w{w}_{i}" for w in [32, 64, 128, 256, 512] for i in range(3)]
+    + [f"cwt_w{w}_{i}" for w in [32, 64, 128, 256] for i in range(21)]
+    + [f"vmd_w{w}_{i}" for w in [32, 64, 128, 256] for i in range(3)]
 )
