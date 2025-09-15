@@ -7,12 +7,13 @@
 3. 严格的输出验证
 """
 
-import numpy as np
 from typing import Dict, List, Union, Optional, Tuple
 
+import numpy as np
+
 from .registry import SimpleFeatureRegistry, get_global_registry
-from .validator import FeatureOutputValidator
 from .transforms import TransformChain
+from .validator import FeatureOutputValidator
 
 
 class SimpleFeatureCalculator:
@@ -101,16 +102,20 @@ class SimpleFeatureCalculator:
             # 检查是否是类特征
             metadata = self.registry.get_metadata(base_name)
             is_class_feature = metadata and metadata.get("type") == "class"
-            
+
             if is_class_feature:
                 # 对于类特征，获取raw_result用于转换
-                raw_result = self._compute_base_feature(base_name, force_sequential=True, return_raw=True)
+                raw_result = self._compute_base_feature(
+                    base_name, force_sequential=True, return_raw=True
+                )
                 # 处理raw_result为适合转换链的格式
                 # 注意：这里暂不处理column_index，留到后面统一处理
-                base_value = self._process_raw_result_for_transform(raw_result, None)
+                base_value = self._process_raw_result_for_transform(raw_result)
             else:
                 # 函数型特征，正常处理
-                base_value = self._compute_base_feature(base_name, force_sequential=True)
+                base_value = self._compute_base_feature(
+                    base_name, force_sequential=True
+                )
         else:
             # 没有转换，直接按用户需求计算
             base_value = self._compute_base_feature(base_name, force_sequential=False)
@@ -120,7 +125,7 @@ class SimpleFeatureCalculator:
             # 获取特征元信息
             metadata = self.registry.get_metadata(base_name)
             returns_multiple = metadata and metadata.get("returns_multiple", False)
-            
+
             if not returns_multiple:
                 # 单列特征不应该有列索引（除了_0）
                 if column_index != 0:
@@ -138,21 +143,16 @@ class SimpleFeatureCalculator:
                         f"Multi-column features must return 2D arrays. "
                         f"Got shape: {base_value.shape}"
                     )
-                
+
                 # 检查列索引是否有效
                 if column_index >= base_value.shape[1]:
                     raise ValueError(
                         f"Feature '{feature_name}' column index {column_index} out of range. "
                         f"Feature has {base_value.shape[1]} columns."
                     )
-                
+
                 # 提取指定列
-                if self.sequential:
-                    # sequential模式：保持二维数组
-                    base_value = base_value[:, column_index:column_index+1]
-                else:
-                    # 非sequential模式：提取为一维数组
-                    base_value = base_value[:, column_index]
+                base_value = base_value[:, column_index]
 
         # 应用转换链
         if transforms:
@@ -162,7 +162,7 @@ class SimpleFeatureCalculator:
             )
             # 应用转换
             transformed_value = self.transform_chain.apply_chain(base_value, transforms)
-            
+
             # 如果用户要求非sequential，但我们使用了sequential数据进行转换
             # 需要截取最后一行
             if not self.sequential:
@@ -171,7 +171,7 @@ class SimpleFeatureCalculator:
                 elif transformed_value.ndim == 2:
                     # 对于多列特征，返回一维数组而不是 (1, n_columns) 的二维数组
                     transformed_value = transformed_value[-1, :]
-            
+
             result = transformed_value
         else:
             # 没有转换的情况
@@ -186,23 +186,23 @@ class SimpleFeatureCalculator:
         self.cache[cache_key] = result
         return result
 
-    def _process_raw_result_for_transform(self, raw_result: list, column_index: Optional[int]) -> np.ndarray:
+    def _process_raw_result_for_transform(self, raw_result: list) -> np.ndarray:
         """
         处理类特征的raw_result，转换为适合转换链处理的格式
-        
+
         Args:
             raw_result: 类特征的raw_result列表
             column_index: 列索引（如果有）
-            
+
         Returns:
             处理后的数组，适合转换链处理
         """
         if not raw_result:
             raise ValueError("raw_result is empty")
-        
+
         # raw_result是一个列表，每个元素是(窗口大小, 列数)的数组
         # 我们需要从每个窗口提取最后一行，组成时间序列
-        
+
         # 提取每个窗口的最后一行
         time_series = []
         for window_data in raw_result:
@@ -213,16 +213,31 @@ class SimpleFeatureCalculator:
                 # 单列数据
                 last_row = window_data[-1]
             time_series.append(last_row)
-        
+
         # 转换为数组
         result = np.array(time_series)
-        
-        # 如果有列索引，提取指定列
-        if column_index is not None and result.ndim == 2:
-            result = result[:, column_index]
-        
+
+        # 检查结果长度是否与candles一致，如果不一致则填充
+        if self.candles is not None:
+            candles_len = len(self.candles)
+            result_len = len(result)
+
+            if result_len < candles_len:
+                # 需要在前面填充 np.nan
+                pad_len = candles_len - result_len
+
+                if result.ndim == 1:
+                    # 一维数组
+                    result = np.concatenate([np.full(pad_len, np.nan), result])
+                elif result.ndim == 2:
+                    # 二维数组
+                    pad_shape = (pad_len, result.shape[1])
+                    result = np.concatenate(
+                        [np.full(pad_shape, np.nan), result], axis=0
+                    )
+
         return result
-    
+
     def _compute_base_feature(
         self, feature_name: str, force_sequential: bool, return_raw: bool = False
     ) -> np.ndarray:
@@ -289,7 +304,7 @@ class SimpleFeatureCalculator:
 
         # 缓存结果
         self.cache[cache_key] = output
-        
+
         return output
 
     def _parse_feature_name(

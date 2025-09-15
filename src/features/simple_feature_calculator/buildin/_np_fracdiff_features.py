@@ -11,7 +11,7 @@ FRAC = 0.7
 
 for l in range(1, 6):
 
-    @feature(name=f"fracdiff_o_o{l}")
+    @feature(name=f"frac_o_o{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -26,7 +26,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_o_h{l}")
+    @feature(name=f"frac_o_h{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -41,7 +41,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_o_l{l}")
+    @feature(name=f"frac_o_l{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -56,7 +56,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_o_c{l}")
+    @feature(name=f"frac_o_c{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -71,7 +71,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_h_o{l}")
+    @feature(name=f"frac_h_o{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -86,7 +86,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_h_h{l}")
+    @feature(name=f"frac_h_h{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -101,7 +101,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_h_l{l}")
+    @feature(name=f"frac_h_l{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -116,7 +116,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_h_c{l}")
+    @feature(name=f"frac_h_c{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -131,7 +131,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_l_o{l}")
+    @feature(name=f"frac_l_o{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -146,7 +146,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_l_h{l}")
+    @feature(name=f"frac_l_h{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -161,7 +161,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_l_l{l}")
+    @feature(name=f"frac_l_l{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -176,7 +176,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_l_c{l}")
+    @feature(name=f"frac_l_c{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -191,7 +191,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_c_o{l}")
+    @feature(name=f"frac_c_o{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -206,7 +206,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_c_h{l}")
+    @feature(name=f"frac_c_h{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -221,7 +221,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_c_l{l}")
+    @feature(name=f"frac_c_l{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
@@ -236,7 +236,7 @@ for l in range(1, 6):
             lag=_lag,
         )
 
-    @feature(name=f"fracdiff_c_c{l}")
+    @feature(name=f"frac_c_c{l}_diff")
     def np_fracdiff_open_open(
         candles: np.ndarray,
         sequential: bool = True,
