@@ -33,6 +33,7 @@
 - 命名：模块/变量 `snake_case`，类 `CamelCase`，常量 `UPPER_SNAKE_CASE`。
 - 倡导早期 `assert` 暴露非法输入；避免使用宽泛的 `try/except` 掩盖错误。
 - 生产代码仅从 `src/` 导入；禁止从 `research/` 或 `extern/` 导入。
+- 使用mcp context7查阅各代码库最新文档。
 
 ## 提交与 Pull Request
 - 提交信息：祈使句主题；可选前缀（`feat:`、`fix:`、`refactor:`）。
