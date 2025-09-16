@@ -9,6 +9,28 @@ from typing import Optional
 import numpy as np
 from numba import njit
 
+# 延迟导入可选依赖
+_gph_ripser_parallel = None
+_scipy_entropy = None
+
+
+def _ensure_gph_imported():
+    """确保giotto-ph已导入"""
+    global _gph_ripser_parallel, _scipy_entropy
+    if _gph_ripser_parallel is None:
+        try:
+            from gph import ripser_parallel
+            from scipy.stats import entropy
+
+            _gph_ripser_parallel = ripser_parallel
+            _scipy_entropy = entropy
+        except ImportError:
+            raise ImportError(
+                "需要安装giotto-ph才能使用拓扑持续熵功能。\n"
+                "请运行: pip install giotto-ph"
+            )
+    return _gph_ripser_parallel, _scipy_entropy
+
 
 @njit(cache=True)
 def dt(array: np.ndarray) -> np.ndarray:
@@ -745,6 +767,98 @@ def rolling_hurst(array: np.ndarray, window: int, min_lag: int = 2) -> np.ndarra
         return result
 
 
+def rolling_persistent_homology_entropy(array: np.ndarray, window: int) -> np.ndarray:
+    """
+    滚动持久同调熵（Persistent Homology Entropy）
+
+    使用拓扑数据分析计算时间序列的持续熵，
+    衡量序列中拓扑特征的复杂度和持续性模式。
+
+    持续熵的含义：
+    - 高熵：复杂的拓扑结构，多样的特征尺度
+    - 低熵：简单的拓扑结构，特征尺度集中
+    - 可用于检测市场状态变化、异常模式等
+
+    Args:
+        array: 输入数组
+        window: 窗口大小（建议>=20）
+
+    Returns:
+        滚动持续熵，前window-1个值为nan
+
+    Note:
+        需要安装giotto-ph: pip install giotto-ph
+    """
+    # 确保导入了必要的库
+    ripser_parallel, scipy_entropy = _ensure_gph_imported()
+
+    if array.ndim == 1:
+        result = np.full_like(array, np.nan, dtype=np.float64)
+
+        for i in range(window - 1, len(array)):
+            window_data = array[i - window + 1 : i + 1]
+
+            # 跳过包含nan的窗口
+            valid_mask = ~np.isnan(window_data)
+            if not np.all(valid_mask):
+                continue
+
+            # 如果数据方差太小，返回0（无拓扑特征）
+            if np.std(window_data) < 1e-10:
+                result[i] = 0.0
+                continue
+
+            # 转换为点云格式 (n_points, 1)
+            X = window_data.reshape(-1, 1)
+
+            try:
+                # 计算持久性图
+                ph_result = ripser_parallel(
+                    X,
+                    maxdim=1,  # 计算0维和1维同调
+                    metric="euclidean",
+                    n_threads=1,  # 单线程以减少开销
+                )
+
+                # 提取所有维度的寿命
+                all_lifetimes = []
+                for dim_dgm in ph_result["dgms"]:
+                    if len(dim_dgm) > 0:
+                        # 计算寿命（death - birth）
+                        lifetimes = dim_dgm[:, 1] - dim_dgm[:, 0]
+                        # 过滤掉零寿命和无穷寿命
+                        valid_lifetimes = lifetimes[
+                            (lifetimes > 1e-10) & (lifetimes != np.inf)
+                        ]
+                        if len(valid_lifetimes) > 0:
+                            all_lifetimes.extend(valid_lifetimes)
+
+                # 计算熵
+                if len(all_lifetimes) > 0:
+                    lifetimes_array = np.array(all_lifetimes)
+                    # 归一化为概率分布
+                    probabilities = lifetimes_array / np.sum(lifetimes_array)
+                    # 计算香农熵（base 2）
+                    result[i] = scipy_entropy(probabilities, base=2)
+                else:
+                    result[i] = 0.0
+
+            except Exception:
+                # 如果计算失败，使用前一个值或保持nan
+                if i > window - 1 and not np.isnan(result[i - 1]):
+                    result[i] = result[i - 1]
+                else:
+                    result[i] = np.nan
+
+        return result
+    else:
+        # 处理2D数组，对每列分别计算
+        result = np.full_like(array, np.nan, dtype=np.float64)
+        for col in range(array.shape[1]):
+            result[:, col] = rolling_persistent_homology_entropy(array[:, col], window)
+        return result
+
+
 class TransformChain:
     """转换链处理器"""
 
@@ -761,7 +875,8 @@ class TransformChain:
         "kurt": rolling_kurt,
         "median": rolling_median,
         "hurst": rolling_hurst,
-        "curvature": rolling_curvature,
+        "curv": rolling_curvature,
+        "phent": rolling_persistent_homology_entropy,
     }
 
     @classmethod
