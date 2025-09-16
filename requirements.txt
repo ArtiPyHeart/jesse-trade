@@ -6,5 +6,4 @@ PyWavelets
 numba
 chardet
 torch
-giotto-tda
 giotto-ph

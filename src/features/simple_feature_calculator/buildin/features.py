@@ -52,7 +52,15 @@ from src.indicators.prod import (
     swamicharts_stochastic,
     bandpass,
     voss,
+    bar_duration,
+    bar_open,
+    bar_high,
+    bar_low,
+    bar_close,
 )
+
+# 小波与VMD特征
+from . import _cwt_vmd_features  # noqa
 
 # 多窗口熵特征 - 从独立模块导入
 from . import _entropy_features  # 这会自动注册所有熵特征  # noqa
@@ -60,8 +68,44 @@ from . import _entropy_features  # 这会自动注册所有熵特征  # noqa
 # 分数阶差分特征
 from . import _np_fracdiff_features  # noqa
 
-# 小波与VMD特征
-from . import _cwt_vmd_features  # noqa
+
+@feature(
+    name="bar_duration",
+    description="fusion bar duration",
+)
+def bar_durations_feature(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
+    return bar_duration(candles, sequential=sequential)
+
+
+@feature(
+    name="bar_open",
+    description="open price",
+)
+def bar_open_feature(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
+    return bar_open(candles, sequential=sequential)
+
+
+@feature(
+    name="bar_high",
+    description="high price",
+)
+def bar_high_feature(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
+    return bar_high(candles, sequential=sequential)
+
+
+@feature(
+    name="bar_low",
+    description="low price",
+)
+def bar_low_feature(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
+    return bar_low(candles, sequential=sequential)
+
+
+@feature(
+    name="bar_close",
+)
+def bar_close_feature(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
+    return bar_close(candles, sequential=sequential)
 
 
 @feature(name="adx_7", description="ADX with period 7")

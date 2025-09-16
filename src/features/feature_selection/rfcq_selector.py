@@ -139,6 +139,7 @@ class RFCQSelector:
 
         # 创建随机森林分类器
         model = RandomForestClassifier(
+            n_estimators=300,
             class_weight="balanced",
             random_state=self.random_state,
             n_jobs=self.n_jobs,

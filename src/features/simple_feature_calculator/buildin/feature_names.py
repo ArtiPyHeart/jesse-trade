@@ -1,5 +1,7 @@
 BUILDIN_FEATURES = (
-    ["adx_7", "adx_14", "aroon_diff"]
+    # 自定义轴持续时间
+    ["bar_duration"]
+    + ["adx_7", "adx_14", "aroon_diff"]
     + [f"ac_{i}" for i in range(47)]
     + ["acc_swing_index"]
     + [f"acp_pwr_{i}" for i in range(39)]
