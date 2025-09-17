@@ -13,11 +13,11 @@ import numpy as np
 import pandas as pd
 import torch
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+# Add parent directory to path for proper imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.models.lgssm import LGSSM, LGSSMConfig, KalmanFilter
+from lgssm import LGSSM, LGSSMConfig
+from kalman_filter import KalmanFilter
 
 
 def generate_synthetic_data(T=500, obs_dim=10, state_dim=3, seed=42):
@@ -187,6 +187,63 @@ def test_lgssm_realtime():
     ), "Shape mismatch in real-time inference"
 
     print("✓ Real-time inference tests passed")
+
+
+def test_predict_update_consistency():
+    """Test that predict and update_single produce identical results."""
+    print("\nTesting predict vs update_single consistency...")
+
+    # Generate data
+    T, obs_dim, state_dim = 100, 10, 5
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Train model
+    config = LGSSMConfig(state_dim=state_dim, max_epochs=20, use_scaler=True, seed=42)
+    model = LGSSM(config)
+    model.fit(observations[:80], verbose=False)
+
+    # Test data
+    test_data = observations[80:100]
+
+    # Method 1: Batch prediction using predict()
+    batch_states, batch_covariances = model.predict(test_data, return_covariance=True)
+
+    # Method 2: Sequential updates using update_single()
+    sequential_states = []
+    sequential_covariances = []
+
+    # Get initial state and covariance from model
+    state, covariance = model.get_initial_state()
+
+    for i, obs in enumerate(test_data):
+        # First observation needs special handling
+        state, covariance = model.update_single(
+            obs, state, covariance, is_first_observation=(i == 0)
+        )
+        sequential_states.append(state)
+        sequential_covariances.append(covariance)
+
+    sequential_states = np.array(sequential_states)
+    sequential_covariances = np.array(sequential_covariances)
+
+    # Compare results - they should be identical
+    np.testing.assert_allclose(
+        batch_states,
+        sequential_states,
+        rtol=1e-5,
+        atol=1e-6,
+        err_msg="States differ between predict() and update_single()",
+    )
+
+    np.testing.assert_allclose(
+        batch_covariances,
+        sequential_covariances,
+        rtol=1e-5,
+        atol=1e-6,
+        err_msg="Covariances differ between predict() and update_single()",
+    )
+
+    print("✓ Predict vs update_single consistency tests passed")
 
 
 def test_lgssm_save_load():
@@ -385,6 +442,7 @@ def run_all_tests():
     test_kalman_filter()
     test_lgssm_basic()
     test_lgssm_realtime()
+    test_predict_update_consistency()  # New test for consistency
     test_lgssm_save_load()
     test_lgssm_no_scaler()
     test_lgssm_pandas_input()

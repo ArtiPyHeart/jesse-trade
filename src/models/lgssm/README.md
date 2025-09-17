@@ -22,7 +22,7 @@
 
 ```python
 import numpy as np
-from models.lgssm import LGSSM, LGSSMConfig
+from src.models.lgssm import LGSSM, LGSSMConfig
 
 # 生成示例数据
 data = np.random.randn(1000, 10)  # 1000个时间步，10维特征
@@ -44,18 +44,38 @@ states = model.predict(data)
 print(f"状态特征形状: {states.shape}")  # (1000, 5)
 ```
 
-### 实时推理
+### 实时推理（保证与批处理一致）
 
 ```python
-# 初始化状态
-last_state = np.zeros(5)
-last_covariance = np.eye(5) * 0.1
+# 获取与批处理一致的初始状态
+initial_state, initial_covariance = model.get_initial_state()
 
-# 处理新观测
-new_observation = np.random.randn(10)
-new_state, new_covariance = model.update_single(
-    new_observation, last_state, last_covariance
-)
+# 处理观测序列
+current_state = initial_state
+current_covariance = initial_covariance
+states_list = []
+
+for i, observation in enumerate(observations):
+    # 第一个观测需要特殊处理
+    current_state, current_covariance = model.update_single(
+        observation,
+        current_state,
+        current_covariance,
+        is_first_observation=(i == 0)  # 重要：第一个观测标记
+    )
+    states_list.append(current_state)
+
+# 结果与 model.predict(observations) 完全一致
+```
+
+#### 简化用法（自动初始化）
+
+```python
+# 不提供初始状态时，自动使用默认初始化
+state, covariance = model.update_single(first_observation, is_first_observation=True)
+
+# 后续观测
+state, covariance = model.update_single(next_observation, state, covariance)
 ```
 
 ### 模型保存与加载
@@ -129,7 +149,7 @@ python test_lgssm.py
 
 ```python
 import pandas as pd
-from models.lgssm import LGSSM, LGSSMConfig
+from src.models.lgssm import LGSSM, LGSSMConfig
 
 # 加载金融数据
 df = pd.read_csv("financial_features.csv")
@@ -165,6 +185,27 @@ feature_df.to_csv("lgssm_features.csv", index=False)
 2. **状态维度选择**：通常5-10维足够捕捉主要动态
 3. **数值稳定性**：模型使用对数尺度参数化确保协方差矩阵正定
 4. **实时推理**：保存最后的状态和协方差用于增量更新
+
+## 批处理与在线推理的一致性
+
+本实现保证了批处理（`predict`）和在线推理（`update_single`）的完全一致性：
+
+1. **相同的初始化**：使用 `get_initial_state()` 获取与批处理相同的初始状态
+2. **相同的算法流程**：第一个观测使用 `is_first_observation=True` 参数
+3. **相同的归一化**：两种方法使用相同的数据预处理
+
+```python
+# 验证一致性
+batch_states = model.predict(data)
+sequential_states = []
+state, cov = model.get_initial_state()
+
+for i, obs in enumerate(data):
+    state, cov = model.update_single(obs, state, cov, is_first_observation=(i==0))
+    sequential_states.append(state)
+
+# batch_states 与 sequential_states 完全相同
+```
 
 ## 相关资源
 

@@ -136,31 +136,31 @@ class KalmanFilter(nn.Module):
             
         states = torch.zeros(T, self.state_dim, device=device, dtype=dtype)
         covariances = torch.zeros(T, self.state_dim, self.state_dim, device=device, dtype=dtype)
-        
+
         z = z0
         P = P0
         log_likelihood = 0.0
-        
-        # First observation
-        states[0] = z
-        covariances[0] = P
-        
-        # Filter through sequence
-        for t in range(1, T):
-            # Predict
-            z_pred, P_pred = self.predict(z, P, A, Q)
-            
-            # Update
+
+        # Filter through sequence - now includes first observation
+        for t in range(T):
+            if t == 0:
+                # For the first observation, use initial state as prediction
+                z_pred, P_pred = z0, P0
+            else:
+                # Predict from previous state
+                z_pred, P_pred = self.predict(z, P, A, Q)
+
+            # Update with current observation
             z, P, K = self.update(z_pred, P_pred, y[t], C, R)
-            
+
             states[t] = z
             covariances[t] = P
-            
+
             # Compute log likelihood contribution
             y_pred = C @ z_pred
             innovation = y[t] - y_pred
             S = C @ P_pred @ C.T + R
-            
+
             # Log likelihood: -0.5 * (log|S| + innovation' @ S^-1 @ innovation + k*log(2π))
             log_det_S = torch.logdet(S)
             quad_form = torch.matmul(innovation.unsqueeze(0), torch.linalg.solve(S, innovation.unsqueeze(-1))).squeeze()

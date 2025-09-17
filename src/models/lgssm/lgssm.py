@@ -16,7 +16,10 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from .kalman_filter import KalmanFilter
+try:
+    from .kalman_filter import KalmanFilter
+except ImportError:
+    from kalman_filter import KalmanFilter
 
 
 @dataclass
@@ -425,23 +428,50 @@ class LGSSM(nn.Module):
 
         return states_np
 
+    def get_initial_state(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get initial state and covariance for online inference.
+
+        This method returns the same initialization used in batch processing,
+        ensuring consistency between predict() and update_single().
+
+        Returns:
+            initial_state: Initial state (state_dim,) as zeros
+            initial_covariance: Initial covariance (state_dim, state_dim) as 0.1 * I
+        """
+        if self.A is None:
+            raise RuntimeError("Model not initialized. Call fit() first.")
+
+        initial_state = np.zeros(self.config.state_dim)
+        initial_covariance = np.eye(self.config.state_dim) * 0.1
+
+        return initial_state, initial_covariance
+
     def update_single(
         self,
         new_observation: Union[np.ndarray, torch.Tensor],
-        last_state: Union[np.ndarray, torch.Tensor],
-        last_covariance: Union[np.ndarray, torch.Tensor],
+        last_state: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        last_covariance: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        is_first_observation: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Process a single new observation for real-time inference.
 
         Args:
             new_observation: New observation (obs_dim,)
-            last_state: Previous state estimate (state_dim,)
-            last_covariance: Previous error covariance (state_dim, state_dim)
+            last_state: Previous state estimate (state_dim,). If None, uses initial state.
+            last_covariance: Previous error covariance (state_dim, state_dim). If None, uses initial covariance.
+            is_first_observation: If True, skip prediction step (for first observation in sequence)
 
         Returns:
             new_state: Updated state estimate (state_dim,)
             new_covariance: Updated error covariance (state_dim, state_dim)
         """
+        # Use initial values if not provided
+        if last_state is None or last_covariance is None:
+            init_state, init_cov = self.get_initial_state()
+            if last_state is None:
+                last_state = init_state
+            if last_covariance is None:
+                last_covariance = init_cov
         # Convert to tensors
         if isinstance(new_observation, np.ndarray):
             new_observation = torch.from_numpy(new_observation).to(self.dtype)
@@ -459,12 +489,17 @@ class LGSSM(nn.Module):
 
         self.eval()
         with torch.no_grad():
-            # Prediction step
-            state_pred, cov_pred = self.kalman_filter.predict(
-                last_state, last_covariance, self.A, self.Q
-            )
+            if is_first_observation:
+                # For first observation, use initial state as prediction (no prediction step)
+                state_pred = last_state
+                cov_pred = last_covariance
+            else:
+                # Prediction step for subsequent observations
+                state_pred, cov_pred = self.kalman_filter.predict(
+                    last_state, last_covariance, self.A, self.Q
+                )
 
-            # Update step
+            # Update step with current observation
             new_state, new_covariance, _ = self.kalman_filter.update(
                 state_pred, cov_pred, new_obs_normalized, self.C, self.R
             )
