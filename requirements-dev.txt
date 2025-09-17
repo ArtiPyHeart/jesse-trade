@@ -4,10 +4,8 @@ nbformat
 ipywidgets
 fastparquet
 optuna
-joblib
 lightweight-charts
 matplotlib
 seaborn
 hmmlearn
 deap
-pyro-ppl

@@ -6,4 +6,5 @@ PyWavelets
 numba
 chardet
 torch
+safetensors
 giotto-ph

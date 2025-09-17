@@ -18,7 +18,7 @@ FEAT_L6 = feature_info["L6"]
 
 class DeepSSMContainer:
     def __init__(self):
-        path_deep_ssm = Path(__file__).parent / "deep_ssm.pt"
+        path_deep_ssm = Path(__file__).parent / "deep_ssm"
         self.model: DeepSSM = DeepSSM.load(path_deep_ssm.resolve().as_posix())
         self.model_inference = self.model.create_realtime_processor()
 
@@ -41,7 +41,7 @@ class DeepSSMContainer:
 
 class LGSSMContainer:
     def __init__(self):
-        path_lg_ssm = Path(__file__).parent / "lg_ssm.pt"
+        path_lg_ssm = Path(__file__).parent / "lg_ssm"
         self.model: LGSSM = LGSSM.load(path_lg_ssm.resolve().as_posix())
 
         self.state, self.covariance = self.model.get_initial_state()

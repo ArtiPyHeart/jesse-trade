@@ -507,109 +507,64 @@ class LGSSM(nn.Module):
         return new_state.cpu().numpy(), new_covariance.cpu().numpy()
 
     def save(self, path: str):
-        """Save model to file.
+        """Save model to file using SafeTensors format.
 
         Args:
-            path: Path to save the model
+            path: Path to save the model (without extension)
         """
-        # Save everything in state_dict format for weights_only compatibility
+        from safetensors.torch import save_file
+        import json
+        from pathlib import Path
+
+        # Ensure path doesn't have extension
+        path = str(Path(path).with_suffix(""))
+
+        # Save model weights using SafeTensors
         state_dict = self.state_dict()
+        save_file(state_dict, f"{path}.safetensors")
 
-        # Add config and history as tensors to maintain weights_only compatibility
+        # Prepare metadata as JSON-serializable dict
         config_dict = asdict(self.config)
-        # Convert config to a format that can be saved with weights_only
-        # We'll save it as a separate JSON-compatible structure
-
-        checkpoint = {
-            "model_state_dict": state_dict,
-            "config_obs_dim": (
-                config_dict.get("obs_dim", -1)
-                if config_dict.get("obs_dim") is not None
-                else -1
-            ),
-            "config_state_dim": config_dict["state_dim"],
-            "config_learning_rate": config_dict["learning_rate"],
-            "config_max_epochs": config_dict["max_epochs"],
-            "config_batch_size": (
-                config_dict.get("batch_size", -1)
-                if config_dict.get("batch_size") is not None
-                else -1
-            ),
-            "config_patience": config_dict["patience"],
-            "config_min_delta": config_dict["min_delta"],
-            "config_weight_decay": config_dict["weight_decay"],
-            "config_gradient_clip": config_dict["gradient_clip"],
-            "config_A_init_scale": config_dict["A_init_scale"],
-            "config_C_init_scale": config_dict["C_init_scale"],
-            "config_Q_init_scale": config_dict["Q_init_scale"],
-            "config_R_init_scale": config_dict["R_init_scale"],
-            "config_use_scaler": config_dict["use_scaler"],
-            "config_device": config_dict["device"],
-            "config_dtype": config_dict["dtype"],
-            "config_seed": (
-                config_dict.get("seed", -1)
-                if config_dict.get("seed") is not None
-                else -1
-            ),
-            "history_loss": (
-                torch.tensor(self.history["loss"])
-                if self.history["loss"]
-                else torch.tensor([])
-            ),
-            "history_val_loss": (
-                torch.tensor(self.history["val_loss"])
-                if self.history["val_loss"]
-                else torch.tensor([])
-            ),
+        metadata = {
+            "version": "2.0.0",  # New version for SafeTensors
+            "config": config_dict,
+            "history": {
+                "loss": self.history["loss"] if self.history["loss"] else [],
+                "val_loss": self.history["val_loss"] if self.history["val_loss"] else [],
+            },
         }
 
-        torch.save(checkpoint, path)
-        print(f"Model saved to {path}")
+        # Save metadata as JSON
+        with open(f"{path}.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        print(f"Model saved to {path}.safetensors and {path}.json")
 
     @classmethod
     def load(cls, path: str, device: Optional[str] = None) -> "LGSSM":
-        """Load model from file.
+        """Load model from file using SafeTensors format.
 
         Args:
-            path: Path to the saved model
+            path: Path to the saved model (without extension)
             device: Device to load the model on
 
         Returns:
             Loaded LGSSM model
         """
-        # Load with weights_only=True for security
-        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        from safetensors.torch import load_file
+        import json
+        from pathlib import Path
 
-        # Recreate config from individual fields
-        config_dict = {
-            "obs_dim": (
-                checkpoint["config_obs_dim"]
-                if checkpoint["config_obs_dim"] != -1
-                else None
-            ),
-            "state_dim": checkpoint["config_state_dim"],
-            "learning_rate": checkpoint["config_learning_rate"],
-            "max_epochs": checkpoint["config_max_epochs"],
-            "batch_size": (
-                checkpoint["config_batch_size"]
-                if checkpoint["config_batch_size"] != -1
-                else None
-            ),
-            "patience": checkpoint["config_patience"],
-            "min_delta": checkpoint["config_min_delta"],
-            "weight_decay": checkpoint["config_weight_decay"],
-            "gradient_clip": checkpoint["config_gradient_clip"],
-            "A_init_scale": checkpoint["config_A_init_scale"],
-            "C_init_scale": checkpoint["config_C_init_scale"],
-            "Q_init_scale": checkpoint["config_Q_init_scale"],
-            "R_init_scale": checkpoint["config_R_init_scale"],
-            "use_scaler": checkpoint["config_use_scaler"],
-            "device": device if device is not None else checkpoint["config_device"],
-            "dtype": checkpoint["config_dtype"],
-            "seed": (
-                checkpoint["config_seed"] if checkpoint["config_seed"] != -1 else None
-            ),
-        }
+        # Ensure path doesn't have extension
+        path = str(Path(path).with_suffix(""))
+
+        # Load metadata from JSON
+        with open(f"{path}.json", "r") as f:
+            metadata = json.load(f)
+
+        config_dict = metadata["config"]
+        if device is not None:
+            config_dict["device"] = device
 
         config = LGSSMConfig(**config_dict)
 
@@ -620,9 +575,10 @@ class LGSSM(nn.Module):
         if config.obs_dim is not None:
             model.build(config.obs_dim)
 
-        # Load state dict
-        # Filter out scaler parameters if they exist in state dict but model hasn't registered them
-        state_dict = checkpoint["model_state_dict"]
+        # Load weights from SafeTensors
+        state_dict = load_file(f"{path}.safetensors")
+
+        # Handle scaler parameters
         if config.use_scaler:
             # Make sure buffers are registered
             if "scaler_mean" in state_dict and model.scaler_mean is None:
@@ -639,18 +595,8 @@ class LGSSM(nn.Module):
         model.load_state_dict(state_dict)
 
         # Load history
-        model.history = {
-            "loss": (
-                checkpoint["history_loss"].tolist()
-                if "history_loss" in checkpoint
-                else []
-            ),
-            "val_loss": (
-                checkpoint["history_val_loss"].tolist()
-                if "history_val_loss" in checkpoint
-                else []
-            ),
-        }
+        model.history = metadata.get("history", {"loss": [], "val_loss": []})
 
-        print(f"Model loaded from {path}")
+        model.eval()
+        print(f"Model loaded from {path}.safetensors and {path}.json")
         return model

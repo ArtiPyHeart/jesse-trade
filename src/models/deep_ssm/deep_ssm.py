@@ -647,16 +647,25 @@ class DeepSSM:
 
     def save(self, path: str):
         """
-        Save model to disk.
+        Save model to disk using SafeTensors format.
 
         Args:
-            path: Path to save model
+            path: Path to save model (without extension)
         """
-        # Save model weights separately for weights_only=True compatibility
-        model_dict = {"model_state_dict": self.model.state_dict(), "version": "2.0.0"}
+        from safetensors.torch import save_file
+        import json
+        from pathlib import Path
 
-        # Save metadata separately as JSON-serializable dict
+        # Ensure path doesn't have extension
+        path = str(Path(path).with_suffix(""))
+
+        # Save model weights using SafeTensors
+        state_dict = self.model.state_dict()
+        save_file(state_dict, f"{path}.safetensors")
+
+        # Prepare metadata as JSON-serializable dict
         metadata = {
+            "version": "2.0.0",  # New version for SafeTensors
             "config": asdict(self.config),
             "is_fitted": self.is_fitted,
             "training_history": self.training_history,
@@ -673,34 +682,35 @@ class DeepSSM:
             metadata["scaler_mean"] = None
             metadata["scaler_std"] = None
 
-        # Save everything in a single file but structured for weights_only loading
-        checkpoint = {**model_dict, "metadata": metadata}
+        # Save metadata as JSON
+        with open(f"{path}.json", "w") as f:
+            json.dump(metadata, f, indent=2)
 
-        torch.save(checkpoint, path)
-        print(f"Model saved to {path}")
+        print(f"Model saved to {path}.safetensors and {path}.json")
 
     @classmethod
     def load(cls, path: str, device: Optional[str] = None) -> "DeepSSM":
         """
-        Load model from disk (supports only weights_only=True for security).
+        Load model from disk using SafeTensors format.
 
         Args:
-            path: Path to load model from
+            path: Path to load model from (without extension)
             device: Device to load model to
 
         Returns:
             Loaded model
         """
-        # Load with weights_only=True for security
-        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        from safetensors.torch import load_file
+        import json
+        from pathlib import Path
 
-        # Extract metadata
-        if "metadata" not in checkpoint:
-            raise ValueError(
-                "Invalid model format. Please re-save the model with the latest version."
-            )
+        # Ensure path doesn't have extension
+        path = str(Path(path).with_suffix(""))
 
-        metadata = checkpoint["metadata"]
+        # Load metadata from JSON
+        with open(f"{path}.json", "r") as f:
+            metadata = json.load(f)
+
         config_dict = metadata["config"]
         training_history = metadata.get("training_history", [])
         is_fitted = metadata.get("is_fitted", True)
@@ -719,15 +729,21 @@ class DeepSSM:
 
         config = DeepSSMConfig(**config_dict)
 
+        # Create model instance
         model = cls(config)
-        model.model.load_state_dict(checkpoint["model_state_dict"])
+
+        # Load weights from SafeTensors
+        state_dict = load_file(f"{path}.safetensors")
+        model.model.load_state_dict(state_dict)
+
+        # Set model attributes
         model.scaler_params = scaler_params
         model.training_history = training_history
         model.is_fitted = is_fitted
 
         model.model.eval()
 
-        print(f"Model loaded from {path}")
+        print(f"Model loaded from {path}.safetensors and {path}.json")
         return model
 
     def create_realtime_processor(self) -> "DeepSSMRealTime":
