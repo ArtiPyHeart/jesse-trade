@@ -4,6 +4,7 @@ from typing import Union
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+import matplotlib.dates as mdates
 
 # 配置matplotlib中文显示
 import platform
@@ -147,9 +148,37 @@ class ConfidenceSliceAnalyzer:
             self.data["open"] = self.coefficient * self.data["high"] / self.capital
 
             # 绘图
-            fig = plt.figure(figsize=(20, 10))
-            plt.plot(self.data["timestamp"], self.data["open"])
-            plt.xticks(range(0, self.data_size, int(self.data_size / tick_count)))
+            fig, ax = plt.subplots(figsize=(20, 10))
+
+            # 检测并转换时间数据类型
+            time_series = self.data["timestamp"]
+
+            # 尝试转换为datetime（如果还不是）
+            try:
+                # 如果已经是datetime类型，这不会改变它
+                # 如果是字符串，会尝试解析
+                time_series = pd.to_datetime(time_series)
+                is_datetime = True
+            except:
+                # 无法转换为datetime，保持原样
+                is_datetime = False
+
+            # 绘制数据
+            ax.plot(time_series, self.data["open"])
+
+            # 设置x轴刻度
+            if is_datetime:
+                # 对于datetime数据，使用matplotlib.dates处理
+                # 设置合理的刻度数量
+                locator = mdates.AutoDateLocator(maxticks=tick_count)
+                formatter = mdates.ConciseDateFormatter(locator)
+                ax.xaxis.set_major_locator(locator)
+                ax.xaxis.set_major_formatter(formatter)
+            else:
+                # 对于非datetime数据（字符串等），手动设置刻度
+                tick_indices = list(range(0, self.data_size, max(1, int(self.data_size / tick_count))))
+                ax.set_xticks(tick_indices)
+                ax.set_xticklabels([str(time_series.iloc[i]) for i in tick_indices])
 
             # 添加标题和标签
             plt.title(
