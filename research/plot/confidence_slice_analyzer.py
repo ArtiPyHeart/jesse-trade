@@ -37,6 +37,7 @@ class ConfidenceSliceAnalyzer:
         capital: float = 10000,
         coefficient: float = 0.25,
         output_dir: str = "./temp/",
+        full_range: bool = True,
     ):
         """
         初始化分析器
@@ -57,11 +58,14 @@ class ConfidenceSliceAnalyzer:
             收益系数
         output_dir : str
             输出目录
+        full_range : bool
+            是否分析完整的0-1区间 (True时分析0-1，False时只分析0.5-1)
         """
         self.granularity = granularity
         self.capital = capital
         self.coefficient = coefficient
         self.output_dir = output_dir
+        self.full_range = full_range
 
         # 验证并准备数据
         self._validate_data(time_data, score_data, volume_data)
@@ -105,11 +109,51 @@ class ConfidenceSliceAnalyzer:
     def _get_slice_params(self):
         """根据粒度获取切片参数"""
         if self.granularity == 0.1:
-            return 1.0, 0.9, 5
+            if self.full_range:
+                # 0-1完整区间，10个切片
+                return [(1.0, 0.9), (0.9, 0.8), (0.8, 0.7), (0.7, 0.6), (0.6, 0.5),
+                        (0.5, 0.4), (0.4, 0.3), (0.3, 0.2), (0.2, 0.1), (0.1, 0.0)]
+            else:
+                # 只分析0.5-1区间，5个切片
+                return [(1.0, 0.9), (0.9, 0.8), (0.8, 0.7), (0.7, 0.6), (0.6, 0.5)]
         elif self.granularity == 0.05:
-            return 1.0, 0.95, 10
+            if self.full_range:
+                # 0-1完整区间，20个切片
+                slices = []
+                upper = 1.0
+                for _ in range(20):
+                    lower = round(upper - 0.05, 2)
+                    slices.append((upper, lower))
+                    upper = lower
+                return slices
+            else:
+                # 只分析0.5-1区间，10个切片
+                slices = []
+                upper = 1.0
+                for _ in range(10):
+                    lower = round(upper - 0.05, 2)
+                    slices.append((upper, lower))
+                    upper = lower
+                return slices
         elif self.granularity == 0.01:
-            return 1.0, 0.99, 50
+            if self.full_range:
+                # 0-1完整区间，100个切片
+                slices = []
+                upper = 1.0
+                for _ in range(100):
+                    lower = round(upper - 0.01, 2)
+                    slices.append((upper, lower))
+                    upper = lower
+                return slices
+            else:
+                # 只分析0.5-1区间，50个切片
+                slices = []
+                upper = 1.0
+                for _ in range(50):
+                    lower = round(upper - 0.01, 2)
+                    slices.append((upper, lower))
+                    upper = lower
+                return slices
         else:
             raise ValueError(
                 f"不支持的粒度值: {self.granularity}。"
@@ -122,26 +166,33 @@ class ConfidenceSliceAnalyzer:
         os.makedirs(self.output_dir, exist_ok=True)
 
         # 获取切片参数
-        da, xiao, z = self._get_slice_params()
+        slices = self._get_slice_params()
 
         # 计算x轴刻度数（基于数据量，最多25个）
         tick_count = min(25, self.data_size)
 
         # 对每个切片进行分析
-        for i in range(z):
+        for upper, lower in slices:
             # 初始化final列
             self.data["final"] = 0
 
             # 筛选当前置信度区间
-            mask = (self.data["score"] < da) & (self.data["score"] >= xiao)
-            self.data["final"] = np.where(mask, self.data["volume"], 0)
+            mask = (self.data["score"] < upper) & (self.data["score"] >= lower)
+
+            # 根据置信度区间决定交易方向
+            if self.full_range:
+                if lower >= 0.5:
+                    # 置信度 > 0.5，做多，volume为正
+                    self.data["final"] = np.where(mask, self.data["volume"], 0)
+                else:
+                    # 置信度 < 0.5，做空，volume为负（表示做空收益）
+                    self.data["final"] = np.where(mask, -self.data["volume"], 0)
+            else:
+                # 原逻辑，只考虑做多
+                self.data["final"] = np.where(mask, self.data["volume"], 0)
 
             # 计算样本占比
             true_count = mask.sum() / self.data_size
-
-            # 更新置信度边界
-            da = round((da - self.granularity), 2)
-            xiao = round((xiao - self.granularity), 2)
 
             # 计算累积收益
             self.data["high"] = self.data["final"].cumsum()
@@ -181,8 +232,15 @@ class ConfidenceSliceAnalyzer:
                 ax.set_xticklabels([str(time_series.iloc[i]) for i in tick_indices])
 
             # 添加标题和标签
+            direction = ""
+            if self.full_range:
+                if lower >= 0.5:
+                    direction = " (做多)"
+                else:
+                    direction = " (做空)"
+
             plt.title(
-                f"置信度区间 [{xiao:.2f}, {da:.2f}] - 样本占比: {true_count:.2%} - 累积收益曲线",
+                f"置信度区间 [{lower:.2f}, {upper:.2f}]{direction} - 样本占比: {true_count:.2%} - 累积收益曲线",
                 fontsize=14,
                 fontweight="bold",
             )
@@ -195,13 +253,13 @@ class ConfidenceSliceAnalyzer:
             plt.grid(1)
 
             # 保存图片 - 更详细的文件名
-            filename = f"conf_{xiao:.2f}_{da:.2f}_ratio_{true_count:.4f}.jpg"
+            filename = f"conf_{lower:.2f}_{upper:.2f}_ratio_{true_count:.4f}.jpg"
             filepath = os.path.join(self.output_dir, filename)
             plt.savefig(filepath)
             plt.close()
 
             print(
-                f"已生成: {filename} (置信度区间: [{xiao:.2f}, {da:.2f}], 样本占比: {true_count:.2%})"
+                f"已生成: {filename} (置信度区间: [{lower:.2f}, {upper:.2f}]{direction}, 样本占比: {true_count:.2%})"
             )
 
 
@@ -213,6 +271,7 @@ def analyze_confidence_slices(
     capital: float = 1000,
     coefficient: float = 0.25,
     output_dir: str = "./temp/",
+    full_range: bool = True,
 ):
     """
     便捷函数：执行置信度切片分析
@@ -233,6 +292,8 @@ def analyze_confidence_slices(
         收益系数
     output_dir : str
         输出目录
+    full_range : bool
+        是否分析完整的0-1区间 (True时分析0-1，False时只分析0.5-1)
     """
     analyzer = ConfidenceSliceAnalyzer(
         time_data=time_data,
@@ -242,5 +303,6 @@ def analyze_confidence_slices(
         capital=capital,
         coefficient=coefficient,
         output_dir=output_dir,
+        full_range=full_range,
     )
     analyzer.analyze()

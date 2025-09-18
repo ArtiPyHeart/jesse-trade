@@ -11,6 +11,24 @@ from typing import Optional, Dict, Tuple, Union, List
 
 import numpy as np
 import pandas as pd
+
+# Import PyTorch configuration first to ensure CPU usage
+try:
+    # Try importing from project root
+    import sys
+    from pathlib import Path
+    project_root = Path(__file__).parent.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    from pytorch_config import get_device, get_torch_dtype
+except ImportError:
+    # Fallback functions if pytorch_config is not available
+    def get_device():
+        return 'cpu'
+    def get_torch_dtype(dtype_str='float32'):
+        import torch
+        return torch.float32 if dtype_str == 'float32' else torch.float64
+
 import torch
 import torch.nn as nn
 from torch.optim import Adam
@@ -42,20 +60,16 @@ class DeepSSMConfig:
 
     use_scaler: bool = True  # Whether to use StandardScaler for input data
 
-    device: str = "auto"
+    device: str = "cpu"  # Force CPU usage
     dtype: str = "float32"
     seed: Optional[int] = 42
 
     def __post_init__(self):
-        if self.device == "auto":
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Always use CPU, ignore auto detection
+        self.device = get_device()  # Returns 'cpu'
 
-        if self.dtype == "float32":
-            self.torch_dtype = torch.float32
-        elif self.dtype == "float64":
-            self.torch_dtype = torch.float64
-        else:
-            raise ValueError(f"Unsupported dtype: {self.dtype}")
+        # Use helper function to get torch dtype
+        self.torch_dtype = get_torch_dtype(self.dtype)
 
 
 def set_seed(seed: int):
