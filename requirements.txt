@@ -7,4 +7,4 @@ chardet
 torch
 safetensors
 giotto-ph
-jesse~=1.9.8
+jesse

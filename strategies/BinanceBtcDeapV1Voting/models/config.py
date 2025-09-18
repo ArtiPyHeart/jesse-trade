@@ -3,8 +3,6 @@ from pathlib import Path
 
 import pandas as pd
 
-# Ensure PyTorch uses CPU by importing src module first
-import src  # This will trigger pytorch_config import
 from src.models.deep_ssm.deep_ssm import DeepSSM
 from src.models.lgssm import LGSSM
 
@@ -22,7 +20,9 @@ class DeepSSMContainer:
     def __init__(self):
         path_deep_ssm = Path(__file__).parent / "deep_ssm"
         # Explicitly load with CPU device
-        self.model: DeepSSM = DeepSSM.load(path_deep_ssm.resolve().as_posix(), device="cpu")
+        self.model: DeepSSM = DeepSSM.load(
+            path_deep_ssm.resolve().as_posix(), device="cpu"
+        )
         self.model_inference = self.model.create_realtime_processor()
 
     def transform(self, df):

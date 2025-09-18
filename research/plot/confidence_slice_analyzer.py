@@ -111,8 +111,18 @@ class ConfidenceSliceAnalyzer:
         if self.granularity == 0.1:
             if self.full_range:
                 # 0-1完整区间，10个切片
-                return [(1.0, 0.9), (0.9, 0.8), (0.8, 0.7), (0.7, 0.6), (0.6, 0.5),
-                        (0.5, 0.4), (0.4, 0.3), (0.3, 0.2), (0.2, 0.1), (0.1, 0.0)]
+                return [
+                    (1.0, 0.9),
+                    (0.9, 0.8),
+                    (0.8, 0.7),
+                    (0.7, 0.6),
+                    (0.6, 0.5),
+                    (0.5, 0.4),
+                    (0.4, 0.3),
+                    (0.3, 0.2),
+                    (0.2, 0.1),
+                    (0.1, 0.0),
+                ]
             else:
                 # 只分析0.5-1区间，5个切片
                 return [(1.0, 0.9), (0.9, 0.8), (0.8, 0.7), (0.7, 0.6), (0.6, 0.5)]
@@ -179,17 +189,17 @@ class ConfidenceSliceAnalyzer:
             # 筛选当前置信度区间
             mask = (self.data["score"] < upper) & (self.data["score"] >= lower)
 
-            # 根据置信度区间决定交易方向
-            if self.full_range:
-                if lower >= 0.5:
-                    # 置信度 > 0.5，做多，volume为正
-                    self.data["final"] = np.where(mask, self.data["volume"], 0)
-                else:
-                    # 置信度 < 0.5，做空，volume为负（表示做空收益）
-                    self.data["final"] = np.where(mask, -self.data["volume"], 0)
-            else:
-                # 原逻辑，只考虑做多
-                self.data["final"] = np.where(mask, self.data["volume"], 0)
+            # # 根据置信度区间决定交易方向
+            # if self.full_range:
+            #     if lower >= 0.5:
+            #         # 置信度 > 0.5，做多，volume为正
+            #         self.data["final"] = np.where(mask, self.data["volume"], 0)
+            #     else:
+            #         # 置信度 < 0.5，做空，volume为负（表示做空收益）
+            #         self.data["final"] = np.where(mask, -self.data["volume"], 0)
+            # else:
+            #     # 原逻辑，只考虑做多
+            self.data["final"] = np.where(mask, self.data["volume"], 0)
 
             # 计算样本占比
             true_count = mask.sum() / self.data_size
@@ -227,7 +237,9 @@ class ConfidenceSliceAnalyzer:
                 ax.xaxis.set_major_formatter(formatter)
             else:
                 # 对于非datetime数据（字符串等），手动设置刻度
-                tick_indices = list(range(0, self.data_size, max(1, int(self.data_size / tick_count))))
+                tick_indices = list(
+                    range(0, self.data_size, max(1, int(self.data_size / tick_count)))
+                )
                 ax.set_xticks(tick_indices)
                 ax.set_xticklabels([str(time_series.iloc[i]) for i in tick_indices])
 
