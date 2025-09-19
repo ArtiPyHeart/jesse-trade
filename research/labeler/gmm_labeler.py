@@ -9,7 +9,7 @@ from hmmlearn.hmm import GMMHMM
 from jesse.helpers import timestamp_to_time
 
 
-def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int) -> dict:
+def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int, verbose: bool = True) -> dict:
     def objective(trial: optuna.Trial):
         close_arr = candles[:, 2]
         high_arr = candles[:, 3][lag_n:]
@@ -55,6 +55,9 @@ def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int) -> dict:
 
         return final_ret
 
+    if not verbose:
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
     study = optuna.create_study(
         direction="maximize",
         sampler=optuna.samplers.TPESampler(n_startup_trials=5),
@@ -64,10 +67,10 @@ def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int) -> dict:
 
 
 class GMMLabeler:
-    def __init__(self, candles: np.ndarray, lag_n: int):
+    def __init__(self, candles: np.ndarray, lag_n: int, verbose: bool = True):
         self.lag_n = lag_n
 
-        random_state = gmm_labeler_find_best_params(candles, lag_n)["random_state"]
+        random_state = gmm_labeler_find_best_params(candles, lag_n, verbose)["random_state"]
         self.gmm_model = GMMHMM(
             n_components=2,
             n_mix=3,

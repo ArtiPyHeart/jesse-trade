@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import lightgbm as lgb
 
 from src.models.deep_ssm.deep_ssm import DeepSSM
 from src.models.lgssm import LGSSM
@@ -11,9 +12,14 @@ with open(path_features) as f:
     feature_info = json.load(f)
 
 FEAT_FRACDIFF = feature_info["fracdiff"]
-FEAT_L4 = feature_info["L4"]
 FEAT_L5 = feature_info["L5"]
 FEAT_L6 = feature_info["L6"]
+FEAT_L7 = feature_info["L7"]
+ALL_RAW_FEAT = [
+    i
+    for i in set(FEAT_FRACDIFF + FEAT_L5 + FEAT_L6 + FEAT_L7)
+    if not i.startswith("deep_ssm") and not i.startswith("lg_ssm")
+]
 
 
 class DeepSSMContainer:
@@ -71,3 +77,17 @@ class LGSSMContainer:
             columns=[f"lg_ssm_{i}" for i in range(self.state.shape[1])],
         )
         return df_res
+
+
+class LGBMContainer:
+    def __init__(self, model_name: str, is_live_trading=False):
+        if is_live_trading:
+            path_model = Path(__file__).parent / f"{model_name}_prod.txt"
+        else:
+            path_model = Path(__file__).parent / f"{model_name}.txt"
+
+        self.model = lgb.Booster(model_file=path_model)
+
+    def predict(self, df_one_row: pd.DataFrame):
+        pred_prob = self.model.predict(df_one_row)[-1]
+        return 1 if pred_prob > 0.5 else -1

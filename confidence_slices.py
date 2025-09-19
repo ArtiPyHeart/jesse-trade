@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from jesse.helpers import date_to_timestamp
 from strategies.BinanceBtcDeapV1Voting.models.config import (
-    FEAT_L6,
+    FEAT_L7,
     FEAT_FRACDIFF,
     DeepSSMContainer,
     LGSSMContainer,
@@ -35,7 +35,7 @@ def main():
         print(f"  - df_lg_ssm shape: {df_lg_ssm.shape}")
 
         df_feat_l4_full = pd.concat([df_deep_ssm, df_lg_ssm, df_feat_raw], axis=1)[
-            FEAT_L6
+            FEAT_L7
         ]
         print(f"✓ 特征转换完成: shape={df_feat_l4_full.shape}")
 

@@ -14,7 +14,7 @@
 ### 1. 创建新的优化实验
 
 ```python
-from tuning_pipeline import tune_pipeline
+from pipeline_find_bar import tune_pipeline
 from research.optuna_config import create_robust_study, safe_optimize
 
 # 创建研究（会自动保存到硬盘）
