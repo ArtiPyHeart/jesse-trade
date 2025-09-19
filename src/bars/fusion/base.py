@@ -31,7 +31,7 @@ class FusionBarContainerBase(ABC):
 
     @merged_bars.setter
     def merged_bars(self, merged_bars: np.ndarray):
-        if len(merged_bars) > self.max_bars:
+        if len(merged_bars) > self.max_bars > 0:
             merged_bars = merged_bars[-self.max_bars :]
         self._merged_bars = merged_bars
 
