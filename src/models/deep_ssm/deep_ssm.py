@@ -17,6 +17,7 @@ try:
     # Try importing from project root
     import sys
     from pathlib import Path
+
     project_root = Path(__file__).parent.parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
@@ -24,10 +25,13 @@ try:
 except ImportError:
     # Fallback functions if pytorch_config is not available
     def get_device():
-        return 'cpu'
-    def get_torch_dtype(dtype_str='float32'):
+        return "cpu"
+
+    def get_torch_dtype(dtype_str="float32"):
         import torch
-        return torch.float32 if dtype_str == 'float32' else torch.float64
+
+        return torch.float32 if dtype_str == "float32" else torch.float64
+
 
 import torch
 import torch.nn as nn
@@ -49,7 +53,7 @@ class DeepSSMConfig:
     observation_hidden: int = 128
 
     learning_rate: float = 0.001
-    max_epochs: int = 50
+    max_epochs: int = 100
     batch_size: int = 32
     patience: int = 5
     min_delta: float = 0.01

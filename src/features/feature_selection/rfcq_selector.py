@@ -5,7 +5,7 @@ from typing import List, Optional, Union
 import numba as nb
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV
 from tqdm.auto import tqdm
 
@@ -73,8 +73,13 @@ class RFCQSelector:
     max_features: int, 默认=None
         要选择的特征数量。如果为None，则默认为特征总数的20%。
 
-    scoring: str, 默认='accuracy'
-        评估随机森林性能的指标。
+    task_type: str, 默认='auto'
+        任务类型：'classification', 'regression' 或 'auto'（自动检测）
+
+    scoring: str, 默认=None
+        评估随机森林性能的指标。如果为None，根据任务类型自动设置：
+        - 分类任务：'roc_auc'
+        - 回归任务：'neg_root_mean_squared_error'
 
     cv: int, 默认=3
         交叉验证的折数。
@@ -106,7 +111,8 @@ class RFCQSelector:
     def __init__(
         self,
         max_features: Optional[int] = None,
-        scoring: str = "roc_auc",
+        task_type: str = "auto",
+        scoring: Optional[str] = None,
         cv: int = 3,
         param_grid: Optional[dict] = None,
         verbose: bool = True,
@@ -114,7 +120,19 @@ class RFCQSelector:
         n_jobs: Optional[int] = -1,
     ):
         self.max_features = max_features
-        self.scoring = scoring
+        self.task_type = task_type
+
+        # 根据任务类型自动设置评分指标
+        if scoring is None:
+            if task_type == "classification":
+                self.scoring = "roc_auc"
+            elif task_type == "regression":
+                self.scoring = "neg_root_mean_squared_error"
+            else:  # auto
+                self.scoring = None  # 将在fit时根据数据类型决定
+        else:
+            self.scoring = scoring
+
         self.cv = cv
         self.param_grid = param_grid
         self.verbose = verbose
@@ -137,13 +155,34 @@ class RFCQSelector:
         X_values = X.values
         y_values = y.values
 
-        # 创建随机森林分类器
-        model = RandomForestClassifier(
-            n_estimators=300,
-            class_weight="balanced",
-            random_state=self.random_state,
-            n_jobs=self.n_jobs,
-        )
+        # 自动检测任务类型
+        if self.task_type == "auto":
+            unique_values = len(np.unique(y_values))
+            # 如果唯一值数量小于5或者比样本数的1%还少，视为分类任务
+            is_classification = unique_values < min(5, len(y_values) * 0.01)
+        else:
+            is_classification = self.task_type == "classification"
+
+        # 确定scoring（如果在构造时未设置）
+        if self.scoring is None:
+            scoring = "roc_auc" if is_classification else "neg_root_mean_squared_error"
+        else:
+            scoring = self.scoring
+
+        # 根据任务类型创建模型
+        if is_classification:
+            model = RandomForestClassifier(
+                n_estimators=300,
+                class_weight="balanced",
+                random_state=self.random_state,
+                n_jobs=self.n_jobs,
+            )
+        else:
+            model = RandomForestRegressor(
+                n_estimators=300,
+                random_state=self.random_state,
+                n_jobs=self.n_jobs,
+            )
 
         # 设置参数网格
         if self.param_grid:
@@ -153,7 +192,7 @@ class RFCQSelector:
 
         # 网格搜索
         cv_model = GridSearchCV(
-            model, cv=self.cv, scoring=self.scoring, param_grid=param_grid
+            model, cv=self.cv, scoring=scoring, param_grid=param_grid
         )
 
         cv_model.fit(X_values, y_values)

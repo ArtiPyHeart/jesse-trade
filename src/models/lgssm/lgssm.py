@@ -17,6 +17,7 @@ try:
     # Try importing from project root
     import sys
     from pathlib import Path
+
     project_root = Path(__file__).parent.parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
@@ -24,10 +25,13 @@ try:
 except ImportError:
     # Fallback functions if pytorch_config is not available
     def get_device():
-        return 'cpu'
-    def get_torch_dtype(dtype_str='float32'):
+        return "cpu"
+
+    def get_torch_dtype(dtype_str="float32"):
         import torch
-        return torch.float32 if dtype_str == 'float32' else torch.float64
+
+        return torch.float32 if dtype_str == "float32" else torch.float64
+
 
 import torch
 import torch.nn as nn
@@ -49,7 +53,7 @@ class LGSSMConfig:
 
     # Training parameters
     learning_rate: float = 0.01
-    max_epochs: int = 50
+    max_epochs: int = 100
     batch_size: int = None  # Use full batch by default
     patience: int = 10
     min_delta: float = 0.001
@@ -122,6 +126,9 @@ class LGSSM(nn.Module):
         # Training history
         self.history = {"loss": [], "val_loss": []}
 
+        # Track whether model has been fitted
+        self._is_fitted = False
+
     def build(self, obs_dim: int):
         """Initialize model parameters given observation dimension."""
         self.config.obs_dim = obs_dim
@@ -157,6 +164,11 @@ class LGSSM(nn.Module):
         self.kalman_filter = KalmanFilter(
             state_dim=state_dim, obs_dim=obs_dim, device=self.device, dtype=self.dtype
         )
+
+    @property
+    def is_fitted(self) -> bool:
+        """Check if model has been fitted."""
+        return self._is_fitted
 
     @property
     def Q(self) -> torch.Tensor:
@@ -408,6 +420,9 @@ class LGSSM(nn.Module):
         if X_val is not None and best_state_dict is not None:
             self.load_state_dict(best_state_dict)
 
+        # Mark model as fitted
+        self._is_fitted = True
+
         return self
 
     def predict(
@@ -548,7 +563,9 @@ class LGSSM(nn.Module):
             "config": config_dict,
             "history": {
                 "loss": self.history["loss"] if self.history["loss"] else [],
-                "val_loss": self.history["val_loss"] if self.history["val_loss"] else [],
+                "val_loss": (
+                    self.history["val_loss"] if self.history["val_loss"] else []
+                ),
             },
         }
 

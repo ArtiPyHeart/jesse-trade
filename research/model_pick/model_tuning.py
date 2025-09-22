@@ -3,6 +3,7 @@ import optuna
 import pandas as pd
 from jesse.helpers import date_to_timestamp
 from sklearn.metrics import f1_score
+from sklearn.model_selection import KFold, StratifiedKFold
 import lightgbm as lgb
 
 from .feature_select import FeatureSelector
@@ -56,10 +57,13 @@ class ModelTuning:
                 "lambda_l2": trial.suggest_float("lambda_l2", 1e-4, 100),
             }
             dtrain = lgb.Dataset(all_feats, self.train_Y)
+            # 对于分类任务，使用 StratifiedKFold 保持类别平衡
+            folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
             model_res = lgb.cv(
                 params,
                 dtrain,
                 num_boost_round=trial.suggest_int("num_boost_round", 100, 1500),
+                folds=folds,
                 feval=eval_metric,
             )
             return model_res[f"valid {METRIC}-mean"][-1]
@@ -113,10 +117,13 @@ class ModelTuning:
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
 
             dtrain = lgb.Dataset(all_feats, self.train_Y)
+            # 对于回归任务，使用普通的 KFold 而不是 StratifiedKFold
+            folds = KFold(n_splits=5, shuffle=True, random_state=42)
             model_res = lgb.cv(
                 params,
                 dtrain,
                 num_boost_round=trial.suggest_int("num_boost_round", 100, 1500),
+                folds=folds,
             )
             return -model_res["valid rmse-mean"][-1]  # 负值因为要最小化 RMSE
 

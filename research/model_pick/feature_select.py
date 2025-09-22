@@ -39,7 +39,7 @@ class FeatureSelector:
         return df_deep_ssm
 
     def get_lg_ssm_features(self, train_x):
-        feat_lg_ssm = self.lg_ssm_model.transform(train_x[FRAC_FEATS])
+        feat_lg_ssm = self.lg_ssm_model.predict(train_x[FRAC_FEATS])
         df_lg_ssm = pd.DataFrame(
             feat_lg_ssm,
             columns=[f"lg_ssm_{i}" for i in range(feat_lg_ssm.shape[1])],

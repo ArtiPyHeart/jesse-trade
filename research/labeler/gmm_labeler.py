@@ -4,12 +4,14 @@ import optuna
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from hmmlearn.hmm import GMMHMM
 from jesse.helpers import timestamp_to_time
+from plotly.subplots import make_subplots
 
 
-def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int, verbose: bool = True) -> dict:
+def gmm_labeler_find_best_params(
+    candles: np.ndarray, lag_n: int, verbose: bool = True
+) -> dict:
     def objective(trial: optuna.Trial):
         close_arr = candles[:, 2]
         high_arr = candles[:, 3][lag_n:]
@@ -29,17 +31,25 @@ def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int, verbose: bool 
         assert len(datelist) == len(closeidx)
         assert len(datelist) == len(X)
 
-        gmm = GMMHMM(
-            n_components=2,
-            n_mix=3,
-            covariance_type="diag",
-            n_iter=1000,
-            # weights_prior=2,
-            means_weight=0.5,
-            random_state=trial.suggest_int("random_state", 0, 1000),
-        )
-        gmm.fit(X)
-        latent_states_sequence = gmm.predict(X)
+        try:
+            gmm = GMMHMM(
+                n_components=2,
+                n_mix=3,
+                covariance_type="diag",
+                n_iter=1000,
+                # weights_prior=2,
+                means_weight=0.5,
+                random_state=trial.suggest_int("random_state", 0, 1000),
+            )
+            gmm.fit(X)
+            latent_states_sequence = gmm.predict(X)
+        except (ValueError, RuntimeError, np.linalg.LinAlgError) as e:
+            # GMM拟合或预测失败时，返回一个无效值让Optuna忽略这个trial
+            # 使用负无穷或NaN会让Optuna认为这个trial失败
+            if verbose:
+                print(f"GMM failed with error: {e}")
+            return float("-inf")  # 返回负无穷，因为我们在maximize
+
         data = pd.DataFrame(
             {
                 "datelist": datelist,
@@ -62,7 +72,24 @@ def gmm_labeler_find_best_params(candles: np.ndarray, lag_n: int, verbose: bool 
         direction="maximize",
         sampler=optuna.samplers.TPESampler(n_startup_trials=5),
     )
-    study.optimize(objective, n_trials=10)
+    study.optimize(objective, n_trials=15)
+
+    # 检查是否有有效的trial
+    if (
+        len(
+            [
+                t
+                for t in study.trials
+                if t.value is not None and t.value != float("-inf")
+            ]
+        )
+        == 0
+    ):
+        # 如果所有trial都失败了，返回一个默认的random_state
+        if verbose:
+            print("Warning: All GMM trials failed, using default random_state=42")
+        return {"random_state": 42}
+
     return study.best_params
 
 
@@ -70,7 +97,9 @@ class GMMLabeler:
     def __init__(self, candles: np.ndarray, lag_n: int, verbose: bool = True):
         self.lag_n = lag_n
 
-        random_state = gmm_labeler_find_best_params(candles, lag_n, verbose)["random_state"]
+        random_state = gmm_labeler_find_best_params(candles, lag_n, verbose)[
+            "random_state"
+        ]
         self.gmm_model = GMMHMM(
             n_components=2,
             n_mix=3,
@@ -148,8 +177,8 @@ class GMMLabeler:
                     x=self._datelist,
                     y=self.state_probabilities[:, i],
                     name=f"P(state={i})",
-                    mode='lines',
-                    fill='tozeroy',  # 填充到0，形成面积图
+                    mode="lines",
+                    fill="tozeroy",  # 填充到0，形成面积图
                     line=dict(color=colors[i % len(colors)], width=1),
                     fillcolor=colors[i % len(colors)],
                     opacity=0.7,
@@ -167,9 +196,9 @@ class GMMLabeler:
         fig.update_xaxes(title_text="时间", row=1 + n_states, col=1)
 
         fig.update_layout(
-            title="隐含状态序列与状态概率", 
+            title="隐含状态序列与状态概率",
             showlegend=True,
-            hovermode='x unified'  # 统一的悬停模式，更好地显示多个子图的数据
+            hovermode="x unified",  # 统一的悬停模式，更好地显示多个子图的数据
         )
 
         fig.show()
