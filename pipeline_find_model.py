@@ -133,13 +133,8 @@ class ModelSearchTracker:
         for model_type in ["classifier", "regressor"]:
             type_df = self.results_df[self.results_df["model_type"] == model_type]
             if not type_df.empty:
-                best_row = type_df.loc[
-                    (
-                        type_df["best_score"].idxmax()
-                        if model_type == "classifier"
-                        else type_df["best_score"].idxmin()
-                    )
-                ]
+                # 分类器和回归器（R²）都是越大越好
+                best_row = type_df.loc[type_df["best_score"].idxmax()]
                 print(f"\n{model_type.upper()} 最佳模型:")
                 print(f"  - Log Return Lag: {int(best_row['log_return_lag'])}")
                 print(f"  - Pred Next: {int(best_row['pred_next'])}")

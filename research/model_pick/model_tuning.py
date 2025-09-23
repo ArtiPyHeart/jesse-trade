@@ -2,7 +2,7 @@ import numpy as np
 import optuna
 import pandas as pd
 from jesse.helpers import date_to_timestamp
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, r2_score
 from sklearn.model_selection import KFold, StratifiedKFold
 import lightgbm as lgb
 
@@ -92,7 +92,7 @@ class ModelTuning:
         def objective(trial):
             params = {
                 "objective": "regression",
-                "metric": "rmse",  # 使用正确的别名
+                "metric": ["rmse", "l2"],  # 需要同时指定rmse和l2才能计算r2
                 "num_threads": -1,
                 "verbose": -1,
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
@@ -119,16 +119,28 @@ class ModelTuning:
             dtrain = lgb.Dataset(all_feats, self.train_Y)
             # 对于回归任务，使用普通的 KFold 而不是 StratifiedKFold
             folds = KFold(n_splits=5, shuffle=True, random_state=42)
+
+            # 自定义R²评估函数
+            def r2_eval(preds, eval_dataset):
+                y_true = eval_dataset.get_label()
+                # 计算R²
+                r2 = r2_score(y_true, preds)
+                # LightGBM要求返回(评估名称, 评估值, 是否越大越好)
+                return 'r2', r2, True
+
             model_res = lgb.cv(
                 params,
                 dtrain,
                 num_boost_round=trial.suggest_int("num_boost_round", 100, 1500),
                 folds=folds,
+                feval=r2_eval,  # 使用自定义的R²评估函数
+                return_cvbooster=True,
             )
-            return -model_res["valid rmse-mean"][-1]  # 负值因为要最小化 RMSE
+            # 返回R²分数（已经是越大越好，所以不需要取负）
+            return model_res["valid r2-mean"][-1]
 
         study = optuna.create_study(
-            direction="minimize",  # 回归任务通常最小化损失
+            direction="maximize",  # R²需要最大化
             pruner=optuna.pruners.HyperbandPruner(),
             sampler=optuna.samplers.TPESampler(n_startup_trials=50),
         )
@@ -141,4 +153,4 @@ class ModelTuning:
             **study.best_params,
         }
 
-        return params, -study.best_value  # 返回正的 RMSE 值
+        return params, study.best_value  # 返回R²值
