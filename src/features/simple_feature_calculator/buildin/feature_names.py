@@ -71,3 +71,8 @@ BUILDIN_FEATURES = (
     + [f"cwt_w{w}_{i}" for w in [32, 64, 128, 256] for i in range(21)]
     + [f"vmd_w{w}_{i}" for w in [32, 64, 128, 256] for i in range(3)]
 )
+
+if __name__ == "__main__":
+    assert len(BUILDIN_FEATURES) == len(
+        list(set(BUILDIN_FEATURES))
+    ), "duplicate buildin features"
