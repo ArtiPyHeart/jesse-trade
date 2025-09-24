@@ -22,10 +22,10 @@ plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
 
 class ConfidenceSliceAnalyzer:
     """
-    置信度切片分析工具
+    模型输出切片分析工具
 
-    用于分析机器学习模型的置信度分布，通过精细切片找出真正赚钱的score区间。
-    将0.5以上的置信度进行切片，计算每个切片的累积收益并可视化。
+    用于分析机器学习模型（分类/回归）的输出分布，通过精细切片找出真正赚钱的输出区间。
+    支持任意范围的值，根据阈值判断多空方向，计算每个切片的累积收益并可视化。
     """
 
     def __init__(
@@ -37,7 +37,9 @@ class ConfidenceSliceAnalyzer:
         capital: float = 10000,
         coefficient: float = 0.25,
         output_dir: str = "./temp/",
-        full_range: bool = True,
+        lower_bound: float = 0.0,
+        upper_bound: float = 1.0,
+        threshold: float = 0.5,
     ):
         """
         初始化分析器
@@ -47,25 +49,35 @@ class ConfidenceSliceAnalyzer:
         time_data : array-like
             时间数据
         score_data : array-like
-            置信度数据 (0-1之间)
+            模型输出值（分类任务：0-1之间；回归任务：任意范围）
         volume_data : array-like
             交易量数据
         granularity : float
-            切片粒度 (0.1, 0.05, 或 0.01)
+            切片粒度（建议0.01-0.1之间）
         capital : float
             初始资金
         coefficient : float
             收益系数
         output_dir : str
             输出目录
-        full_range : bool
-            是否分析完整的0-1区间 (True时分析0-1，False时只分析0.5-1)
+        lower_bound : float
+            分析值下限（默认0）
+        upper_bound : float
+            分析值上限（默认1）
+        threshold : float
+            多空分界点（默认0.5）
         """
         self.granularity = granularity
         self.capital = capital
         self.coefficient = coefficient
         self.output_dir = output_dir
-        self.full_range = full_range
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.threshold = threshold
+
+        # 验证参数
+        assert lower_bound < upper_bound, "下限必须小于上限"
+        assert lower_bound <= threshold <= upper_bound, "阈值必须在上下限范围内"
 
         # 验证并准备数据
         self._validate_data(time_data, score_data, volume_data)
@@ -86,13 +98,24 @@ class ConfidenceSliceAnalyzer:
         # 转换为numpy array进行验证
         score_array = np.asarray(score_data)
 
-        # 检查score范围
-        assert np.all(
-            (score_array >= 0) & (score_array <= 1)
-        ), "置信度数据必须在[0,1]范围内"
+        # 检查超出范围的值
+        out_of_range_mask = (score_array < self.lower_bound) | (score_array > self.upper_bound)
+        if np.any(out_of_range_mask):
+            out_count = np.sum(out_of_range_mask)
+            out_ratio = out_count / len(score_array)
+            min_val = np.min(score_array)
+            max_val = np.max(score_array)
+            print(f"\n⚠️ 警告：发现 {out_count} 个超出范围 [{self.lower_bound}, {self.upper_bound}] 的值")
+            print(f"  - 占比: {out_ratio:.2%}")
+            print(f"  - 实际范围: [{min_val:.4f}, {max_val:.4f}]")
+            print(f"  - 超出范围的值将被归类到最近的边界切片\n")
 
-        # 检查粒度值
-        assert self.granularity in [0.1, 0.05, 0.01], "粒度必须是0.1, 0.05或0.01之一"
+        # 检查粒度值的合理性
+        range_size = self.upper_bound - self.lower_bound
+        min_slices = range_size / self.granularity
+        assert min_slices >= 2, f"粒度过大，至少需要2个切片。当前设置将产生 {min_slices:.1f} 个切片"
+        if min_slices > 200:
+            print(f"⚠️ 警告：粒度过小，将产生 {int(min_slices)} 个切片，可能影响性能")
 
     def _prepare_dataframe(
         self,
@@ -107,68 +130,28 @@ class ConfidenceSliceAnalyzer:
         self.data_size = len(self.data)
 
     def _get_slice_params(self):
-        """根据粒度获取切片参数"""
-        if self.granularity == 0.1:
-            if self.full_range:
-                # 0-1完整区间，10个切片
-                return [
-                    (1.0, 0.9),
-                    (0.9, 0.8),
-                    (0.8, 0.7),
-                    (0.7, 0.6),
-                    (0.6, 0.5),
-                    (0.5, 0.4),
-                    (0.4, 0.3),
-                    (0.3, 0.2),
-                    (0.2, 0.1),
-                    (0.1, 0.0),
-                ]
-            else:
-                # 只分析0.5-1区间，5个切片
-                return [(1.0, 0.9), (0.9, 0.8), (0.8, 0.7), (0.7, 0.6), (0.6, 0.5)]
-        elif self.granularity == 0.05:
-            if self.full_range:
-                # 0-1完整区间，20个切片
-                slices = []
-                upper = 1.0
-                for _ in range(20):
-                    lower = round(upper - 0.05, 2)
-                    slices.append((upper, lower))
-                    upper = lower
-                return slices
-            else:
-                # 只分析0.5-1区间，10个切片
-                slices = []
-                upper = 1.0
-                for _ in range(10):
-                    lower = round(upper - 0.05, 2)
-                    slices.append((upper, lower))
-                    upper = lower
-                return slices
-        elif self.granularity == 0.01:
-            if self.full_range:
-                # 0-1完整区间，100个切片
-                slices = []
-                upper = 1.0
-                for _ in range(100):
-                    lower = round(upper - 0.01, 2)
-                    slices.append((upper, lower))
-                    upper = lower
-                return slices
-            else:
-                # 只分析0.5-1区间，50个切片
-                slices = []
-                upper = 1.0
-                for _ in range(50):
-                    lower = round(upper - 0.01, 2)
-                    slices.append((upper, lower))
-                    upper = lower
-                return slices
-        else:
-            raise ValueError(
-                f"不支持的粒度值: {self.granularity}。"
-                f"请使用以下值之一: 0.1, 0.05, 0.01"
-            )
+        """根据上下限和粒度动态生成切片参数"""
+        slices = []
+
+        # 计算切片数量
+        range_size = self.upper_bound - self.lower_bound
+        num_slices = int(range_size / self.granularity)
+
+        # 从上限开始，向下生成切片
+        upper = self.upper_bound
+        for i in range(num_slices):
+            lower = upper - self.granularity
+            # 处理浮点数精度问题
+            lower = round(lower, 10)
+
+            # 确保最后一个切片的下限正好是lower_bound
+            if i == num_slices - 1:
+                lower = self.lower_bound
+
+            slices.append((upper, lower))
+            upper = lower
+
+        return slices
 
     def analyze(self):
         """执行完整的置信度切片分析"""
@@ -186,20 +169,21 @@ class ConfidenceSliceAnalyzer:
             # 初始化final列
             self.data["final"] = 0
 
-            # 筛选当前置信度区间
-            mask = (self.data["score"] < upper) & (self.data["score"] >= lower)
+            # 处理超出范围的值 - 归类到最近的边界切片
+            score_clipped = self.data["score"].clip(self.lower_bound, self.upper_bound)
 
-            # # 根据置信度区间决定交易方向
-            # if self.full_range:
-            #     if lower >= 0.5:
-            #         # 置信度 > 0.5，做多，volume为正
-            #         self.data["final"] = np.where(mask, self.data["volume"], 0)
-            #     else:
-            #         # 置信度 < 0.5，做空，volume为负（表示做空收益）
-            #         self.data["final"] = np.where(mask, -self.data["volume"], 0)
-            # else:
-            #     # 原逻辑，只考虑做多
-            self.data["final"] = np.where(mask, self.data["volume"], 0)
+            # 筛选当前切片区间（包括被归类的超出范围值）
+            mask = (score_clipped < upper) & (score_clipped >= lower)
+
+            # 根据阈值决定交易方向
+            # 切片中心点用于判断该切片的主要交易方向
+            slice_center = (upper + lower) / 2
+            if slice_center >= self.threshold:
+                # 高于阈值，做多，volume为正
+                self.data["final"] = np.where(mask, self.data["volume"], 0)
+            else:
+                # 低于阈值，做空，volume为负（表示做空收益）
+                self.data["final"] = np.where(mask, -self.data["volume"], 0)
 
             # 计算样本占比
             true_count = mask.sum() / self.data_size
@@ -244,15 +228,14 @@ class ConfidenceSliceAnalyzer:
                 ax.set_xticklabels([str(time_series.iloc[i]) for i in tick_indices])
 
             # 添加标题和标签
-            direction = ""
-            if self.full_range:
-                if lower >= 0.5:
-                    direction = " (做多)"
-                else:
-                    direction = " (做空)"
+            slice_center = (upper + lower) / 2
+            if slice_center >= self.threshold:
+                direction = " (做多)"
+            else:
+                direction = " (做空)"
 
             plt.title(
-                f"置信度区间 [{lower:.2f}, {upper:.2f}]{direction} - 样本占比: {true_count:.2%} - 累积收益曲线",
+                f"切片区间 [{lower:.4f}, {upper:.4f}]{direction} - 样本占比: {true_count:.2%} - 累积收益曲线",
                 fontsize=14,
                 fontweight="bold",
             )
@@ -265,13 +248,13 @@ class ConfidenceSliceAnalyzer:
             plt.grid(1)
 
             # 保存图片 - 更详细的文件名
-            filename = f"conf_{lower:.2f}_{upper:.2f}_ratio_{true_count:.4f}.jpg"
+            filename = f"slice_{lower:.4f}_{upper:.4f}_ratio_{true_count:.4f}.jpg"
             filepath = os.path.join(self.output_dir, filename)
             plt.savefig(filepath)
             plt.close()
 
             print(
-                f"已生成: {filename} (置信度区间: [{lower:.2f}, {upper:.2f}]{direction}, 样本占比: {true_count:.2%})"
+                f"已生成: {filename} (切片区间: [{lower:.4f}, {upper:.4f}]{direction}, 样本占比: {true_count:.2%})"
             )
 
 
@@ -283,7 +266,9 @@ def analyze_confidence_slices(
     capital: float = 1000,
     coefficient: float = 0.25,
     output_dir: str = "./temp/",
-    full_range: bool = True,
+    lower_bound: float = 0.0,
+    upper_bound: float = 1.0,
+    threshold: float = 0.5,
 ):
     """
     便捷函数：执行置信度切片分析
@@ -293,19 +278,23 @@ def analyze_confidence_slices(
     time_data : array-like
         时间数据
     score_data : array-like
-        置信度数据 (0-1之间)
+        模型输出值（分类任务：0-1之间；回归任务：任意范围）
     volume_data : array-like
         交易量数据
     granularity : float
-        切片粒度 (0.1, 0.05, 或 0.01)
+        切片粒度（建议0.01-0.1之间）
     capital : float
         初始资金
     coefficient : float
         收益系数
     output_dir : str
         输出目录
-    full_range : bool
-        是否分析完整的0-1区间 (True时分析0-1，False时只分析0.5-1)
+    lower_bound : float
+        分析值下限（默认0）
+    upper_bound : float
+        分析值上限（默认1）
+    threshold : float
+        多空分界点（默认0.5）
     """
     analyzer = ConfidenceSliceAnalyzer(
         time_data=time_data,
@@ -315,6 +304,8 @@ def analyze_confidence_slices(
         capital=capital,
         coefficient=coefficient,
         output_dir=output_dir,
-        full_range=full_range,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        threshold=threshold,
     )
     analyzer.analyze()
