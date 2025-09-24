@@ -1,13 +1,13 @@
+from research.model_pick.candle_fetch import FusionCandles
+from research.model_pick.feature_select import FeatureSelector
+from research.model_pick.features import FeatureLoader
+from research.model_pick.labeler import PipelineLabeler
+
 import json
 from pathlib import Path
 import pandas as pd
 import lightgbm as lgb
 from jesse.helpers import date_to_timestamp
-
-from research.model_pick.candle_fetch import FusionCandles
-from research.model_pick.feature_select import FeatureSelector
-from research.model_pick.features import FeatureLoader
-from research.model_pick.labeler import PipelineLabeler
 
 # 准备工作
 DATA_DIR = Path("./data")
@@ -33,11 +33,28 @@ for p1 in ["o", "h", "l", "c"]:
             fracdiff_features.append(f"frac_{p1}_{p2}{l}_diff")
 
 # 新生成特征配置记录
-with open(MODEL_DIR / "feature_info.json", "w") as f:
-    json.dump({"fracdiff": fracdiff_features}, f, indent=4)
+feature_info_path = MODEL_DIR / "feature_info.json"
+if not feature_info_path.exists():
+    with open(MODEL_DIR / "feature_info.json", "w") as f:
+        json.dump({"fracdiff": fracdiff_features}, f, indent=4)
+else:
+    with open(feature_info_path, "r") as f:
+        feature_info = json.load(f)
+        feature_info["fracdiff"] = fracdiff_features
+    with open(feature_info_path, "w") as f:
+        json.dump(feature_info, f, indent=4)
+
+del fracdiff_features
 
 
 def build_model(lag: int, pred_next: int, is_regression: bool = False):
+    model_type = "r" if is_regression else "c"
+    model_path = MODEL_DIR / f"model_{model_type}_L{lag}_N{pred_next}.txt"
+    model_prod_path = MODEL_DIR / f"model_{model_type}_L{lag}_N{pred_next}_prod.txt"
+    if model_path.exists() and model_prod_path.exists():
+        print(f"{lag = } {pred_next = } {model_type = } already exists, skipping")
+        return
+
     best_model_param = df_params[
         (df_params["log_return_lag"] == lag)
         & (df_params["pred_next"] == pred_next)
@@ -57,24 +74,20 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     train_y = label[train_mask]
 
     feature_names = feature_selector.select_features(train_x, train_y)
-    if not MODEL_DEEP_SSM_DIR.with_suffix(".json").exists():
-        feature_selector.deep_ssm_model.save(MODEL_DEEP_SSM_DIR.resolve().as_posix())
-    if not MODEL_LG_SSM_DIR.with_suffix(".json").exists():
-        feature_selector.lg_ssm_model.save(MODEL_LG_SSM_DIR.resolve().as_posix())
-    with open(MODEL_DIR / "feature_info.json", "w") as f:
-        feature_info = json.load(f)
+    feature_selector.deep_ssm_model.save(MODEL_DEEP_SSM_DIR.resolve().as_posix())
+    feature_selector.lg_ssm_model.save(MODEL_LG_SSM_DIR.resolve().as_posix())
+    with open(MODEL_DIR / "feature_info.json", "r") as f_r:
+        feature_info = json.load(f_r)
         feature_info[f"L{lag}_N{pred_next}"] = feature_names
-        json.dump(feature_info, f, indent=4)
 
-    model_type = "r" if is_regression else "c"
+    with open(MODEL_DIR / "feature_info.json", "w") as f_w:
+        json.dump(feature_info, f_w, indent=4)
 
     model = lgb.train(best_model_param, lgb.Dataset(train_x, train_y))
-    model.save_model(MODEL_DIR / f"model_{model_type}_L{lag}_N{pred_next}.txt")
+    model.save_model(model_path.resolve().as_posix())
 
     model_prod = lgb.train(best_model_param, lgb.Dataset(df_feat, label))
-    model_prod.save_model(
-        MODEL_DIR / f"model_{model_type}_L{lag}_N{pred_next}_prod.txt"
-    )
+    model_prod.save_model(model_prod_path.resolve().as_posix())
 
 
 if __name__ == "__main__":
