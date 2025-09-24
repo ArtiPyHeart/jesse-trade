@@ -1,6 +1,13 @@
+_fracdiff_features = []
+for p1 in ["o", "h", "l", "c"]:
+    for p2 in ["o", "h", "l", "c"]:
+        for l in range(1, 6):
+            _fracdiff_features.append(f"frac_{p1}_{p2}{l}_diff")
+
 BUILDIN_FEATURES = (
+    _fracdiff_features
     # 自定义轴持续时间
-    ["bar_duration"]
+    + ["bar_duration"]
     + ["adx_7", "adx_14", "aroon_diff"]
     + [f"ac_{i}" for i in range(47)]
     + ["acc_swing_index"]
@@ -25,26 +32,6 @@ BUILDIN_FEATURES = (
     + [f"conv_{i}" for i in range(46)]
     + [f"dft_{i}" for i in range(40)]
     + ["dual_diff", "ehlers_early_onset_trend"]
-    + [f"frac_o_o{l}_diff" for l in range(1, 6)]
-    + [f"frac_o_h{l}_diff" for l in range(1, 6)]
-    + [f"frac_o_l{l}_diff" for l in range(1, 6)]
-    + [f"frac_o_c{l}_diff" for l in range(1, 6)]
-    + [f"frac_h_o{l}_diff" for l in range(1, 6)]
-    + [f"frac_h_h{l}_diff" for l in range(1, 6)]
-    + [f"frac_h_l{l}_diff" for l in range(1, 6)]
-    + [f"frac_h_c{l}_diff" for l in range(1, 6)]
-    + [f"frac_l_o{l}_diff" for l in range(1, 6)]
-    + [f"frac_l_h{l}_diff" for l in range(1, 6)]
-    + [f"frac_l_l{l}_diff" for l in range(1, 6)]
-    + [f"frac_l_c{l}_diff" for l in range(1, 6)]
-    + [f"frac_o_o{l}_diff" for l in range(1, 6)]
-    + [f"frac_o_h{l}_diff" for l in range(1, 6)]
-    + [f"frac_o_l{l}_diff" for l in range(1, 6)]
-    + [f"frac_o_c{l}_diff" for l in range(1, 6)]
-    + [f"frac_c_o{l}_diff" for l in range(1, 6)]
-    + [f"frac_c_h{l}_diff" for l in range(1, 6)]
-    + [f"frac_c_l{l}_diff" for l in range(1, 6)]
-    + [f"frac_c_c{l}_diff" for l in range(1, 6)]
     + [f"sample_entropy_w{w}_spot" for w in [32, 64, 128, 256]]
     + [f"sample_entropy_w{w}_array" for w in [32, 64, 128, 256]]
     + [f"approximate_entropy_w{w}_spot" for w in [32, 64, 128, 256]]
