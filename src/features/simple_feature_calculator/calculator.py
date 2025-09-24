@@ -70,6 +70,11 @@ class SimpleFeatureCalculator:
         if isinstance(features, str):
             features = [features]
 
+        # 检查重复的特征名称
+        if len(features) != len(set(features)):
+            duplicates = [f for f in set(features) if features.count(f) > 1]
+            raise ValueError(f"Duplicate feature names found: {duplicates}")
+
         if self.candles is None:
             raise RuntimeError("Please call load() first to load candles data")
 
