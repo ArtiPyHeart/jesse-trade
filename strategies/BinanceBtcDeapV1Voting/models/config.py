@@ -1,6 +1,9 @@
 import json
+from collections import deque
 from pathlib import Path
+from typing import Literal
 
+import numpy as np
 import pandas as pd
 import lightgbm as lgb
 
@@ -12,12 +15,12 @@ with open(path_features) as f:
     feature_info = json.load(f)
 
 FEAT_FRACDIFF = feature_info["fracdiff"]
-FEAT_L5 = feature_info["L5"]
-FEAT_L6 = feature_info["L6"]
-FEAT_L7 = feature_info["L7"]
+ALL_RAW_FEAT = set()
+for v in feature_info.values():
+    ALL_RAW_FEAT.update(v)
 ALL_RAW_FEAT = [
     i
-    for i in set(FEAT_FRACDIFF + FEAT_L5 + FEAT_L6 + FEAT_L7)
+    for i in ALL_RAW_FEAT
     if not i.startswith("deep_ssm") and not i.startswith("lg_ssm")
 ]
 
@@ -80,14 +83,28 @@ class LGSSMContainer:
 
 
 class LGBMContainer:
-    def __init__(self, model_name: str, is_live_trading=False):
-        if is_live_trading:
-            path_model = Path(__file__).parent / f"{model_name}_prod.txt"
+    def __init__(self, model_type: Literal["c", "r"], lag: int, pred_next: int, is_livetrading=False):
+        if is_livetrading:
+            path_model = Path(__file__).parent / f"model_{model_type}_L{lag}_N{pred_next}_prod.txt"
         else:
-            path_model = Path(__file__).parent / f"{model_name}.txt"
+            path_model = Path(__file__).parent / f"model_{model_type}_L{lag}_N{pred_next}.txt"
 
         self.model = lgb.Booster(model_file=path_model)
+        self.model_type = model_type
+        self.lag = lag
+        self.pred_next = pred_next
 
-    def predict(self, df_one_row: pd.DataFrame):
-        pred_prob = self.model.predict(df_one_row)[-1]
-        return 1 if pred_prob > 0.5 else -1
+        self._preds = deque(np.full(pred_next, np.nan), maxlen=pred_next)
+
+    @property
+    def preds(self):
+        return list(self._preds)
+
+    @preds.setter
+    def preds(self, value):
+        self._preds.append(value)
+
+    def predict_proba(self, all_feat_df_one_row: pd.DataFrame):
+        _feature_names = feature_info[f"L{self.lag}_N{self.pred_next}"]
+        self.preds = self.model.predict(all_feat_df_one_row[_feature_names])[-1]
+        return self.preds[0]

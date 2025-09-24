@@ -13,9 +13,6 @@ from src.features.simple_feature_calculator import SimpleFeatureCalculator
 from .models.config import (
     LGBMContainer,
     FEAT_FRACDIFF,
-    FEAT_L5,
-    FEAT_L6,
-    FEAT_L7,
     DeepSSMContainer,
     LGSSMContainer,
     ALL_RAW_FEAT,
@@ -39,15 +36,44 @@ ORDER_TIMEOUT = 600 * 1000
 class BinanceBtcDeapV1Voting(Strategy):
     def __init__(self):
         super().__init__()
-        self.model_1 = LGBMContainer("model_l5", is_live_trading=self.is_livetrading)
-        self.model_2 = LGBMContainer("model_l6", is_live_trading=self.is_livetrading)
-        self.model_3 = LGBMContainer("model_l7", is_live_trading=self.is_livetrading)
-
         self.bar_container = DeapBarV1(max_bars=2000)
         self.fc = SimpleFeatureCalculator()
 
         self.deep_ssm_model = DeepSSMContainer()
         self.lg_ssm_model = LGSSMContainer()
+
+        self._init_models()
+
+    def _init_models(self):
+        self.model_c_L4_N1 = LGBMContainer(
+            "c", 4, 1, is_livetrading=self.is_livetrading
+        )
+        self.model_c_L5_N1 = LGBMContainer(
+            "c", 5, 1, is_livetrading=self.is_livetrading
+        )
+        self.model_c_L6_N1 = LGBMContainer(
+            "c", 6, 1, is_livetrading=self.is_livetrading
+        )
+
+        self.model_c_L4_N2 = LGBMContainer(
+            "c", 4, 2, is_livetrading=self.is_livetrading
+        )
+        self.model_c_L5_N2 = LGBMContainer(
+            "c", 5, 2, is_livetrading=self.is_livetrading
+        )
+        self.model_c_L6_N2 = LGBMContainer(
+            "c", 6, 2, is_livetrading=self.is_livetrading
+        )
+
+        self.model_c_L4_N3 = LGBMContainer(
+            "c", 4, 3, is_livetrading=self.is_livetrading
+        )
+        self.model_c_L5_N3 = LGBMContainer(
+            "c", 5, 3, is_livetrading=self.is_livetrading
+        )
+        self.model_c_L6_N3 = LGBMContainer(
+            "c", 6, 3, is_livetrading=self.is_livetrading
+        )
 
     @property
     def cleaned_candles(self):
@@ -74,7 +100,7 @@ class BinanceBtcDeapV1Voting(Strategy):
     ############################ 机器学习模型 ############################
     @property
     @cached
-    def get_all_features(self) -> pd.DataFrame:
+    def df_all_features(self) -> pd.DataFrame:
         self.fc.load(self.fusion_bar, sequential=False)
         df_feats = pd.DataFrame.from_dict(self.fc.get(ALL_RAW_FEAT))
         df_feat_fracdiff = df_feats[FEAT_FRACDIFF]
@@ -85,31 +111,51 @@ class BinanceBtcDeapV1Voting(Strategy):
 
     @property
     @cached
-    def model_1_pred(self):
-        return self.model_1.predict(self.get_all_features[FEAT_L5])
+    def model_c_N1_vote(self):
+        preds = [
+            self.model_c_L4_N1.predict_proba(self.df_all_features),
+            self.model_c_L5_N1.predict_proba(self.df_all_features),
+            self.model_c_L6_N1.predict_proba(self.df_all_features),
+        ]
+        preds = [0 if np.isnan(i) else (1 if i > 0.5 else -1) for i in preds]
+        return sum(preds)
 
     @property
     @cached
-    def model_2_pred(self):
-        return self.model_2.predict(self.get_all_features[FEAT_L6])
+    def model_c_N2_vote(self):
+        preds = [
+            self.model_c_L4_N2.predict_proba(self.df_all_features),
+            self.model_c_L5_N2.predict_proba(self.df_all_features),
+            self.model_c_L6_N2.predict_proba(self.df_all_features),
+        ]
+        preds = [0 if np.isnan(i) else (1 if i > 0.5 else -1) for i in preds]
+        return sum(preds)
 
     @property
     @cached
-    def model_3_pred(self):
-        return self.model_3.predict(self.get_all_features[FEAT_L7])
+    def model_c_N3_vote(self):
+        preds = [
+            self.model_c_L4_N3.predict_proba(self.df_all_features),
+            self.model_c_L5_N3.predict_proba(self.df_all_features),
+            self.model_c_L6_N3.predict_proba(self.df_all_features),
+        ]
+        preds = [0 if np.isnan(i) else (1 if i > 0.5 else -1) for i in preds]
+        return sum(preds)
 
     @property
     def model_shows_long(self):
         return (
-            self.model_1_pred == 1 and self.model_2_pred == 1 and self.model_3_pred == 1
+            self.model_c_N1_vote == 3
+            and self.model_c_N2_vote == 3
+            and self.model_c_N3_vote == 3
         )
 
     @property
     def model_shows_short(self):
         return (
-            self.model_1_pred == -1
-            and self.model_2_pred == -1
-            and self.model_3_pred == -1
+            self.model_c_N1_vote == -3
+            and self.model_c_N2_vote == -3
+            and self.model_c_N3_vote == -3
         )
 
     def should_long(self) -> bool:
