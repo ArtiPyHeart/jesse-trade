@@ -12,15 +12,15 @@ from jesse.helpers import date_to_timestamp
 # 准备工作
 DATA_DIR = Path("./data")
 MODEL_DIR = Path("./strategies/BinanceBtcDeapV1Voting/models")
-MODEL_DEEP_SSM_DIR = MODEL_DIR / "deep_ssm"
-MODEL_LG_SSM_DIR = MODEL_DIR / "lg_ssm"
+MODEL_DEEP_SSM_PATH = MODEL_DIR / "deep_ssm"
+MODEL_LG_SSM_PATH = MODEL_DIR / "lg_ssm"
 TRAIN_TEST_SPLIT_DATE = "2025-03-01"
 df_params = pd.read_csv(Path(__file__).parent / "model_search_results.csv")
 df_params["best_params"] = df_params["best_params"].apply(json.loads)
 candle_container = FusionCandles(
     exchange="Binance Perpetual Futures", symbol="BTC-USDT", timeframe="1m"
 )
-candles = candle_container.get_candles("2022-07-01", "2025-09-15")
+candles = candle_container.get_candles("2022-07-01", "2025-09-20")
 # 特征生成只关心特征名称和原始数据
 feature_loader = FeatureLoader(candles)
 # 由于训练集相同，selector内部的deep ssm与lg ssm只需要训练一次
@@ -35,7 +35,7 @@ for p1 in ["o", "h", "l", "c"]:
 # 新生成特征配置记录
 feature_info_path = MODEL_DIR / "feature_info.json"
 if not feature_info_path.exists():
-    with open(MODEL_DIR / "feature_info.json", "w") as f:
+    with open(feature_info_path, "w") as f:
         json.dump({"fracdiff": fracdiff_features}, f, indent=4)
 else:
     with open(feature_info_path, "r") as f:
@@ -43,8 +43,6 @@ else:
         feature_info["fracdiff"] = fracdiff_features
     with open(feature_info_path, "w") as f:
         json.dump(feature_info, f, indent=4)
-
-del fracdiff_features
 
 
 def build_model(lag: int, pred_next: int, is_regression: bool = False):
@@ -74,8 +72,8 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     train_y = label[train_mask]
 
     feature_names = feature_selector.select_features(train_x, train_y)
-    feature_selector.deep_ssm_model.save(MODEL_DEEP_SSM_DIR.resolve().as_posix())
-    feature_selector.lg_ssm_model.save(MODEL_LG_SSM_DIR.resolve().as_posix())
+    feature_selector.deep_ssm_model.save(MODEL_DEEP_SSM_PATH.resolve().as_posix())
+    feature_selector.lg_ssm_model.save(MODEL_LG_SSM_PATH.resolve().as_posix())
     with open(MODEL_DIR / "feature_info.json", "r") as f_r:
         feature_info = json.load(f_r)
         feature_info[f"L{lag}_N{pred_next}"] = feature_names
