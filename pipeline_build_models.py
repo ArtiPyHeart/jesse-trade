@@ -47,8 +47,10 @@ else:
 
 def build_model(lag: int, pred_next: int, is_regression: bool = False):
     model_type = "r" if is_regression else "c"
-    model_path = MODEL_DIR / f"model_{model_type}_L{lag}_N{pred_next}.txt"
-    model_prod_path = MODEL_DIR / f"model_{model_type}_L{lag}_N{pred_next}_prod.txt"
+    MODEL_NAME = f"{model_type}_L{lag}_N{pred_next}"
+
+    model_path = MODEL_DIR / f"model_{MODEL_NAME}.txt"
+    model_prod_path = MODEL_DIR / f"model_{MODEL_NAME}_prod.txt"
     if model_path.exists() and model_prod_path.exists():
         print(f"{lag = } {pred_next = } {model_type = } already exists, skipping")
         return
@@ -76,7 +78,7 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     feature_selector.lg_ssm_model.save(MODEL_LG_SSM_PATH.resolve().as_posix())
     with open(feature_info_path, "r") as f_r:
         feature_info = json.load(f_r)
-        feature_info[f"{model_type}_L{lag}_N{pred_next}"] = feature_names
+        feature_info[f"{MODEL_NAME}"] = feature_names
 
     with open(feature_info_path, "w") as f_w:
         json.dump(feature_info, f_w, indent=4)
