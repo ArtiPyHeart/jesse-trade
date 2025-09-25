@@ -36,7 +36,7 @@ ORDER_TIMEOUT = 600 * 1000
 class BinanceBtcDeapV1Voting(Strategy):
     def __init__(self):
         super().__init__()
-        self.bar_container = DeapBarV1(max_bars=2000)
+        self.bar_container = DeapBarV1(max_bars=2500)
         self.fc = SimpleFeatureCalculator()
 
         self.deep_ssm_model = DeepSSMContainer()
@@ -143,20 +143,20 @@ class BinanceBtcDeapV1Voting(Strategy):
         return sum(preds)
 
     @property
-    def model_shows_long(self):
-        return (
-            self.model_c_N1_vote == 3
-            and self.model_c_N2_vote == 3
-            and self.model_c_N3_vote == 3
-        )
+    def model_shows_long(self) -> bool:
+        vote = []
+        vote.append(self.model_c_N1_vote == 3)
+        vote.append(self.model_c_N2_vote == 3)
+        vote.append(self.model_c_N3_vote == 3)
+        return all(vote)
 
     @property
-    def model_shows_short(self):
-        return (
-            self.model_c_N1_vote == -3
-            and self.model_c_N2_vote == -3
-            and self.model_c_N3_vote == -3
-        )
+    def model_shows_short(self) -> bool:
+        vote = []
+        vote.append(self.model_c_N1_vote == -3)
+        vote.append(self.model_c_N2_vote == -3)
+        vote.append(self.model_c_N3_vote == -3)
+        return all(vote)
 
     def should_long(self) -> bool:
         if not self.should_trade_bar:
