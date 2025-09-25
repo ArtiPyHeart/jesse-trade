@@ -81,6 +81,9 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
         feature_info[f"{MODEL_NAME}"] = feature_names
 
     train_x = train_x_all_feat[feature_names]
+    full_x = df_feat[feature_names]
+    assert train_x.shape[1] == full_x.shape[1]
+    assert full_x.shape[0] == len(label)
 
     with open(feature_info_path, "w") as f_w:
         json.dump(feature_info, f_w, indent=4)
@@ -88,7 +91,7 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     model = lgb.train(best_model_param, lgb.Dataset(train_x, train_y))
     model.save_model(model_path.resolve().as_posix())
 
-    model_prod = lgb.train(best_model_param, lgb.Dataset(df_feat, label))
+    model_prod = lgb.train(best_model_param, lgb.Dataset(full_x, label))
     model_prod.save_model(model_prod_path.resolve().as_posix())
 
 
