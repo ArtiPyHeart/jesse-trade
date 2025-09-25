@@ -16,8 +16,9 @@ with open(path_features) as f:
 
 FEAT_FRACDIFF = feature_info["fracdiff"]
 ALL_RAW_FEAT = set()
-for v in feature_info.values():
-    ALL_RAW_FEAT.update(v)
+for k, v in feature_info.items():
+    if not k.startswith("r_"):
+        ALL_RAW_FEAT.update(v)
 ALL_RAW_FEAT = [
     i
     for i in ALL_RAW_FEAT
