@@ -83,11 +83,19 @@ class LGSSMContainer:
 
 
 class LGBMContainer:
-    def __init__(self, model_type: Literal["c", "r"], lag: int, pred_next: int, is_livetrading=False):
+    def __init__(
+        self,
+        model_type: Literal["c", "r"],
+        lag: int,
+        pred_next: int,
+        is_livetrading=False,
+    ):
+        self.MODEL_NAME = f"{model_type}_L{lag}_N{pred_next}"
+
         if is_livetrading:
-            path_model = Path(__file__).parent / f"model_{model_type}_L{lag}_N{pred_next}_prod.txt"
+            path_model = Path(__file__).parent / f"model_{self.MODEL_NAME}_prod.txt"
         else:
-            path_model = Path(__file__).parent / f"model_{model_type}_L{lag}_N{pred_next}.txt"
+            path_model = Path(__file__).parent / f"model_{self.MODEL_NAME}.txt"
 
         self.model = lgb.Booster(model_file=path_model)
         self.model_type = model_type
@@ -105,6 +113,6 @@ class LGBMContainer:
         self._preds.append(value)
 
     def predict_proba(self, all_feat_df_one_row: pd.DataFrame):
-        _feature_names = feature_info[f"L{self.lag}_N{self.pred_next}"]
+        _feature_names = feature_info[f"{self.MODEL_NAME}"]
         self.preds = self.model.predict(all_feat_df_one_row[_feature_names])[-1]
         return self.preds[0]
