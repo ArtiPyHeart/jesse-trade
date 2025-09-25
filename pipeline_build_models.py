@@ -74,15 +74,15 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     train_y = label[train_mask]
 
     feature_names = feature_selector.select_features(train_x_all_feat, train_y)
+    print(f"{len(feature_names)} features selected")
     feature_selector.deep_ssm_model.save(MODEL_DEEP_SSM_PATH.resolve().as_posix())
     feature_selector.lg_ssm_model.save(MODEL_LG_SSM_PATH.resolve().as_posix())
     with open(feature_info_path, "r") as f_r:
         feature_info = json.load(f_r)
         feature_info[f"{MODEL_NAME}"] = feature_names
 
-    train_x = train_x_all_feat[feature_names]
-    full_x = df_feat[feature_names]
-    assert train_x.shape[1] == full_x.shape[1]
+    full_x = feature_selector.get_all_features(train_x_all_feat)[feature_names]
+    train_x = full_x[train_mask]
     assert full_x.shape[0] == len(label)
 
     with open(feature_info_path, "w") as f_w:
