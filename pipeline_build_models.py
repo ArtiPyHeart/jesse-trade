@@ -81,7 +81,7 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
         feature_info = json.load(f_r)
         feature_info[f"{MODEL_NAME}"] = feature_names
 
-    full_x = feature_selector.get_all_features(train_x_all_feat)[feature_names]
+    full_x = feature_selector.get_all_features(df_feat)[feature_names]
     train_x = full_x[train_mask]
     assert full_x.shape[0] == len(label)
 
