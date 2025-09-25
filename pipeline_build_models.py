@@ -88,9 +88,11 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     with open(feature_info_path, "w") as f_w:
         json.dump(feature_info, f_w, indent=4)
 
+    print(f"fitting {MODEL_NAME} model with {train_x.shape[1]} features")
     model = lgb.train(best_model_param, lgb.Dataset(train_x, train_y))
     model.save_model(model_path.resolve().as_posix())
 
+    print(f"fitting {MODEL_NAME} prod model with {full_x.shape[1]} features")
     model_prod = lgb.train(best_model_param, lgb.Dataset(full_x, label))
     model_prod.save_model(model_prod_path.resolve().as_posix())
 
