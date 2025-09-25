@@ -76,7 +76,7 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     feature_selector.lg_ssm_model.save(MODEL_LG_SSM_PATH.resolve().as_posix())
     with open(feature_info_path, "r") as f_r:
         feature_info = json.load(f_r)
-        feature_info[f"L{lag}_N{pred_next}"] = feature_names
+        feature_info[f"{model_type}_L{lag}_N{pred_next}"] = feature_names
 
     with open(feature_info_path, "w") as f_w:
         json.dump(feature_info, f_w, indent=4)
