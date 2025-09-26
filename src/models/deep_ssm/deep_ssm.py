@@ -670,6 +670,9 @@ class DeepSSM:
         Args:
             path: Path to save model (without extension)
         """
+        if not self.is_fitted:
+            raise ValueError("Cannot save an unfitted model. Call fit() first.")
+
         from safetensors.torch import save_file
         import json
         from pathlib import Path
