@@ -295,7 +295,12 @@ class DeepSSM:
         self.model = DeepSSMNet(config).to(self.device)
         self.scaler_params = None
         self.training_history = []
-        self.is_fitted = False
+        self._is_fitted = False
+
+    @property
+    def is_fitted(self) -> bool:
+        """Indicates whether the model has been trained."""
+        return self._is_fitted
 
     def _standardize(self, data: np.ndarray, fit: bool = False) -> np.ndarray:
         """
@@ -497,7 +502,7 @@ class DeepSSM:
                     break
 
         self.model.eval()
-        self.is_fitted = True
+        self._is_fitted = True
 
         return self
 
@@ -760,7 +765,7 @@ class DeepSSM:
         # Set model attributes
         model.scaler_params = scaler_params
         model.training_history = training_history
-        model.is_fitted = is_fitted
+        model._is_fitted = is_fitted
 
         model.model.eval()
 
