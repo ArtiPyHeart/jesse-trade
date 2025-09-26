@@ -13,8 +13,7 @@ from src.features.simple_feature_calculator import SimpleFeatureCalculator
 from .models.config import (
     LGBMContainer,
     FEAT_FRACDIFF,
-    DeepSSMContainer,
-    LGSSMContainer,
+    SSMContainer,
     ALL_RAW_FEAT,
 )
 
@@ -39,8 +38,8 @@ class BinanceBtcDeapV1Voting(Strategy):
         self.bar_container = DeapBarV1(max_bars=2500)
         self.fc = SimpleFeatureCalculator()
 
-        self.deep_ssm_model = DeepSSMContainer()
-        self.lg_ssm_model = LGSSMContainer()
+        self.deep_ssm_model = SSMContainer("deep_ssm")
+        self.lg_ssm_model = SSMContainer("lg_ssm")
 
         self._init_models()
 

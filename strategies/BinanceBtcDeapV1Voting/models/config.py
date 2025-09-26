@@ -26,61 +26,70 @@ ALL_RAW_FEAT = [
 ]
 
 
-class DeepSSMContainer:
-    def __init__(self):
-        path_deep_ssm = Path(__file__).parent / "deep_ssm"
-        # Explicitly load with CPU device
-        self.model: DeepSSM = DeepSSM.load(
-            path_deep_ssm.resolve().as_posix(), device="cpu"
-        )
-        self.model_inference = self.model.create_realtime_processor()
+class SSMContainer:
+    """通用的状态空间模型容器，支持 DeepSSM 和 LGSSM"""
+
+    def __init__(self, model_type: str = "deep_ssm"):
+        """
+        初始化 SSM 容器
+
+        Args:
+            model_type: 模型类型，"deep_ssm" 或 "lg_ssm"
+        """
+        self.model_type = model_type
+        self.prefix = model_type  # 用于列名前缀
+
+        # 加载模型
+        model_path = Path(__file__).parent / model_type
+        if model_type == "deep_ssm":
+            self.model = DeepSSM.load(model_path.resolve().as_posix(), device="cpu")
+            # DeepSSM 使用专门的实时处理器
+            self.model_inference = self.model.create_realtime_processor()
+        elif model_type == "lg_ssm":
+            self.model = LGSSM.load(model_path.resolve().as_posix(), device="cpu")
+            # LGSSM 需要初始化状态
+            self.state, self.covariance = self.model.get_initial_state()
+            self.first_observation = True
+        else:
+            raise ValueError(f"Unknown model type: {model_type}")
 
     def transform(self, df):
+        """批量转换"""
         res = self.model.transform(df)
         df_res = pd.DataFrame(
-            res, index=df.index, columns=[f"deep_ssm_{i}" for i in range(res.shape[1])]
+            res,
+            index=df.index,
+            columns=[f"{self.prefix}_{i}" for i in range(res.shape[1])],
         )
         return df_res
 
     def inference(self, df_one_row):
+        """单行实时推理"""
         arr = df_one_row.to_numpy()
-        res = self.model_inference.process_single(arr)
-        return pd.DataFrame(
-            res.reshape(1, -1),
-            index=df_one_row.index,
-            columns=[f"deep_ssm_{i}" for i in range(len(res))],
-        )
 
-
-class LGSSMContainer:
-    def __init__(self):
-        path_lg_ssm = Path(__file__).parent / "lg_ssm"
-        # Explicitly load with CPU device
-        self.model: LGSSM = LGSSM.load(path_lg_ssm.resolve().as_posix(), device="cpu")
-
-        self.state, self.covariance = self.model.get_initial_state()
-        self.first_observation = True
-
-    def transform(self, df):
-        res = self.model.predict(df)
-        df_res = pd.DataFrame(
-            res, index=df.index, columns=[f"lg_ssm_{i}" for i in range(res.shape[1])]
-        )
-        return df_res
-
-    def inference(self, df_one_row):
-        arr = df_one_row.to_numpy()
-        self.state, self.covariance = self.model.update_single(
-            arr, is_first_observation=self.first_observation
-        )
-        if self.first_observation:
-            self.first_observation = False
-        df_res = pd.DataFrame(
-            self.state,
-            index=df_one_row.index,
-            columns=[f"lg_ssm_{i}" for i in range(self.state.shape[1])],
-        )
-        return df_res
+        if self.model_type == "deep_ssm":
+            # DeepSSM 使用 process_single
+            res = self.model_inference.process_single(arr)
+            return pd.DataFrame(
+                res.reshape(1, -1),
+                index=df_one_row.index,
+                columns=[f"{self.prefix}_{i}" for i in range(len(res))],
+            )
+        else:  # lg_ssm
+            # LGSSM 使用 update_single
+            self.state, self.covariance = self.model.update_single(
+                arr,
+                self.state,
+                self.covariance,
+                is_first_observation=self.first_observation,
+            )
+            if self.first_observation:
+                self.first_observation = False
+            return pd.DataFrame(
+                self.state.reshape(1, -1),
+                index=df_one_row.index,
+                columns=[f"{self.prefix}_{i}" for i in range(len(self.state))],
+            )
 
 
 class LGBMContainer:

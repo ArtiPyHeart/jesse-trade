@@ -131,14 +131,14 @@ def test_lgssm_basic():
     assert model.config.obs_dim == obs_dim, "Observation dimension not set correctly"
 
     # Test prediction
-    states = model.predict(X_train)
+    states = model.transform(X_train)
     assert states.shape == (
         train_size,
         state_dim,
     ), f"Predicted states shape mismatch: {states.shape}"
 
     # Test with covariance
-    states, cov = model.predict(X_train, return_covariance=True)
+    states, cov = model.transform(X_train, return_covariance=True)
     assert cov.shape == (train_size, state_dim, state_dim), f"Covariance shape mismatch"
 
     print("✓ LGSSM basic tests passed")
@@ -161,7 +161,7 @@ def test_lgssm_realtime():
     model.fit(observations[:80], verbose=False)
 
     # Get initial state from batch processing
-    batch_states = model.predict(observations[:50])
+    batch_states = model.transform(observations[:50])
     last_state = batch_states[-1]
 
     # Initialize covariance
@@ -178,7 +178,7 @@ def test_lgssm_realtime():
     realtime_states = np.array(realtime_states)
 
     # Compare with batch processing
-    batch_states_compare = model.predict(observations[50:60])
+    batch_states_compare = model.transform(observations[50:60])
 
     # They won't be exactly the same due to different initialization,
     # but shapes should match
@@ -190,8 +190,8 @@ def test_lgssm_realtime():
 
 
 def test_predict_update_consistency():
-    """Test that predict and update_single produce identical results."""
-    print("\nTesting predict vs update_single consistency...")
+    """Test that transform and update_single produce identical results."""
+    print("\nTesting transform vs update_single consistency...")
 
     # Generate data
     T, obs_dim, state_dim = 100, 10, 5
@@ -205,8 +205,8 @@ def test_predict_update_consistency():
     # Test data
     test_data = observations[80:100]
 
-    # Method 1: Batch prediction using predict()
-    batch_states, batch_covariances = model.predict(test_data, return_covariance=True)
+    # Method 1: Batch prediction using transform()
+    batch_states, batch_covariances = model.transform(test_data, return_covariance=True)
 
     # Method 2: Sequential updates using update_single()
     sequential_states = []
@@ -232,7 +232,7 @@ def test_predict_update_consistency():
         sequential_states,
         rtol=1e-5,
         atol=1e-6,
-        err_msg="States differ between predict() and update_single()",
+        err_msg="States differ between transform() and update_single()",
     )
 
     np.testing.assert_allclose(
@@ -240,10 +240,10 @@ def test_predict_update_consistency():
         sequential_covariances,
         rtol=1e-5,
         atol=1e-6,
-        err_msg="Covariances differ between predict() and update_single()",
+        err_msg="Covariances differ between transform() and update_single()",
     )
 
-    print("✓ Predict vs update_single consistency tests passed")
+    print("✓ Transform vs update_single consistency tests passed")
 
 
 def test_lgssm_save_load():
@@ -260,7 +260,7 @@ def test_lgssm_save_load():
     model.fit(observations, verbose=False)
 
     # Get predictions from original model
-    original_predictions = model.predict(observations)
+    original_predictions = model.transform(observations)
 
     # Save model
     with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
@@ -272,7 +272,7 @@ def test_lgssm_save_load():
     loaded_model = LGSSM.load(tmp_path)
 
     # Get predictions from loaded model
-    loaded_predictions = loaded_model.predict(observations)
+    loaded_predictions = loaded_model.transform(observations)
 
     # Compare predictions
     np.testing.assert_allclose(
@@ -322,7 +322,7 @@ def test_lgssm_no_scaler():
         ), "Scaler mean should be None when use_scaler=False"
 
     # Test prediction
-    states = model.predict(observations)
+    states = model.transform(observations)
     assert states.shape == (T, state_dim), "Prediction shape mismatch without scaler"
 
     print("✓ No scaler tests passed")
@@ -345,7 +345,7 @@ def test_lgssm_pandas_input():
 
     # Should accept DataFrame
     model.fit(df, verbose=False)
-    states = model.predict(df)
+    states = model.transform(df)
 
     assert states.shape == (
         T,
@@ -418,7 +418,7 @@ def compare_with_original():
     model.fit(observations[:train_size], observations[train_size:], verbose=True)
 
     # Generate features
-    states = model.predict(observations)
+    states = model.transform(observations)
 
     print(f"Generated features shape: {states.shape}")
     print(f"Features sample (first 5 values): {states[-1][:5]}")

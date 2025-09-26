@@ -425,12 +425,12 @@ class LGSSM(nn.Module):
 
         return self
 
-    def predict(
+    def transform(
         self,
         X: Union[np.ndarray, torch.Tensor, pd.DataFrame],
         return_covariance: bool = False,
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        """Generate state features for input data.
+        """Transform input observations to state features.
 
         Args:
             X: Input observations (T, obs_dim)

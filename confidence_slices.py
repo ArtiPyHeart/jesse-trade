@@ -9,8 +9,7 @@ from jesse.helpers import date_to_timestamp
 from strategies.BinanceBtcDeapV1Voting.models.config import (
     FEAT_L7,
     FEAT_FRACDIFF,
-    DeepSSMContainer,
-    LGSSMContainer,
+    SSMContainer,
 )
 
 
@@ -18,8 +17,8 @@ def main():
     try:
 
         print("Step 1: 初始化模型容器...")
-        model_deep_ssm = DeepSSMContainer()
-        model_lg_ssm = LGSSMContainer()
+        model_deep_ssm = SSMContainer("deep_ssm")
+        model_lg_ssm = SSMContainer("lg_ssm")
         print("✓ 模型容器初始化完成")
 
         print("Step 2: 加载特征数据...")
