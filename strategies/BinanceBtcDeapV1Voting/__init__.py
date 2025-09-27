@@ -1,3 +1,6 @@
+from src.bars.fusion.deap_v1 import DeapBarV1
+from src.features.simple_feature_calculator import SimpleFeatureCalculator
+
 import os
 
 import numpy as np
@@ -8,8 +11,6 @@ from joblib._parallel_backends import LokyBackend  # 内部 API
 from joblib.externals.loky import get_reusable_executor
 from joblib.parallel import register_parallel_backend
 
-from src.bars.fusion.deap_v1 import DeapBarV1
-from src.features.simple_feature_calculator import SimpleFeatureCalculator
 from .models.config import (
     LGBMContainer,
     FEAT_FRACDIFF,

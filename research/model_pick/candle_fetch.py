@@ -1,8 +1,8 @@
 from jesse import helpers, research
 
-from src.bars.fusion.deap_v1 import DeapBarV1
+from src.bars.fusion.demo import DemoBar
 
-bar_container = DeapBarV1(max_bars=-1)
+bar_container = DemoBar(max_bars=-1)
 
 
 class FusionCandles:

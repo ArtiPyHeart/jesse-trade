@@ -147,7 +147,7 @@ class ModelSearchTracker:
 candle_container = FusionCandles(
     exchange="Binance Perpetual Futures", symbol="BTC-USDT", timeframe="1m"
 )
-candles = candle_container.get_candles("2022-07-01", "2025-09-15")
+candles = candle_container.get_candles("2022-07-01", "2025-09-25")
 # 特征生成只关心特征名称和原始数据
 feature_loader = FeatureLoader(candles)
 # 由于训练集相同，selector内部的deep ssm与lg ssm只需要训练一次
@@ -213,7 +213,7 @@ def evaluate_regressor(
 
 if __name__ == "__main__":
     # 参数配置
-    log_return_lags = [4, 5, 6, 7, 8]
+    log_return_lags = [4, 5, 6, 7]
     pred_next_steps = [1, 2, 3]
 
     # 获取待完成的任务
