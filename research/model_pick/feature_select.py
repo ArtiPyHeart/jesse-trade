@@ -1,4 +1,5 @@
 import pandas as pd
+from pathlib import Path
 
 from src.features.feature_selection.rfcq_selector import RFCQSelector
 from src.models.deep_ssm import DeepSSMConfig, DeepSSM
@@ -15,9 +16,26 @@ lg_ssm_config = LGSSMConfig(
 
 
 class FeatureSelector:
-    def __init__(self):
-        self.deep_ssm_model = DeepSSM(config=deep_ssm_config)
-        self.lg_ssm_model = LGSSM(config=lg_ssm_config)
+    def __init__(self, model_save_dir: Path = None, load_existing: bool = False):
+        self.model_save_dir = model_save_dir
+
+        if load_existing and model_save_dir:
+            # 尝试加载已有模型
+            deep_ssm_path = model_save_dir / "deep_ssm"
+            lg_ssm_path = model_save_dir / "lg_ssm"
+
+            if deep_ssm_path.with_suffix(".safetensors").exists():
+                self.deep_ssm_model = DeepSSM.load(deep_ssm_path.resolve().as_posix())
+            else:
+                self.deep_ssm_model = DeepSSM(config=deep_ssm_config)
+
+            if lg_ssm_path.with_suffix(".safetensors").exists():
+                self.lg_ssm_model = LGSSM.load(lg_ssm_path.resolve().as_posix())
+            else:
+                self.lg_ssm_model = LGSSM(config=lg_ssm_config)
+        else:
+            self.deep_ssm_model = DeepSSM(config=deep_ssm_config)
+            self.lg_ssm_model = LGSSM(config=lg_ssm_config)
 
     @property
     def selector(self):
@@ -26,8 +44,19 @@ class FeatureSelector:
     def fit(self, train_x):
         if not self.deep_ssm_model.is_fitted:
             self.deep_ssm_model.fit(train_x[FRAC_FEATS])
+            # 保存 deep ssm 模型
+            if self.model_save_dir:
+                self.model_save_dir.mkdir(parents=True, exist_ok=True)
+                deep_ssm_path = self.model_save_dir / "deep_ssm"
+                self.deep_ssm_model.save(deep_ssm_path.resolve().as_posix())
+
         if not self.lg_ssm_model.is_fitted:
             self.lg_ssm_model.fit(train_x[FRAC_FEATS])
+            # 保存 lg ssm 模型
+            if self.model_save_dir:
+                self.model_save_dir.mkdir(parents=True, exist_ok=True)
+                lg_ssm_path = self.model_save_dir / "lg_ssm"
+                self.lg_ssm_model.save(lg_ssm_path.resolve().as_posix())
 
     def get_deep_ssm_features(self, train_x):
         feat_deep_ssm = self.deep_ssm_model.transform(train_x[FRAC_FEATS])
@@ -49,6 +78,13 @@ class FeatureSelector:
 
     def get_all_features(self, train_x):
         self.fit(train_x)
+        df_deep_ssm = self.get_deep_ssm_features(train_x)
+        lg_ssm_features = self.get_lg_ssm_features(train_x)
+        df = pd.concat([df_deep_ssm, lg_ssm_features, train_x], axis=1)
+        return df
+
+    def get_all_features_no_fit(self, train_x):
+        """获取所有特征但不重新训练模型，适用于已加载模型的情况"""
         df_deep_ssm = self.get_deep_ssm_features(train_x)
         lg_ssm_features = self.get_lg_ssm_features(train_x)
         df = pd.concat([df_deep_ssm, lg_ssm_features, train_x], axis=1)

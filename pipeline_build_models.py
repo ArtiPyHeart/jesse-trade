@@ -12,19 +12,21 @@ from jesse.helpers import date_to_timestamp
 # 准备工作
 DATA_DIR = Path("./data")
 MODEL_DIR = Path("./strategies/BinanceBtcDeapV1Voting/models")
+# 已训练的SSM模型路径
 MODEL_DEEP_SSM_PATH = MODEL_DIR / "deep_ssm"
 MODEL_LG_SSM_PATH = MODEL_DIR / "lg_ssm"
 TRAIN_TEST_SPLIT_DATE = "2025-03-01"
 df_params = pd.read_csv(Path(__file__).parent / "model_search_results.csv")
 df_params["best_params"] = df_params["best_params"].apply(json.loads)
+df_params["selected_features"] = df_params["selected_features"].apply(json.loads)
 candle_container = FusionCandles(
     exchange="Binance Perpetual Futures", symbol="BTC-USDT", timeframe="1m"
 )
 candles = candle_container.get_candles("2022-07-01", "2025-09-20")
 # 特征生成只关心特征名称和原始数据
 feature_loader = FeatureLoader(candles)
-# 由于训练集相同，selector内部的deep ssm与lg ssm只需要训练一次
-feature_selector = FeatureSelector()
+# 加载已训练的deep ssm与lg ssm模型
+feature_selector = FeatureSelector(model_save_dir=MODEL_DIR, load_existing=True)
 
 fracdiff_features = []
 for p1 in ["o", "h", "l", "c"]:
@@ -55,11 +57,14 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
         print(f"{lag = } {pred_next = } {model_type = } already exists, skipping")
         return
 
-    best_model_param = df_params[
+    # 获取最佳参数和已选择的特征
+    model_row = df_params[
         (df_params["log_return_lag"] == lag)
         & (df_params["pred_next"] == pred_next)
         & (df_params["model_type"] == ("regressor" if is_regression else "classifier"))
-    ]["best_params"].iloc[0]
+    ]
+    best_model_param = model_row["best_params"].iloc[0]
+    feature_names = model_row["selected_features"].iloc[0]
     # 制作标签
     labeler = PipelineLabeler(candles, lag)
     if is_regression:
@@ -73,15 +78,14 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     train_x_all_feat = df_feat[train_mask]
     train_y = label[train_mask]
 
-    feature_names = feature_selector.select_features(train_x_all_feat, train_y)
-    print(f"{len(feature_names)} features selected")
-    feature_selector.deep_ssm_model.save(MODEL_DEEP_SSM_PATH.resolve().as_posix())
-    feature_selector.lg_ssm_model.save(MODEL_LG_SSM_PATH.resolve().as_posix())
+    # 使用调参时已选择的特征名称
+    print(f"Using {len(feature_names)} pre-selected features")
     with open(feature_info_path, "r") as f_r:
         feature_info = json.load(f_r)
         feature_info[f"{MODEL_NAME}"] = feature_names
 
-    full_x = feature_selector.get_all_features(df_feat)[feature_names]
+    # 使用已加载的模型生成特征，不重新训练
+    full_x = feature_selector.get_all_features_no_fit(df_feat)[feature_names]
     train_x = full_x[train_mask]
     assert full_x.shape[0] == len(label)
 

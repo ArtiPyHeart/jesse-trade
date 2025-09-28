@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -31,6 +32,11 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
+
+# 用于保存deep ssm与lg ssm
+# 使用 path = MODEL_SAVE_DIR / "deep_ssm"
+# path.resolve().as_posix()的方式生成路径
+MODEL_SAVE_DIR = Path("strategies/BinanceBtcDeapV1Voting/models")
 
 # 固定训练集切分点，从而固定训练集，节约特征生成和筛选的时间。测试集主要用于回测
 TRAIN_TEST_SPLIT_DATE = "2025-03-01"
@@ -83,6 +89,7 @@ class ModelSearchTracker:
         best_score: float,
         best_params: dict,
         feature_count: int,
+        feature_names: list[str],
         duration: float,
         status: str = "completed",
     ):
@@ -97,6 +104,9 @@ class ModelSearchTracker:
             "status": status,
             "duration_seconds": duration,
             "best_params": json.dumps(best_params),
+            "selected_features": json.dumps(
+                feature_names
+            ),  # 将特征列表保存为JSON字符串
         }
 
         # 添加到DataFrame
@@ -144,9 +154,9 @@ class ModelSearchTracker:
         print("\n" + "=" * 60)
 
 
-logger.info("="*60)
+logger.info("=" * 60)
 logger.info("初始化数据加载和特征处理模块")
-logger.info("="*60)
+logger.info("=" * 60)
 
 logger.info("加载K线数据: Binance Perpetual Futures BTC-USDT 1m")
 candle_container = FusionCandles(
@@ -154,7 +164,9 @@ candle_container = FusionCandles(
 )
 candles = candle_container.get_candles("2022-07-01", "2025-09-25")
 logger.info(f"K线数据加载完成: {len(candles)} 条记录")
-logger.info(f"时间范围: {pd.to_datetime(candles[0][0], unit='ms')} - {pd.to_datetime(candles[-1][0], unit='ms')}")
+logger.info(
+    f"时间范围: {pd.to_datetime(candles[0][0], unit='ms')} - {pd.to_datetime(candles[-1][0], unit='ms')}"
+)
 
 # 特征生成只关心特征名称和原始数据
 logger.info("初始化特征加载器...")
@@ -162,7 +174,7 @@ feature_loader = FeatureLoader(candles)
 
 # 由于训练集相同，selector内部的deep ssm与lg ssm只需要训练一次
 logger.info("初始化特征选择器（将缓存SSM模型）...")
-feature_selector = FeatureSelector()
+feature_selector = FeatureSelector(model_save_dir=MODEL_SAVE_DIR)
 logger.info("初始化完成")
 
 # 初始化追踪器
@@ -174,13 +186,17 @@ def evaluate_classifier(
     log_return_lag: int,
     pred_next: int,
 ):
-    logger.info(f"[分类器] 开始评估 - log_return_lag={log_return_lag}, pred_next={pred_next}")
+    logger.info(
+        f"[分类器] 开始评估 - log_return_lag={log_return_lag}, pred_next={pred_next}"
+    )
 
     # 创建标签
     logger.info(f"[分类器] 创建标签器，log_return_lag={log_return_lag}")
     labeler = PipelineLabeler(candles, log_return_lag)
     label_for_classifier = labeler.label_hard
-    logger.info(f"[分类器] 标签分布: {np.unique(label_for_classifier, return_counts=True)}")
+    logger.info(
+        f"[分类器] 标签分布: {np.unique(label_for_classifier, return_counts=True)}"
+    )
 
     # 获取特征和标签
     logger.info(f"[分类器] 加载特征数据，pred_next={pred_next}")
@@ -193,13 +209,19 @@ def evaluate_classifier(
     train_mask = df_feat.index.to_numpy() < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
     train_x_all_feat = df_feat[train_mask]
     train_y = label_c[train_mask]
-    logger.info(f"[分类器] 训练集大小: {train_x_all_feat.shape[0]} 样本, {train_x_all_feat.shape[1]} 特征")
-    logger.info(f"[分类器] 训练集标签分布: {dict(zip(*np.unique(train_y, return_counts=True)))}")
+    logger.info(
+        f"[分类器] 训练集大小: {train_x_all_feat.shape[0]} 样本, {train_x_all_feat.shape[1]} 特征"
+    )
+    logger.info(
+        f"[分类器] 训练集标签分布: {dict(zip(*np.unique(train_y, return_counts=True)))}"
+    )
 
     # 特征选择
     logger.info(f"[分类器] 开始特征选择...")
     feature_names = feature_selector.select_features(train_x_all_feat, train_y)
-    logger.info(f"[分类器] 特征选择完成: 从 {train_x_all_feat.shape[1]} 个特征中选择了 {len(feature_names)} 个")
+    logger.info(
+        f"[分类器] 特征选择完成: 从 {train_x_all_feat.shape[1]} 个特征中选择了 {len(feature_names)} 个"
+    )
     logger.debug(f"[分类器] 选中的特征: {feature_names[:10]}...")  # 只显示前10个特征
 
     # 模型调参
@@ -214,7 +236,7 @@ def evaluate_classifier(
     logger.info(f"[分类器] 调参完成 - 最佳得分: {best_score:.4f}")
     logger.info(f"[分类器] 最佳参数: {params}")
 
-    return params, best_score, len(feature_names)
+    return params, best_score, len(feature_names), feature_names
 
 
 def evaluate_regressor(
@@ -222,13 +244,17 @@ def evaluate_regressor(
     log_return_lag: int,
     pred_next: int,
 ):
-    logger.info(f"[回归器] 开始评估 - log_return_lag={log_return_lag}, pred_next={pred_next}")
+    logger.info(
+        f"[回归器] 开始评估 - log_return_lag={log_return_lag}, pred_next={pred_next}"
+    )
 
     # 创建标签
     logger.info(f"[回归器] 创建标签器，log_return_lag={log_return_lag}")
     labeler = PipelineLabeler(candles, log_return_lag)
     label_for_regressor = labeler.label_direction
-    logger.info(f"[回归器] 标签统计: 均值={np.mean(label_for_regressor):.6f}, 标准差={np.std(label_for_regressor):.6f}")
+    logger.info(
+        f"[回归器] 标签统计: 均值={np.mean(label_for_regressor):.6f}, 标准差={np.std(label_for_regressor):.6f}"
+    )
 
     # 获取特征和标签
     logger.info(f"[回归器] 加载特征数据，pred_next={pred_next}")
@@ -241,13 +267,19 @@ def evaluate_regressor(
     train_mask = df_feat.index.to_numpy() < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
     train_x_all_feat = df_feat[train_mask]
     train_y = label_r[train_mask]
-    logger.info(f"[回归器] 训练集大小: {train_x_all_feat.shape[0]} 样本, {train_x_all_feat.shape[1]} 特征")
-    logger.info(f"[回归器] 训练集标签范围: [{np.min(train_y):.6f}, {np.max(train_y):.6f}]")
+    logger.info(
+        f"[回归器] 训练集大小: {train_x_all_feat.shape[0]} 样本, {train_x_all_feat.shape[1]} 特征"
+    )
+    logger.info(
+        f"[回归器] 训练集标签范围: [{np.min(train_y):.6f}, {np.max(train_y):.6f}]"
+    )
 
     # 特征选择
     logger.info(f"[回归器] 开始特征选择...")
     feature_names = feature_selector.select_features(train_x_all_feat, train_y)
-    logger.info(f"[回归器] 特征选择完成: 从 {train_x_all_feat.shape[1]} 个特征中选择了 {len(feature_names)} 个")
+    logger.info(
+        f"[回归器] 特征选择完成: 从 {train_x_all_feat.shape[1]} 个特征中选择了 {len(feature_names)} 个"
+    )
     logger.debug(f"[回归器] 选中的特征: {feature_names[:10]}...")  # 只显示前10个特征
 
     # 模型调参
@@ -262,7 +294,7 @@ def evaluate_regressor(
     logger.info(f"[回归器] 调参完成 - 最佳R²得分: {best_score:.4f}")
     logger.info(f"[回归器] 最佳参数: {params}")
 
-    return params, best_score, len(feature_names)
+    return params, best_score, len(feature_names), feature_names
 
 
 if __name__ == "__main__":
@@ -271,9 +303,9 @@ if __name__ == "__main__":
     pred_next_steps = [1, 2, 3]
 
     # 获取待完成的任务
-    logger.info("\n" + "="*60)
+    logger.info("\n" + "=" * 60)
     logger.info("任务规划")
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info(f"参数配置:")
     logger.info(f"  - log_return_lags: {log_return_lags}")
     logger.info(f"  - pred_next_steps: {pred_next_steps}")
@@ -291,7 +323,9 @@ if __name__ == "__main__":
 
     if pending_tasks:
         logger.info(f"\n待完成任务列表:")
-        for i, (lag, pred, model_type) in enumerate(pending_tasks[:5], 1):  # 只显示前5个
+        for i, (lag, pred, model_type) in enumerate(
+            pending_tasks[:5], 1
+        ):  # 只显示前5个
             logger.info(f"  {i}. {model_type}: lag={lag}, pred={pred}")
         if len(pending_tasks) > 5:
             logger.info(f"  ... 还有 {len(pending_tasks)-5} 个任务")
@@ -302,31 +336,31 @@ if __name__ == "__main__":
         exit(0)
 
     # 主循环
-    logger.info("\n" + "="*60)
+    logger.info("\n" + "=" * 60)
     logger.info("开始模型搜索主循环")
-    logger.info("="*60)
+    logger.info("=" * 60)
 
     for task_idx, (lag, pred, model_type) in enumerate(pending_tasks, 1):
         # 显示进度
         overall_progress = completed_tasks + task_idx
-        logger.info("\n" + "-"*60)
+        logger.info("\n" + "-" * 60)
         logger.info(
             f"[进度 {overall_progress}/{total_tasks}] ({(overall_progress-1)/total_tasks*100:.1f}%) 任务 #{task_idx}/{len(pending_tasks)}"
         )
         logger.info(
             f"开始训练: {model_type.upper()} | log_return_lag={lag} | pred_next={pred}"
         )
-        logger.info("-"*60)
+        logger.info("-" * 60)
 
         try:
             start_time = time.time()
 
             if model_type == "classifier":
-                params, score, feature_count = evaluate_classifier(
+                params, score, feature_count, feature_names = evaluate_classifier(
                     candles.copy(), lag, pred
                 )
             else:
-                params, score, feature_count = evaluate_regressor(
+                params, score, feature_count, feature_names = evaluate_regressor(
                     candles.copy(), lag, pred
                 )
 
@@ -340,45 +374,48 @@ if __name__ == "__main__":
                 best_score=score,
                 best_params=params,
                 feature_count=feature_count,
+                feature_names=feature_names,
                 duration=duration,
                 status="completed",
             )
 
-            logger.info("\n" + "="*40)
-            logger.info(
-                f"✓ 任务完成！"
-            )
+            logger.info("\n" + "=" * 40)
+            logger.info(f"✓ 任务完成！")
             logger.info(f"  - 模型类型: {model_type}")
             logger.info(f"  - 参数: lag={lag}, pred={pred}")
             logger.info(f"  - 最佳得分: {score:.4f}")
             logger.info(f"  - 特征数量: {feature_count}")
             logger.info(f"  - 训练耗时: {duration:.1f} 秒")
-            logger.info(f"  - 预计剩余时间: {(len(pending_tasks)-task_idx)*duration/60:.1f} 分钟")
-            logger.info("="*40)
+            logger.info(
+                f"  - 预计剩余时间: {(len(pending_tasks)-task_idx)*duration/60:.1f} 分钟"
+            )
+            logger.info("=" * 40)
 
         except KeyboardInterrupt:
-            logger.warning("\n" + "!"*60)
+            logger.warning("\n" + "!" * 60)
             logger.warning("用户中断程序")
-            logger.warning(f"当前进度: {overall_progress}/{total_tasks} ({overall_progress/total_tasks*100:.1f}%)")
-            logger.warning("!"*60)
+            logger.warning(
+                f"当前进度: {overall_progress}/{total_tasks} ({overall_progress/total_tasks*100:.1f}%)"
+            )
+            logger.warning("!" * 60)
             tracker.print_summary()
             exit(0)
 
         except Exception as e:
-            logger.error("\n" + "!"*60)
+            logger.error("\n" + "!" * 60)
             logger.error(f"✗ 训练失败!")
             logger.error(f"  - 错误信息: {str(e)}")
             logger.error(f"  - 失败任务: {model_type} (lag={lag}, pred={pred})")
             logger.error(f"  - 当前进度: {overall_progress}/{total_tasks}")
-            logger.error("!"*60)
+            logger.error("!" * 60)
             logger.error("程序终止，显示已完成的结果：")
             # 显示已完成的结果
             tracker.print_summary()
             raise
 
     # 完成后显示汇总
-    logger.info("\n" + "="*60)
+    logger.info("\n" + "=" * 60)
     logger.info("🎉 所有任务完成!")
-    logger.info("="*60)
+    logger.info("=" * 60)
     tracker.print_summary()
     logger.info("\n程序执行完毕")
