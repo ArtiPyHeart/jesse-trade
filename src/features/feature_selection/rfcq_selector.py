@@ -117,7 +117,7 @@ class RFCQSelector:
         param_grid: Optional[dict] = None,
         verbose: bool = True,
         random_state: Optional[int] = 42,
-        n_jobs: Optional[int] = -1,
+        n_jobs: Optional[int] = max(os.cpu_count() - 1, 1),
     ):
         self.max_features = max_features
         self.task_type = task_type
@@ -172,14 +172,14 @@ class RFCQSelector:
         # 根据任务类型创建模型
         if is_classification:
             model = RandomForestClassifier(
-                n_estimators=300,
+                n_estimators=100,
                 class_weight="balanced",
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
             )
         else:
             model = RandomForestRegressor(
-                n_estimators=300,
+                n_estimators=100,
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
             )
