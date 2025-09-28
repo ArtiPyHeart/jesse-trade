@@ -5,7 +5,8 @@ from typing import List, Optional, Union
 import numba as nb
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+import lightgbm as lgb
+from lightgbm import LGBMClassifier, LGBMRegressor
 from sklearn.model_selection import GridSearchCV
 from tqdm.auto import tqdm
 
@@ -169,26 +170,39 @@ class RFCQSelector:
         else:
             scoring = self.scoring
 
-        # 根据任务类型创建模型
+        # 根据任务类型创建模型（使用LightGBM随机森林模式）
         if is_classification:
-            model = RandomForestClassifier(
+            model = LGBMClassifier(
+                boosting_type='rf',  # 启用随机森林模式
                 n_estimators=100,
+                num_leaves=31,  # 默认值，可被GridSearchCV覆盖
+                subsample=0.632,  # RF bootstrap采样率
+                subsample_freq=1,  # 每棵树都采样
+                colsample_bytree=1.0,  # 使用所有特征
                 class_weight="balanced",
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
+                verbose=-1,  # 禁用LightGBM内部日志
             )
         else:
-            model = RandomForestRegressor(
+            model = LGBMRegressor(
+                boosting_type='rf',  # 启用随机森林模式
                 n_estimators=100,
+                num_leaves=31,  # 默认值，可被GridSearchCV覆盖
+                subsample=0.632,  # RF bootstrap采样率
+                subsample_freq=1,  # 每棵树都采样
+                colsample_bytree=1.0,  # 使用所有特征
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
+                verbose=-1,  # 禁用LightGBM内部日志
             )
 
         # 设置参数网格
         if self.param_grid:
             param_grid = self.param_grid
         else:
-            param_grid = {"max_depth": [1, 2, 3, 4]}
+            # 使用num_leaves替代max_depth，对应关系: 2^(depth+1)-1
+            param_grid = {"num_leaves": [7, 15, 31, 63]}  # 对应max_depth 1,2,3,4
 
         # 网格搜索
         cv_model = GridSearchCV(
