@@ -169,14 +169,15 @@ def evaluate_classifier(
         label_for_classifier, pred_next
     )
     train_mask = df_feat.index.to_numpy() < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
-    train_x = df_feat[train_mask]
+    train_x_all_feat = df_feat[train_mask]
     train_y = label_c[train_mask]
 
-    feature_names = feature_selector.select_features(train_x, train_y)
+    feature_names = feature_selector.select_features(train_x_all_feat, train_y)
+    print(f"{len(feature_names)} features selected")
 
     model_tuning = ModelTuning(
         TRAIN_TEST_SPLIT_DATE,
-        train_x,
+        train_x_all_feat,
         train_y,
     )
 
@@ -196,14 +197,15 @@ def evaluate_regressor(
         label_for_regressor, pred_next
     )
     train_mask = df_feat.index.to_numpy() < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
-    train_x = df_feat[train_mask]
+    train_x_all_feat = df_feat[train_mask]
     train_y = label_r[train_mask]
 
-    feature_names = feature_selector.select_features(train_x, train_y)
+    feature_names = feature_selector.select_features(train_x_all_feat, train_y)
+    print(f"{len(feature_names)} features selected")
 
     model_tuning = ModelTuning(
         TRAIN_TEST_SPLIT_DATE,
-        train_x,
+        train_x_all_feat,
         train_y,
     )
 

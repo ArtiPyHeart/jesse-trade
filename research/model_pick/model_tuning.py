@@ -37,6 +37,7 @@ class ModelTuning:
         self, selector: FeatureSelector, feature_names: list[str]
     ) -> tuple[dict, float]:
         all_feats = selector.get_all_features(self.train_X)[feature_names]
+        print(f"{len(feature_names)} features selected")
 
         def objective(trial):
             params = {
@@ -71,9 +72,12 @@ class ModelTuning:
         study = optuna.create_study(
             direction="maximize",
             pruner=optuna.pruners.HyperbandPruner(),
-            sampler=optuna.samplers.TPESampler(n_startup_trials=50),
+            sampler=optuna.samplers.TPESampler(n_startup_trials=25),
         )
-        study.optimize(objective, n_trials=150, n_jobs=1)
+        # 设置 Optuna 日志级别为警告，隐藏详细日志
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        # 使用 show_progress_bar 显示进度条
+        study.optimize(objective, n_trials=100, n_jobs=1, show_progress_bar=True)
 
         params = {
             "objective": "binary",
@@ -88,6 +92,7 @@ class ModelTuning:
         self, selector: FeatureSelector, feature_names: list[str]
     ) -> tuple[dict, float]:
         all_feats = selector.get_all_features(self.train_X)[feature_names]
+        print(f"{len(feature_names)} features selected")
 
         def objective(trial):
             params = {
@@ -126,7 +131,7 @@ class ModelTuning:
                 # 计算R²
                 r2 = r2_score(y_true, preds)
                 # LightGBM要求返回(评估名称, 评估值, 是否越大越好)
-                return 'r2', r2, True
+                return "r2", r2, True
 
             model_res = lgb.cv(
                 params,
@@ -142,9 +147,12 @@ class ModelTuning:
         study = optuna.create_study(
             direction="maximize",  # R²需要最大化
             pruner=optuna.pruners.HyperbandPruner(),
-            sampler=optuna.samplers.TPESampler(n_startup_trials=50),
+            sampler=optuna.samplers.TPESampler(n_startup_trials=25),
         )
-        study.optimize(objective, n_trials=150, n_jobs=1)
+        # 设置 Optuna 日志级别为警告，隐藏详细日志
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        # 使用 show_progress_bar 显示进度条
+        study.optimize(objective, n_trials=100, n_jobs=1, show_progress_bar=True)
 
         params = {
             "objective": "regression",
