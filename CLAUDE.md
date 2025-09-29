@@ -41,7 +41,7 @@ pip install -r requirements-dev.txt  # 开发依赖
 - EasyLanguage角度→Python弧度：用`src/utils/math_tools.py`
 
 ## 关键提醒
-- 开发时使用mcp context7 / exa 查看最新文档，如果mcp调用失败，停下来提示用户先配置
+- 开发时使用mcp context7 查看最新文档，如果mcp调用失败，停下来提示用户先配置
 - 生产代码仅从`src/`导入
 - 策略间保持独立，避免交叉依赖
 - 功能实现后必须单元测试

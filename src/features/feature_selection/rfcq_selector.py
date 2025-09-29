@@ -173,7 +173,7 @@ class RFCQSelector:
         # 根据任务类型创建模型（使用LightGBM随机森林模式）
         if is_classification:
             model = LGBMClassifier(
-                boosting_type='rf',  # 启用随机森林模式
+                boosting_type="rf",  # 启用随机森林模式
                 n_estimators=100,
                 num_leaves=31,  # 默认值，可被GridSearchCV覆盖
                 subsample=0.632,  # RF bootstrap采样率
@@ -183,10 +183,13 @@ class RFCQSelector:
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,  # 禁用LightGBM内部日志
+                # M4 Pro性能优化
+                max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
+                histogram_pool_size=512,  # 限制histogram缓存大小(MB)
             )
         else:
             model = LGBMRegressor(
-                boosting_type='rf',  # 启用随机森林模式
+                boosting_type="rf",  # 启用随机森林模式
                 n_estimators=100,
                 num_leaves=31,  # 默认值，可被GridSearchCV覆盖
                 subsample=0.632,  # RF bootstrap采样率
@@ -195,6 +198,9 @@ class RFCQSelector:
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,  # 禁用LightGBM内部日志
+                # M4 Pro性能优化
+                max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
+                histogram_pool_size=512,  # 限制histogram缓存大小(MB)
             )
 
         # 设置参数网格
@@ -202,7 +208,8 @@ class RFCQSelector:
             param_grid = self.param_grid
         else:
             # 使用num_leaves替代max_depth，对应关系: 2^(depth+1)-1
-            param_grid = {"num_leaves": [7, 15, 31, 63]}  # 对应max_depth 1,2,3,4
+            # 减少网格搜索空间以提速
+            param_grid = {"num_leaves": [15, 31, 63]}  # 对应max_depth 2,3,4
 
         # 网格搜索
         cv_model = GridSearchCV(
