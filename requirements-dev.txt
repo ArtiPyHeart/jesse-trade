@@ -4,6 +4,7 @@ nbformat
 ipywidgets
 fastparquet
 optuna
+optuna-integration[lightgbm]
 lightweight-charts
 matplotlib
 seaborn
