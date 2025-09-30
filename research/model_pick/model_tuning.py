@@ -42,7 +42,8 @@ class ModelTuning:
 
         # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
         train_features = np.ascontiguousarray(all_feats.to_numpy(dtype=np.float32))
-        dtrain = lgb.Dataset(train_features, self.train_Y, free_raw_data=False)
+        # 固定max_bin参数，避免在Dataset创建后修改导致错误
+        dtrain = lgb.Dataset(train_features, self.train_Y, free_raw_data=False, params={"max_bin": 127})
         cv_folds = list(
             StratifiedKFold(n_splits=5, shuffle=True, random_state=42).split(
                 train_features, self.train_Y
@@ -68,9 +69,7 @@ class ModelTuning:
                 "lambda_l1": trial.suggest_float("lambda_l1", 1e-4, 100),
                 "lambda_l2": trial.suggest_float("lambda_l2", 1e-4, 100),
                 # M4 Pro性能优化参数
-                "max_bin": trial.suggest_categorical(
-                    "max_bin", [63, 127, 255]
-                ),  # 减少bin数量以提速
+                "feature_pre_filter": False,  # 允许动态修改min_data_in_leaf
                 "histogram_pool_size": 512,  # 限制histogram缓存
                 "enable_bundle": True,  # 启用特征绑定以减少特征数
                 "min_data_in_bin": 3,  # 每个bin最少数据点
@@ -133,7 +132,8 @@ class ModelTuning:
 
         # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
         train_features = np.ascontiguousarray(all_feats.to_numpy(dtype=np.float32))
-        dtrain = lgb.Dataset(train_features, self.train_Y, free_raw_data=False)
+        # 固定max_bin参数，避免在Dataset创建后修改导致错误
+        dtrain = lgb.Dataset(train_features, self.train_Y, free_raw_data=False, params={"max_bin": 127})
         cv_folds = list(
             KFold(n_splits=5, shuffle=True, random_state=42).split(train_features)
         )
@@ -176,9 +176,7 @@ class ModelTuning:
                     "learning_rate", 0.01, 0.3, log=True
                 ),
                 # M4 Pro性能优化参数
-                "max_bin": trial.suggest_categorical(
-                    "max_bin", [63, 127, 255]
-                ),  # 减少bin数量以提速
+                "feature_pre_filter": False,  # 允许动态修改min_data_in_leaf
                 "histogram_pool_size": 512,  # 限制histogram缓存
                 "enable_bundle": True,  # 启用特征绑定以减少特征数
                 "min_data_in_bin": 3,  # 每个bin最少数据点
