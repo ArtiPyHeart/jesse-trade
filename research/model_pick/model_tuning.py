@@ -50,16 +50,17 @@ class ModelTuning:
         )
 
         def objective(trial):
+            boosting_type = trial.suggest_categorical("boosting", ["gbdt", "dart"])
             params = {
                 "objective": "binary",
-                "metric": METRIC,
+                # 不在params中指定metric，因为使用feval时会冲突
                 "num_threads": -1,
                 "verbose": -1,
                 "is_unbalance": trial.suggest_categorical(
                     "is_unbalance", [True, False]
                 ),
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
-                "boosting": trial.suggest_categorical("boosting", ["gbdt", "dart"]),
+                "boosting": boosting_type,
                 "num_leaves": trial.suggest_int("num_leaves", 31, 255),  # 减少搜索范围
                 "max_depth": trial.suggest_int("max_depth", 30, 500),  # 减少搜索范围
                 "min_gain_to_split": trial.suggest_float("min_gain_to_split", 1e-8, 1),
@@ -74,11 +75,16 @@ class ModelTuning:
                 "enable_bundle": True,  # 启用特征绑定以减少特征数
                 "min_data_in_bin": 3,  # 每个bin最少数据点
             }
+            # 如果使用 dart，添加 dart 特有参数
+            if boosting_type == "dart":
+                params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
+
             num_boost_round = trial.suggest_int(
                 "num_boost_round", 100, 1000
             )  # 减少最大迭代数
-            # Wire Optuna pruning into LightGBM so unpromising trials stop early
-            pruning_cb = LightGBMPruningCallback(trial, f"valid {METRIC}-mean")
+            # 注意：使用feval时，LightGBMPruningCallback需要metric名称而非"metric-mean"格式
+            # 实际callback接收的是('valid', 'f1', value, is_higher_better, std)格式
+            pruning_cb = LightGBMPruningCallback(trial, METRIC)
             callbacks = [
                 lgb.early_stopping(
                     stopping_rounds=75, verbose=False
@@ -132,14 +138,30 @@ class ModelTuning:
             KFold(n_splits=5, shuffle=True, random_state=42).split(train_features)
         )
 
+        # 预计算训练集标签的方差，用于计算R²
+        y_var = np.var(self.train_Y)
+
+        # 自定义R²评估函数（用于LightGBM的feval参数）
+        def r2_eval(preds, eval_dataset):
+            """
+            计算R²分数
+            R² = 1 - (MSE / Var(y))
+            """
+            y_true = eval_dataset.get_label()
+            mse = np.mean((y_true - preds) ** 2)
+            r2 = 1 - (mse / y_var)
+            # 返回 (metric_name, metric_value, is_higher_better)
+            return "r2", r2, True
+
         def objective(trial):
+            boosting_type = trial.suggest_categorical("boosting", ["gbdt", "dart"])
             params = {
                 "objective": "regression",
-                "metric": ["rmse", "l2"],  # 需要同时指定rmse和l2才能计算r2
+                # 不在params中指定metric，使用feval
                 "num_threads": -1,
                 "verbose": -1,
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
-                "boosting": trial.suggest_categorical("boosting", ["gbdt", "dart"]),
+                "boosting": boosting_type,
                 "num_leaves": trial.suggest_int("num_leaves", 31, 255),  # 减少搜索范围
                 "max_depth": trial.suggest_int("max_depth", 30, 500),  # 减少搜索范围
                 "min_gain_to_split": trial.suggest_float("min_gain_to_split", 1e-8, 1),
@@ -163,22 +185,15 @@ class ModelTuning:
             }
 
             # 如果使用 dart，添加 dart 特有参数
-            if params["boosting"] == "dart":
+            if boosting_type == "dart":
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
-
-            # 自定义R²评估函数
-            def r2_eval(preds, eval_dataset):
-                y_true = eval_dataset.get_label()
-                # 计算R²
-                r2 = r2_score(y_true, preds)
-                # LightGBM要求返回(评估名称, 评估值, 是否越大越好)
-                return "r2", r2, True
 
             num_boost_round = trial.suggest_int(
                 "num_boost_round", 100, 1000
             )  # 减少最大迭代数
-            # Wire Optuna pruning into LightGBM so unpromising trials stop early
-            pruning_cb = LightGBMPruningCallback(trial, "valid r2-mean")
+
+            # 使用LightGBMPruningCallback监控R²指标
+            pruning_cb = LightGBMPruningCallback(trial, "r2")
             callbacks = [
                 lgb.early_stopping(
                     stopping_rounds=75, verbose=False
@@ -190,10 +205,10 @@ class ModelTuning:
                 dtrain,
                 num_boost_round=num_boost_round,
                 folds=cv_folds,
-                feval=r2_eval,  # 使用自定义的R²评估函数
+                feval=r2_eval,  # 使用自定义R²评估函数
                 callbacks=callbacks,
             )
-            # 返回R²分数
+            # 返回交叉验证的平均R²分数
             return model_res["valid r2-mean"][-1]
 
         study = optuna.create_study(
