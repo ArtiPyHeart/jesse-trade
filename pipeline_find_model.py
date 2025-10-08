@@ -299,7 +299,7 @@ def evaluate_regressor(
 
 if __name__ == "__main__":
     # 参数配置
-    log_return_lags = [4, 5, 6, 7, 8]
+    log_return_lags = list(range(4, 16))
     pred_next_steps = [1, 2, 3]
 
     # 获取待完成的任务
@@ -328,7 +328,7 @@ if __name__ == "__main__":
         ):  # 只显示前5个
             logger.info(f"  {i}. {model_type}: lag={lag}, pred={pred}")
         if len(pending_tasks) > 5:
-            logger.info(f"  ... 还有 {len(pending_tasks)-5} 个任务")
+            logger.info(f"  ... 还有 {len(pending_tasks) - 5} 个任务")
 
     if len(pending_tasks) == 0:
         logger.info("所有任务已完成!")
@@ -345,7 +345,7 @@ if __name__ == "__main__":
         overall_progress = completed_tasks + task_idx
         logger.info("\n" + "-" * 60)
         logger.info(
-            f"[进度 {overall_progress}/{total_tasks}] ({(overall_progress-1)/total_tasks*100:.1f}%) 任务 #{task_idx}/{len(pending_tasks)}"
+            f"[进度 {overall_progress}/{total_tasks}] ({(overall_progress - 1) / total_tasks * 100:.1f}%) 任务 #{task_idx}/{len(pending_tasks)}"
         )
         logger.info(
             f"开始训练: {model_type.upper()} | log_return_lag={lag} | pred_next={pred}"
@@ -387,7 +387,7 @@ if __name__ == "__main__":
             logger.info(f"  - 特征数量: {feature_count}")
             logger.info(f"  - 训练耗时: {duration:.1f} 秒")
             logger.info(
-                f"  - 预计剩余时间: {(len(pending_tasks)-task_idx)*duration/60:.1f} 分钟"
+                f"  - 预计剩余时间: {(len(pending_tasks) - task_idx) * duration / 60:.1f} 分钟"
             )
             logger.info("=" * 40)
 
@@ -395,7 +395,7 @@ if __name__ == "__main__":
             logger.warning("\n" + "!" * 60)
             logger.warning("用户中断程序")
             logger.warning(
-                f"当前进度: {overall_progress}/{total_tasks} ({overall_progress/total_tasks*100:.1f}%)"
+                f"当前进度: {overall_progress}/{total_tasks} ({overall_progress / total_tasks * 100:.1f}%)"
             )
             logger.warning("!" * 60)
             tracker.print_summary()

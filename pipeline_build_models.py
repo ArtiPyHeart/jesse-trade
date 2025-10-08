@@ -75,7 +75,6 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
     # 加工全量特征
     df_feat, label = feature_loader.get_feature_label_bundle(raw_label, pred_next)
     train_mask = df_feat.index.to_numpy() < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
-    train_x_all_feat = df_feat[train_mask]
     train_y = label[train_mask]
 
     # 使用调参时已选择的特征名称
@@ -103,16 +102,15 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
 
 if __name__ == "__main__":
     # classifiers
-    for lag in range(4, 7):
+    for lag in range(5, 8):
         for pred_next in range(1, 4):
             print(f"building classifier for {lag = } and {pred_next = }")
             build_model(lag, pred_next, is_regression=False)
 
     # regressors
     print("building regression model...")
-    build_model(6, 1, is_regression=True)
-    build_model(6, 3, is_regression=True)
-    build_model(5, 1, is_regression=True)
     build_model(7, 1, is_regression=True)
+    build_model(7, 2, is_regression=True)
+    build_model(7, 3, is_regression=True)
 
     print("done")
