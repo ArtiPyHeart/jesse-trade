@@ -17,13 +17,15 @@ with open(path_features) as f:
 FEAT_FRACDIFF = feature_info["fracdiff"]
 ALL_RAW_FEAT = set()
 for k, v in feature_info.items():
-    if not k.startswith("r_"):
-        ALL_RAW_FEAT.update(v)
-ALL_RAW_FEAT = [
-    i
-    for i in ALL_RAW_FEAT
-    if not i.startswith("deep_ssm") and not i.startswith("lg_ssm")
-]
+    # if not k.startswith("r_"):
+    ALL_RAW_FEAT.update(v)
+ALL_RAW_FEAT = sorted(
+    [
+        i
+        for i in ALL_RAW_FEAT
+        if not i.startswith("deep_ssm") and not i.startswith("lg_ssm")
+    ]
+)
 
 
 class SSMContainer:
