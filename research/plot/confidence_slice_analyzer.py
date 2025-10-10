@@ -99,17 +99,13 @@ class ConfidenceSliceAnalyzer:
         score_array = np.asarray(score_data)
 
         # 检查超出范围的值
-        out_of_range_mask = (score_array < self.lower_bound) | (
-            score_array > self.upper_bound
-        )
+        out_of_range_mask = (score_array < self.lower_bound) | (score_array > self.upper_bound)
         if np.any(out_of_range_mask):
             out_count = np.sum(out_of_range_mask)
             out_ratio = out_count / len(score_array)
             min_val = np.min(score_array)
             max_val = np.max(score_array)
-            print(
-                f"\n⚠️ 警告：发现 {out_count} 个超出范围 [{self.lower_bound}, {self.upper_bound}] 的值"
-            )
+            print(f"\n⚠️ 警告：发现 {out_count} 个超出范围 [{self.lower_bound}, {self.upper_bound}] 的值")
             print(f"  - 占比: {out_ratio:.2%}")
             print(f"  - 实际范围: [{min_val:.4f}, {max_val:.4f}]")
             print(f"  - 超出范围的值将被归类到最近的边界切片\n")
@@ -117,9 +113,7 @@ class ConfidenceSliceAnalyzer:
         # 检查粒度值的合理性
         range_size = self.upper_bound - self.lower_bound
         min_slices = range_size / self.granularity
-        assert (
-            min_slices >= 2
-        ), f"粒度过大，至少需要2个切片。当前设置将产生 {min_slices:.1f} 个切片"
+        assert min_slices >= 2, f"粒度过大，至少需要2个切片。当前设置将产生 {min_slices:.1f} 个切片"
         if min_slices > 200:
             print(f"⚠️ 警告：粒度过小，将产生 {int(min_slices)} 个切片，可能影响性能")
 
@@ -160,13 +154,7 @@ class ConfidenceSliceAnalyzer:
         return slices
 
     def analyze(self):
-        """执行完整的置信度切片分析
-
-        Returns
-        -------
-        dict
-            每个切片的统计信息：{(lower, upper): {"final_pnl": float, "num_trades": int, "sample_ratio": float}}
-        """
+        """执行完整的置信度切片分析"""
         # 创建输出目录
         os.makedirs(self.output_dir, exist_ok=True)
 
@@ -176,92 +164,33 @@ class ConfidenceSliceAnalyzer:
         # 计算x轴刻度数（基于数据量，最多25个）
         tick_count = min(25, self.data_size)
 
-        # 预先计算累积volume，用于计算每次交易的盈亏
-        cumsum_volume = self.data["volume"].cumsum()
-
-        # 记录每个切片的统计信息
-        slice_stats = {}
-
         # 对每个切片进行分析
         for upper, lower in slices:
+            # 初始化final列
+            self.data["final"] = 0
+
             # 处理超出范围的值 - 归类到最近的边界切片
             score_clipped = self.data["score"].clip(self.lower_bound, self.upper_bound)
 
             # 筛选当前切片区间（包括被归类的超出范围值）
-            in_slice = (score_clipped < upper) & (score_clipped >= lower)
+            mask = (score_clipped < upper) & (score_clipped >= lower)
 
+            # 根据阈值决定交易方向
             # 切片中心点用于判断该切片的主要交易方向
             slice_center = (upper + lower) / 2
-            is_long_slice = slice_center >= self.threshold
-
-            # 实现真实的开平仓逻辑
-            position = 0  # 0=空仓，1=持仓
-            entry_vol = 0
-            pnl_series = np.zeros(self.data_size)  # 记录每个时间点的累积盈亏
-            cumulative_pnl = 0
-            num_trades = 0  # 记录交易次数
-
-            for i in range(self.data_size):
-                current_score = score_clipped.iloc[i]
-                is_in_slice = in_slice.iloc[i]
-
-                # 开仓逻辑
-                if is_in_slice and position == 0:
-                    position = 1
-                    entry_vol = cumsum_volume.iloc[i - 1] if i > 0 else 0
-
-                # 平仓逻辑
-                elif not is_in_slice and position == 1:
-                    # 检查是否跨越阈值
-                    should_close = False
-                    if is_long_slice and current_score < self.threshold:
-                        # 做多切片，预测跌破阈值，平多仓
-                        should_close = True
-                    elif not is_long_slice and current_score >= self.threshold:
-                        # 做空切片，预测升破阈值，平空仓
-                        should_close = True
-
-                    if should_close:
-                        exit_vol = cumsum_volume.iloc[i - 1] if i > 0 else 0
-                        trade_pnl = exit_vol - entry_vol
-
-                        # 做空切片的盈亏取反（volume下跌时做空盈利）
-                        if not is_long_slice:
-                            trade_pnl = -trade_pnl
-
-                        cumulative_pnl += trade_pnl
-                        num_trades += 1
-                        position = 0
-
-                pnl_series[i] = cumulative_pnl
-
-            # 如果最后还有未平仓的仓位，强制平仓
-            if position == 1:
-                exit_vol = cumsum_volume.iloc[-1]
-                trade_pnl = exit_vol - entry_vol
-                if not is_long_slice:
-                    trade_pnl = -trade_pnl
-                cumulative_pnl += trade_pnl
-                num_trades += 1
-                # 更新最后的盈亏
-                pnl_series[-1] = cumulative_pnl
+            if slice_center >= self.threshold:
+                # 高于阈值，做多，volume为正
+                self.data["final"] = np.where(mask, self.data["volume"], 0)
+            else:
+                # 低于阈值，做空，volume为负（表示做空收益）
+                self.data["final"] = np.where(mask, -self.data["volume"], 0)
 
             # 计算样本占比
-            true_count = in_slice.sum() / self.data_size
+            true_count = mask.sum() / self.data_size
 
-            # 记录统计信息
-            slice_stats[(lower, upper)] = {
-                "final_pnl": cumulative_pnl,
-                "num_trades": num_trades,
-                "sample_ratio": true_count,
-                "direction": "做多" if is_long_slice else "做空",
-            }
-
-            # 使用开平仓盈亏计算收益曲线
-            self.data["cumulative_pnl"] = pnl_series
-            self.data["normalized_pnl"] = (
-                self.coefficient * self.data["cumulative_pnl"] / self.capital
-            )
+            # 计算累积收益
+            self.data["high"] = self.data["final"].cumsum()
+            self.data["open"] = self.coefficient * self.data["high"] / self.capital
 
             # 绘图
             fig, ax = plt.subplots(figsize=(20, 10))
@@ -280,7 +209,7 @@ class ConfidenceSliceAnalyzer:
                 is_datetime = False
 
             # 绘制数据
-            ax.plot(time_series, self.data["normalized_pnl"])
+            ax.plot(time_series, self.data["open"])
 
             # 设置x轴刻度
             if is_datetime:
@@ -327,8 +256,6 @@ class ConfidenceSliceAnalyzer:
             print(
                 f"已生成: {filename} (切片区间: [{lower:.4f}, {upper:.4f}]{direction}, 样本占比: {true_count:.2%})"
             )
-
-        return slice_stats
 
 
 def analyze_confidence_slices(
@@ -381,4 +308,4 @@ def analyze_confidence_slices(
         upper_bound=upper_bound,
         threshold=threshold,
     )
-    return analyzer.analyze()
+    analyzer.analyze()
