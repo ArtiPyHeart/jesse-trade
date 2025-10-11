@@ -25,14 +25,14 @@ class ConfidenceSliceAnalyzer:
     模型输出切片分析工具
 
     用于分析机器学习模型（分类/回归）的输出分布，通过精细切片找出真正赚钱的输出区间。
-    支持任意范围的值，根据阈值判断多空方向，计算每个切片的累积收益并可视化。
+    支持任意范围的值，根据阈值判断多空方向，通过价格变化和交易信号计算每个切片的实际盈亏。
     """
 
     def __init__(
         self,
         time_data: Union[pd.Series, np.ndarray, list],
         score_data: Union[pd.Series, np.ndarray, list],
-        volume_data: Union[pd.Series, np.ndarray, list],
+        close_price_data: Union[pd.Series, np.ndarray, list],
         granularity: float = 0.01,
         capital: float = 10000,
         coefficient: float = 0.25,
@@ -50,8 +50,8 @@ class ConfidenceSliceAnalyzer:
             时间数据
         score_data : array-like
             模型输出值（分类任务：0-1之间；回归任务：任意范围）
-        volume_data : array-like
-            交易量数据
+        close_price_data : array-like
+            收盘价数据
         granularity : float
             切片粒度（建议0.01-0.1之间）
         capital : float
@@ -80,32 +80,36 @@ class ConfidenceSliceAnalyzer:
         assert lower_bound <= threshold <= upper_bound, "阈值必须在上下限范围内"
 
         # 验证并准备数据
-        self._validate_data(time_data, score_data, volume_data)
-        self._prepare_dataframe(time_data, score_data, volume_data)
+        self._validate_data(time_data, score_data, close_price_data)
+        self._prepare_dataframe(time_data, score_data, close_price_data)
 
     def _validate_data(
         self,
         time_data: Union[pd.Series, np.ndarray, list],
         score_data: Union[pd.Series, np.ndarray, list],
-        volume_data: Union[pd.Series, np.ndarray, list],
+        close_price_data: Union[pd.Series, np.ndarray, list],
     ):
         """验证输入数据的有效性"""
         # 检查长度
         assert (
-            len(time_data) == len(score_data) == len(volume_data)
+            len(time_data) == len(score_data) == len(close_price_data)
         ), "三列数据长度必须相等"
 
         # 转换为numpy array进行验证
         score_array = np.asarray(score_data)
 
         # 检查超出范围的值
-        out_of_range_mask = (score_array < self.lower_bound) | (score_array > self.upper_bound)
+        out_of_range_mask = (score_array < self.lower_bound) | (
+            score_array > self.upper_bound
+        )
         if np.any(out_of_range_mask):
             out_count = np.sum(out_of_range_mask)
             out_ratio = out_count / len(score_array)
             min_val = np.min(score_array)
             max_val = np.max(score_array)
-            print(f"\n⚠️ 警告：发现 {out_count} 个超出范围 [{self.lower_bound}, {self.upper_bound}] 的值")
+            print(
+                f"\n⚠️ 警告：发现 {out_count} 个超出范围 [{self.lower_bound}, {self.upper_bound}] 的值"
+            )
             print(f"  - 占比: {out_ratio:.2%}")
             print(f"  - 实际范围: [{min_val:.4f}, {max_val:.4f}]")
             print(f"  - 超出范围的值将被归类到最近的边界切片\n")
@@ -113,7 +117,9 @@ class ConfidenceSliceAnalyzer:
         # 检查粒度值的合理性
         range_size = self.upper_bound - self.lower_bound
         min_slices = range_size / self.granularity
-        assert min_slices >= 2, f"粒度过大，至少需要2个切片。当前设置将产生 {min_slices:.1f} 个切片"
+        assert (
+            min_slices >= 2
+        ), f"粒度过大，至少需要2个切片。当前设置将产生 {min_slices:.1f} 个切片"
         if min_slices > 200:
             print(f"⚠️ 警告：粒度过小，将产生 {int(min_slices)} 个切片，可能影响性能")
 
@@ -121,12 +127,35 @@ class ConfidenceSliceAnalyzer:
         self,
         time_data: Union[pd.Series, np.ndarray, list],
         score_data: Union[pd.Series, np.ndarray, list],
-        volume_data: Union[pd.Series, np.ndarray, list],
+        close_price_data: Union[pd.Series, np.ndarray, list],
     ):
         """将输入数据整合为内部DataFrame"""
+        # 创建基础DataFrame
         self.data = pd.DataFrame(
-            {"timestamp": time_data, "score": score_data, "volume": volume_data}
+            {
+                "timestamp": time_data,
+                "score": score_data,
+                "close_price": close_price_data,
+            }
         )
+
+        # 计算价格差分（第一个值设为0）
+        close_prices = np.asarray(close_price_data)
+        close_diff = np.diff(close_prices, prepend=close_prices[0])
+        close_diff[0] = 0  # 确保第一个值为0
+
+        # 根据阈值生成交易信号：>= threshold为做多(1)，< threshold为做空(-1)
+        scores = np.asarray(score_data)
+        signal = np.where(scores >= self.threshold, 1, -1)
+
+        # 计算每个时间点的盈亏（价格变化 * 交易信号）
+        pnl = close_diff * signal
+
+        # 添加计算列到DataFrame
+        self.data["close_diff"] = close_diff
+        self.data["signal"] = signal
+        self.data["pnl"] = pnl
+
         self.data_size = len(self.data)
 
     def _get_slice_params(self):
@@ -166,31 +195,25 @@ class ConfidenceSliceAnalyzer:
 
         # 对每个切片进行分析
         for upper, lower in slices:
-            # 初始化final列
-            self.data["final"] = 0
-
             # 处理超出范围的值 - 归类到最近的边界切片
             score_clipped = self.data["score"].clip(self.lower_bound, self.upper_bound)
 
             # 筛选当前切片区间（包括被归类的超出范围值）
             mask = (score_clipped < upper) & (score_clipped >= lower)
 
-            # 根据阈值决定交易方向
-            # 切片中心点用于判断该切片的主要交易方向
-            slice_center = (upper + lower) / 2
-            if slice_center >= self.threshold:
-                # 高于阈值，做多，volume为正
-                self.data["final"] = np.where(mask, self.data["volume"], 0)
-            else:
-                # 低于阈值，做空，volume为负（表示做空收益）
-                self.data["final"] = np.where(mask, -self.data["volume"], 0)
+            # 仅对当前切片内的数据点计算盈亏
+            slice_pnl = np.where(mask, self.data["pnl"], 0)
 
             # 计算样本占比
             true_count = mask.sum() / self.data_size
 
-            # 计算累积收益
-            self.data["high"] = self.data["final"].cumsum()
-            self.data["open"] = self.coefficient * self.data["high"] / self.capital
+            # 计算累积盈亏（这将显示该切片的真实盈亏曲线，有涨有跌）
+            cumulative_pnl = slice_pnl.cumsum()
+
+            # 按系数和资金缩放
+            self.data["cumulative_return"] = (
+                self.coefficient * cumulative_pnl / self.capital
+            )
 
             # 绘图
             fig, ax = plt.subplots(figsize=(20, 10))
@@ -208,8 +231,29 @@ class ConfidenceSliceAnalyzer:
                 # 无法转换为datetime，保持原样
                 is_datetime = False
 
-            # 绘制数据
-            ax.plot(time_series, self.data["open"])
+            # 绘制主曲线
+            ax.plot(
+                time_series,
+                self.data["cumulative_return"],
+                label="累积盈亏",
+                color="blue",
+            )
+
+            # 计算并绘制均值线
+            mean_value = self.data["cumulative_return"].mean()
+            ax.axhline(
+                y=mean_value,
+                color="red",
+                linestyle="--",
+                linewidth=1.5,
+                label=f"均值: {mean_value:.4f}",
+            )
+
+            # 添加零线作为参考（使用黑色加粗线条以在灰色网格中突出显示）
+            ax.axhline(y=0, color="black", linestyle="-", linewidth=1.2, alpha=0.7, zorder=5)
+
+            # 添加图例
+            ax.legend(loc="best", fontsize=10)
 
             # 设置x轴刻度
             if is_datetime:
@@ -234,14 +278,27 @@ class ConfidenceSliceAnalyzer:
             else:
                 direction = " (做空)"
 
+            # 获取最终收益值
+            final_return = self.data["cumulative_return"].iloc[-1]
+            mean_return = self.data["cumulative_return"].mean()
+
+            # 判断盈亏状态
+            if final_return > 0:
+                profit_status = "盈利"
+            elif final_return < 0:
+                profit_status = "亏损"
+            else:
+                profit_status = "持平"
+
             plt.title(
-                f"切片区间 [{lower:.4f}, {upper:.4f}]{direction} - 样本占比: {true_count:.2%} - 累积收益曲线",
-                fontsize=14,
+                f"切片区间 [{lower:.4f}, {upper:.4f}]{direction} - 样本占比: {true_count:.2%}\n"
+                + f"最终收益: {final_return:.4f} ({profit_status}) | 平均收益: {mean_return:.4f}",
+                fontsize=12,
                 fontweight="bold",
             )
             plt.xlabel("时间", fontsize=12)
             plt.ylabel(
-                f"收益 (系数={self.coefficient}, 本金={self.capital})", fontsize=12
+                f"累积盈亏 (系数={self.coefficient}, 本金={self.capital})", fontsize=12
             )
 
             fig.autofmt_xdate()
@@ -261,7 +318,7 @@ class ConfidenceSliceAnalyzer:
 def analyze_confidence_slices(
     time_data: Union[pd.Series, np.ndarray, list],
     score_data: Union[pd.Series, np.ndarray, list],
-    volume_data: Union[pd.Series, np.ndarray, list],
+    close_price_data: Union[pd.Series, np.ndarray, list],
     granularity: float = 0.01,
     capital: float = 1000,
     coefficient: float = 0.25,
@@ -279,8 +336,8 @@ def analyze_confidence_slices(
         时间数据
     score_data : array-like
         模型输出值（分类任务：0-1之间；回归任务：任意范围）
-    volume_data : array-like
-        交易量数据
+    close_price_data : array-like
+        收盘价数据
     granularity : float
         切片粒度（建议0.01-0.1之间）
     capital : float
@@ -299,7 +356,7 @@ def analyze_confidence_slices(
     analyzer = ConfidenceSliceAnalyzer(
         time_data=time_data,
         score_data=score_data,
-        volume_data=volume_data,
+        close_price_data=close_price_data,
         granularity=granularity,
         capital=capital,
         coefficient=coefficient,
