@@ -4,8 +4,10 @@ from research.model_pick.features import FeatureLoader
 from research.model_pick.labeler import PipelineLabeler
 
 import json
+import random
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import lightgbm as lgb
 from jesse.helpers import date_to_timestamp
 
@@ -47,7 +49,7 @@ else:
         json.dump(feature_info, f, indent=4)
 
 
-def build_model(lag: int, pred_next: int, is_regression: bool = False):
+def build_model(lag: int, pred_next: int, is_regression: bool = False, seed: int = 42):
     model_type = "r" if is_regression else "c"
     MODEL_NAME = f"{model_type}_L{lag}_N{pred_next}"
 
@@ -63,8 +65,16 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
         & (df_params["pred_next"] == pred_next)
         & (df_params["model_type"] == ("regressor" if is_regression else "classifier"))
     ]
-    best_model_param = model_row["best_params"].iloc[0]
+    best_model_param = model_row["best_params"].iloc[0].copy()  # 使用copy避免修改原始数据
     feature_names = model_row["selected_features"].iloc[0]
+
+    # 统一设置random seed以确保prod模型和非prod模型的一致性
+    # 这对于置信度切片过滤至关重要
+    best_model_param["seed"] = seed
+    best_model_param["feature_fraction_seed"] = seed
+    best_model_param["bagging_seed"] = seed
+    best_model_param["data_random_seed"] = seed
+    print(f"Using unified random seed: {seed}")
     # 制作标签
     labeler = PipelineLabeler(candles, lag)
     if is_regression:
@@ -101,16 +111,28 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False):
 
 
 if __name__ == "__main__":
+    # 全局统一设置random seed，确保可重复性
+    GLOBAL_SEED = 42
+    random.seed(GLOBAL_SEED)
+    np.random.seed(GLOBAL_SEED)
+    print(f"=" * 60)
+    print(f"Global random seed set to {GLOBAL_SEED}")
+    print(f"This ensures consistency between prod and non-prod models")
+    print(f"=" * 60 + "\n")
+
     # classifiers
     for lag in range(5, 8):
         for pred_next in range(1, 4):
             print(f"building classifier for {lag = } and {pred_next = }")
-            build_model(lag, pred_next, is_regression=False)
+            build_model(lag, pred_next, is_regression=False, seed=GLOBAL_SEED)
 
     # regressors
     print("building regression model...")
-    build_model(7, 1, is_regression=True)
-    build_model(7, 2, is_regression=True)
-    build_model(7, 3, is_regression=True)
+    build_model(7, 1, is_regression=True, seed=GLOBAL_SEED)
+    build_model(7, 2, is_regression=True, seed=GLOBAL_SEED)
+    build_model(7, 3, is_regression=True, seed=GLOBAL_SEED)
 
-    print("done")
+    print("\n" + "=" * 60)
+    print("All models built with unified random seed")
+    print("This maximizes the effectiveness of confidence slice filters")
+    print("=" * 60)
