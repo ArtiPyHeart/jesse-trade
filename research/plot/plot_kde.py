@@ -6,26 +6,85 @@ from scipy.optimize import brentq
 from scipy.stats import gaussian_kde, norm
 
 
-def plot_kde(array_1d: np.ndarray, lag=1):
-    ret = np.log(array_1d[lag:]) - np.log(array_1d[:-lag])
-    standard = (ret - ret.mean()) / ret.std()
-    kurtosis = stats.kurtosis(standard, axis=None, fisher=False, nan_policy="omit")
-    plt.figure(figsize=(8, 6))
-    sns.kdeplot(standard, label="bar", color="blue")
-    sns.kdeplot(
-        np.random.normal(size=1000000), label="Normal", color="black", linestyle="--"
-    )
+def plot_kde(array_1d: np.ndarray, lag=1, multi_lag: bool = True):
+    """
+    绘制收益率的核密度估计图，可选多重lag对比
+
+    Parameters:
+    -----------
+    array_1d : np.ndarray
+        一维价格数组
+    lag : int, default=1
+        单一lag模式：使用的lag值
+        多重lag模式：最大lag值（将绘制lag 1到lag的所有峰度）
+    multi_lag : bool, default=True
+        是否绘制多重lag的峰度对比（从lag=1到lag=lag）
+    """
+    plt.figure(figsize=(10, 6))
+
+    if not multi_lag:
+        # 原有的单一lag行为
+        ret = np.log(array_1d[lag:]) - np.log(array_1d[:-lag])
+        standard = (ret - ret.mean()) / ret.std()
+        kurtosis = stats.kurtosis(standard, axis=None, fisher=False, nan_policy="omit")
+
+        sns.kdeplot(standard, label=f"lag={lag}", color="blue")
+        sns.kdeplot(
+            np.random.normal(size=1000000),
+            label="Normal",
+            color="black",
+            linestyle="--",
+        )
+
+        title = f"bar_{array_1d.shape[0]}_kurtosis_{kurtosis:.4f}"
+    else:
+        # 多重lag模式：从lag=1到lag=lag
+        assert lag >= 1, "lag必须 >= 1"
+
+        # 生成颜色映射
+        colors = plt.cm.rainbow(np.linspace(0, 1, lag))
+        kurtosis_list = []
+
+        # 循环绘制不同lag的KDE
+        for lag_i in range(1, lag + 1):
+            ret = np.log(array_1d[lag_i:]) - np.log(array_1d[:-lag_i])
+            standard = (ret - ret.mean()) / ret.std()
+            kurtosis = stats.kurtosis(
+                standard, axis=None, fisher=False, nan_policy="omit"
+            )
+            kurtosis_list.append(kurtosis)
+
+            sns.kdeplot(
+                standard,
+                label=f"lag={lag_i} (K={kurtosis:.2f})",
+                color=colors[lag_i - 1],
+                linewidth=2,
+            )
+
+        # 绘制正态分布参考线
+        sns.kdeplot(
+            np.random.normal(size=1000000),
+            label="Normal",
+            color="black",
+            linestyle="--",
+            linewidth=2,
+        )
+
+        title = f"bar_{array_1d.shape[0]}_multi_lag_kurtosis_comparison"
+
     plt.xticks(range(-5, 6))
-    plt.legend(loc=8, ncol=5)
+    plt.legend(loc="best", ncol=2 if multi_lag and lag > 5 else 1)
     plt.title(
-        f"bar_{array_1d.shape[0]}_kurtosis_{kurtosis}",
+        title,
         loc="center",
         fontsize=20,
         fontweight="bold",
         fontname="Times New Roman",
     )
+    plt.xlabel("Standardized Returns")
+    plt.ylabel("Density")
     plt.xlim(-5, 5)
-    plt.grid(1)
+    plt.grid(True, alpha=0.3)
     plt.show()
 
 
