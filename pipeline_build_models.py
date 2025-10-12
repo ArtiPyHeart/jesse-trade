@@ -65,7 +65,9 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False, seed: int
         & (df_params["pred_next"] == pred_next)
         & (df_params["model_type"] == ("regressor" if is_regression else "classifier"))
     ]
-    best_model_param = model_row["best_params"].iloc[0].copy()  # 使用copy避免修改原始数据
+    best_model_param = (
+        model_row["best_params"].iloc[0].copy()
+    )  # 使用copy避免修改原始数据
     feature_names = model_row["selected_features"].iloc[0]
 
     # 统一设置random seed以确保prod模型和非prod模型的一致性
@@ -121,7 +123,7 @@ if __name__ == "__main__":
     print(f"=" * 60 + "\n")
 
     # classifiers
-    for lag in range(5, 8):
+    for lag in range(5, 10):
         for pred_next in range(1, 4):
             print(f"building classifier for {lag = } and {pred_next = }")
             build_model(lag, pred_next, is_regression=False, seed=GLOBAL_SEED)

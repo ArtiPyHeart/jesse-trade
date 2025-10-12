@@ -26,6 +26,12 @@ class ConfidenceSliceAnalyzer:
 
     用于分析机器学习模型（分类/回归）的输出分布，通过精细切片找出真正赚钱的输出区间。
     支持任意范围的值，根据阈值判断多空方向，通过价格变化和交易信号计算每个切片的实际盈亏。
+
+    时序对齐说明：
+    - 模型在时刻 i 的预测值 score[i] 是针对未来第 pred_next 根K线的预测
+    - 算法将 score[i] 与 close_diff[i+pred_next] 进行对齐
+    - 图表显示的时间轴是验证预测的时刻，而非做出预测的时刻
+    - 原始数据长度为 N，对齐后有效数据长度为 N - pred_next
     """
 
     def __init__(
@@ -33,6 +39,7 @@ class ConfidenceSliceAnalyzer:
         time_data: Union[pd.Series, np.ndarray, list],
         score_data: Union[pd.Series, np.ndarray, list],
         close_price_data: Union[pd.Series, np.ndarray, list],
+        pred_next: int,
         granularity: float = 0.01,
         capital: float = 10000,
         coefficient: float = 0.25,
@@ -52,6 +59,9 @@ class ConfidenceSliceAnalyzer:
             模型输出值（分类任务：0-1之间；回归任务：任意范围）
         close_price_data : array-like
             收盘价数据
+        pred_next : int
+            模型预测的是未来第几根K线（必须>=1）
+            例如：pred_next=1表示预测下一根K线，pred_next=5表示预测未来第5根K线
         granularity : float
             切片粒度（建议0.01-0.1之间）
         capital : float
@@ -74,8 +84,10 @@ class ConfidenceSliceAnalyzer:
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
         self.threshold = threshold
+        self.pred_next = pred_next
 
         # 验证参数
+        assert isinstance(pred_next, int) and pred_next >= 1, "pred_next必须是>=1的整数"
         assert lower_bound < upper_bound, "下限必须小于上限"
         assert lower_bound <= threshold <= upper_bound, "阈值必须在上下限范围内"
 
@@ -94,6 +106,12 @@ class ConfidenceSliceAnalyzer:
         assert (
             len(time_data) == len(score_data) == len(close_price_data)
         ), "三列数据长度必须相等"
+
+        # 检查数据长度是否足够进行时序对齐
+        data_len = len(time_data)
+        assert data_len > self.pred_next, (
+            f"数据长度({data_len})必须大于pred_next({self.pred_next})才能进行时序对齐"
+        )
 
         # 转换为numpy array进行验证
         score_array = np.asarray(score_data)
@@ -129,34 +147,50 @@ class ConfidenceSliceAnalyzer:
         score_data: Union[pd.Series, np.ndarray, list],
         close_price_data: Union[pd.Series, np.ndarray, list],
     ):
-        """将输入数据整合为内部DataFrame"""
-        # 创建基础DataFrame
+        """将输入数据整合为内部DataFrame，实现正确的时序对齐"""
+        # 转换为numpy array便于处理
+        time_array = np.asarray(time_data)
+        score_array = np.asarray(score_data)
+        close_array = np.asarray(close_price_data)
+
+        # 计算价格差分（第一个值设为0）
+        close_diff = np.diff(close_array, prepend=close_array[0])
+        close_diff[0] = 0  # 确保第一个值为0
+
+        # 时序对齐：
+        # score[i] 预测 -> close_diff[i+pred_next]
+        # 截断数据以对齐（去掉最后pred_next个没有对应未来价格的预测）
+        aligned_score = score_array[:-self.pred_next]  # 前 N-pred_next 个预测
+        aligned_close_diff = close_diff[self.pred_next:]  # 后 N-pred_next 个价格变化
+        aligned_timestamp = time_array[self.pred_next:]  # 后 N-pred_next 个时间戳（验证时刻）
+        aligned_close_price = close_array[self.pred_next:]  # 后 N-pred_next 个收盘价
+
+        # 根据阈值生成交易信号：>= threshold为做多(1)，< threshold为做空(-1)
+        signal = np.where(aligned_score >= self.threshold, 1, -1)
+
+        # 计算每个时间点的盈亏（价格变化 * 交易信号）
+        pnl = aligned_close_diff * signal
+
+        # 创建对齐后的DataFrame
         self.data = pd.DataFrame(
             {
-                "timestamp": time_data,
-                "score": score_data,
-                "close_price": close_price_data,
+                "timestamp": aligned_timestamp,
+                "score": aligned_score,
+                "close_price": aligned_close_price,
+                "close_diff": aligned_close_diff,
+                "signal": signal,
+                "pnl": pnl,
             }
         )
 
-        # 计算价格差分（第一个值设为0）
-        close_prices = np.asarray(close_price_data)
-        close_diff = np.diff(close_prices, prepend=close_prices[0])
-        close_diff[0] = 0  # 确保第一个值为0
-
-        # 根据阈值生成交易信号：>= threshold为做多(1)，< threshold为做空(-1)
-        scores = np.asarray(score_data)
-        signal = np.where(scores >= self.threshold, 1, -1)
-
-        # 计算每个时间点的盈亏（价格变化 * 交易信号）
-        pnl = close_diff * signal
-
-        # 添加计算列到DataFrame
-        self.data["close_diff"] = close_diff
-        self.data["signal"] = signal
-        self.data["pnl"] = pnl
-
         self.data_size = len(self.data)
+
+        # 打印时序对齐信息
+        print(f"\n📊 时序对齐信息:")
+        print(f"  - pred_next: {self.pred_next} (预测未来第{self.pred_next}根K线)")
+        print(f"  - 原始数据长度: {len(time_data)}")
+        print(f"  - 对齐后数据长度: {self.data_size}")
+        print(f"  - 丢弃的尾部数据: {self.pred_next} 条\n")
 
     def _get_slice_params(self):
         """根据上下限和粒度动态生成切片参数"""
@@ -319,6 +353,7 @@ def analyze_confidence_slices(
     time_data: Union[pd.Series, np.ndarray, list],
     score_data: Union[pd.Series, np.ndarray, list],
     close_price_data: Union[pd.Series, np.ndarray, list],
+    pred_next: int,
     granularity: float = 0.01,
     capital: float = 1000,
     coefficient: float = 0.25,
@@ -338,6 +373,9 @@ def analyze_confidence_slices(
         模型输出值（分类任务：0-1之间；回归任务：任意范围）
     close_price_data : array-like
         收盘价数据
+    pred_next : int
+        模型预测的是未来第几根K线（必须>=1）
+        例如：pred_next=1表示预测下一根K线，pred_next=5表示预测未来第5根K线
     granularity : float
         切片粒度（建议0.01-0.1之间）
     capital : float
@@ -357,6 +395,7 @@ def analyze_confidence_slices(
         time_data=time_data,
         score_data=score_data,
         close_price_data=close_price_data,
+        pred_next=pred_next,
         granularity=granularity,
         capital=capital,
         coefficient=coefficient,
