@@ -348,3 +348,4 @@ optuna_storage/optuna_study.db
 /catboost_info/
 data/btc_1m.h5
 data/btc_1m.npz
+/temp/
