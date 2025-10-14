@@ -249,32 +249,100 @@ class ConfidenceSliceAnalyzer:
                 self.coefficient * cumulative_pnl / self.capital
             )
 
+            # 准备绘图数据
+            # 使用简单索引作为x轴（每个点间隔1单位）
+            x_axis = np.arange(len(self.data))
+            y_values = self.data["cumulative_return"].values
+
+            # 计算每一步的变化量（基于变化方向）
+            dy = np.diff(y_values, prepend=y_values[0])  # 第一个点变化为0
+
+            # 盈利面积 = 上升时的增量之和
+            profit_area = np.sum(dy[dy > 0])
+            # 亏损面积 = 下降时的减量之和（取绝对值）
+            loss_area = np.sum(np.abs(dy[dy < 0]))
+            total_area = profit_area + loss_area
+
+            # 计算盈利面积占比（防止除零）
+            if total_area > 1e-10:
+                profit_ratio = profit_area / total_area
+            else:
+                profit_ratio = 0.5  # 曲线始终为0时设为中性
+
             # 绘图
             fig, ax = plt.subplots(figsize=(20, 10))
 
-            # 检测并转换时间数据类型
-            time_series = self.data["timestamp"]
+            # 根据变化方向填充颜色（状态延续逻辑）
+            # 上升后持平保持绿色，下降后持平保持红色，直到方向改变
+            if len(y_values) > 1:
+                # 计算变化方向：1=上升，-1=下降，0=持平
+                direction = np.sign(np.diff(y_values))
 
-            # 尝试转换为datetime（如果还不是）
-            try:
-                # 如果已经是datetime类型，这不会改变它
-                # 如果是字符串，会尝试解析
-                time_series = pd.to_datetime(time_series)
-                is_datetime = True
-            except:
-                # 无法转换为datetime，保持原样
-                is_datetime = False
+                # 构建状态序列（忽略持平，保持上一个非零状态）
+                state = np.zeros(len(direction), dtype=int)
+                current_state = 0  # 初始状态未知
+
+                for i in range(len(direction)):
+                    if direction[i] != 0:  # 非持平，更新状态
+                        current_state = direction[i]
+                    state[i] = current_state
+
+                # 识别连续相同状态的段
+                segments = []
+                if len(state) > 0:
+                    # 跳过开头的0状态（如果有）
+                    start_idx = 0
+                    while start_idx < len(state) and state[start_idx] == 0:
+                        start_idx += 1
+
+                    if start_idx < len(state):
+                        current_state = state[start_idx]
+
+                        for i in range(start_idx + 1, len(state)):
+                            if state[i] != current_state:
+                                # 状态改变，保存上一段
+                                if current_state != 0:
+                                    segments.append((start_idx, i, current_state))
+                                start_idx = i
+                                current_state = state[i]
+
+                        # 添加最后一段
+                        if current_state != 0:
+                            segments.append((start_idx, len(state), current_state))
+
+                # 填充每个状态段
+                for start, end, state_sign in segments:
+                    if state_sign > 0:  # 上升状态（绿色）
+                        ax.fill_between(
+                            x_axis[start:end+1],
+                            y_values[start:end+1],
+                            0,
+                            color="lightgreen",
+                            alpha=0.3,
+                            edgecolor='none'
+                        )
+                    elif state_sign < 0:  # 下降状态（红色）
+                        ax.fill_between(
+                            x_axis[start:end+1],
+                            y_values[start:end+1],
+                            0,
+                            color="lightcoral",
+                            alpha=0.3,
+                            edgecolor='none'
+                        )
+
+                # 添加图例（手动创建）
+                from matplotlib.patches import Patch
+                legend_elements = [
+                    Patch(facecolor='lightgreen', alpha=0.3, label='上升状态（盈利）'),
+                    Patch(facecolor='lightcoral', alpha=0.3, label='下降状态（亏损）')
+                ]
 
             # 绘制主曲线
-            ax.plot(
-                time_series,
-                self.data["cumulative_return"],
-                label="累积盈亏",
-                color="blue",
-            )
+            ax.plot(x_axis, y_values, label="累积盈亏", color="blue", linewidth=1.5)
 
             # 计算并绘制均值线
-            mean_value = self.data["cumulative_return"].mean()
+            mean_value = y_values.mean()
             ax.axhline(
                 y=mean_value,
                 color="red",
@@ -286,23 +354,30 @@ class ConfidenceSliceAnalyzer:
             # 添加零线作为参考（使用黑色加粗线条以在灰色网格中突出显示）
             ax.axhline(y=0, color="black", linestyle="-", linewidth=1.2, alpha=0.7, zorder=5)
 
-            # 添加图例
-            ax.legend(loc="best", fontsize=10)
-
-            # 设置x轴刻度
-            if is_datetime:
-                # 对于datetime数据，使用matplotlib.dates处理
-                # 设置合理的刻度数量
-                locator = mdates.AutoDateLocator(maxticks=tick_count)
-                formatter = mdates.ConciseDateFormatter(locator)
-                ax.xaxis.set_major_locator(locator)
-                ax.xaxis.set_major_formatter(formatter)
+            # 添加图例（包含颜色填充说明）
+            if len(y_values) > 1:
+                handles, labels = ax.get_legend_handles_labels()
+                handles = legend_elements + handles
+                ax.legend(handles=handles, loc="best", fontsize=10)
             else:
-                # 对于非datetime数据（字符串等），手动设置刻度
-                tick_indices = list(
-                    range(0, self.data_size, max(1, int(self.data_size / tick_count)))
+                ax.legend(loc="best", fontsize=10)
+
+            # 设置x轴刻度 - 显示实际时间但计算时用索引
+            time_series = self.data["timestamp"]
+            try:
+                time_series = pd.to_datetime(time_series)
+                is_datetime = True
+            except:
+                is_datetime = False
+
+            tick_indices = np.linspace(0, len(x_axis) - 1, min(tick_count, len(x_axis)), dtype=int)
+            ax.set_xticks(tick_indices)
+
+            if is_datetime:
+                ax.set_xticklabels(
+                    [time_series.iloc[i].strftime("%Y-%m-%d") for i in tick_indices]
                 )
-                ax.set_xticks(tick_indices)
+            else:
                 ax.set_xticklabels([str(time_series.iloc[i]) for i in tick_indices])
 
             # 添加标题和标签
@@ -326,7 +401,8 @@ class ConfidenceSliceAnalyzer:
 
             plt.title(
                 f"切片区间 [{lower:.4f}, {upper:.4f}]{direction} - 样本占比: {true_count:.2%}\n"
-                + f"最终收益: {final_return:.4f} ({profit_status}) | 平均收益: {mean_return:.4f}",
+                + f"最终收益: {final_return:.4f} ({profit_status}) | 平均收益: {mean_return:.4f}\n"
+                + f"盈利面积占比: {profit_ratio:.2%} (盈利:{profit_area:.2f} vs 亏损:{loss_area:.2f})",
                 fontsize=12,
                 fontweight="bold",
             )
