@@ -24,7 +24,7 @@ df_params["selected_features"] = df_params["selected_features"].apply(json.loads
 candle_container = FusionCandles(
     exchange="Binance Perpetual Futures", symbol="BTC-USDT", timeframe="1m"
 )
-candles = candle_container.get_candles("2022-07-01", "2025-09-20")
+candles = candle_container.get_candles("2022-07-01", "2025-10-10")
 # 特征生成只关心特征名称和原始数据
 feature_loader = FeatureLoader(candles)
 # 加载已训练的deep ssm与lg ssm模型
@@ -123,16 +123,16 @@ if __name__ == "__main__":
     print(f"=" * 60 + "\n")
 
     # classifiers
-    for lag in range(5, 10):
+    for lag in range(4, 7):
         for pred_next in range(1, 4):
             print(f"building classifier for {lag = } and {pred_next = }")
             build_model(lag, pred_next, is_regression=False, seed=GLOBAL_SEED)
 
     # regressors
     print("building regression model...")
-    build_model(7, 1, is_regression=True, seed=GLOBAL_SEED)
-    build_model(7, 2, is_regression=True, seed=GLOBAL_SEED)
-    build_model(7, 3, is_regression=True, seed=GLOBAL_SEED)
+    build_model(5, 1, is_regression=True, seed=GLOBAL_SEED)
+    build_model(6, 2, is_regression=True, seed=GLOBAL_SEED)
+    build_model(6, 3, is_regression=True, seed=GLOBAL_SEED)
 
     print("\n" + "=" * 60)
     print("All models built with unified random seed")
