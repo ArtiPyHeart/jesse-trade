@@ -299,7 +299,7 @@ def evaluate_regressor(
 
 if __name__ == "__main__":
     # 参数配置
-    log_return_lags = list(range(4, 10))
+    log_return_lags = list(range(3, 10))
     pred_next_steps = [1, 2, 3]
 
     # 获取待完成的任务

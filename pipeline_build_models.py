@@ -123,7 +123,7 @@ if __name__ == "__main__":
     print(f"=" * 60 + "\n")
 
     # classifiers
-    for lag in range(4, 7):
+    for lag in range(3, 7):
         for pred_next in range(1, 4):
             print(f"building classifier for {lag = } and {pred_next = }")
             build_model(lag, pred_next, is_regression=False, seed=GLOBAL_SEED)
