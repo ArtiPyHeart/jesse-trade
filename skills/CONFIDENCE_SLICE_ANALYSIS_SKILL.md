@@ -132,43 +132,140 @@ mc.add_giveup_filter(lower_bound, upper_bound)
 
 ### 4. 批量处理流程
 
-当用户提供一个模型的所有切片图片时：
+#### 并行分析策略（推荐）
 
-1. **逐个分析**每张图片，记录区间和决策
-2. **汇总建议**，生成完整的过滤器配置代码
-3. **提供摘要**：
-   - 良好区间数量和占比
-   - 反向区间数量和占比
-   - 放弃区间数量和占比
-4. **生成代码**（使用自动解析的参数）：
+由于每张置信度切片图片是独立的，**强烈建议使用 Task tool 启动 child agent 并行分析**以提高效率。
+
+**完整工作流程：**
+
+**阶段1：准备与检查**
+1. 解析模型参数（从路径提取，如 `temp/c_L3_N1`）
+2. 扫描目标目录，获取所有切片图片列表（使用 Glob 工具）
+3. 检查临时记录文件是否存在：`temp/{模型名称}_analysis_progress.jsonl`
+4. 如果临时文件存在：
+   - 读取已分析的切片列表
+   - 识别未完成的图片
+   - 告知用户已完成进度，继续剩余分析
+5. 如果临时文件不存在或用户要求"重新分析"：
+   - 创建新的临时文件
+   - 分析所有图片
+
+**阶段2：并行分析（使用 Child Agent）**
+1. 将未分析的图片分组（建议每组5-10张）
+2. 使用 Task tool 启动多个 child agent 并行处理不同组
+3. 每个 child agent：
+   - 读取图片
+   - 分析曲线特征
+   - 做出决策（good/reverse/giveup）
+   - 将结果以 JSON 格式追加到临时文件
+4. 等待所有 child agent 完成
+
+**阶段3：汇总与生成**
+1. 读取完整的临时文件
+2. 按决策类型分类汇总：
+   - 良好区间（good）
+   - 反向区间（reverse）
+   - 放弃区间（giveup）
+3. 生成详细分析报告
+4. 生成可执行的配置代码
+
+**阶段4：清理**
+1. 向用户展示最终报告和代码
+2. 删除临时文件（分析完成后不再需要）
+
+#### 临时文件管理
+
+**文件命名规则：**
+```
+temp/{模型名称}_analysis_progress.jsonl
+```
+例如：`temp/c_L3_N1_analysis_progress.jsonl`
+
+**文件格式（JSONL，每行一个JSON对象）：**
+```jsonl
+{"slice": "[0.02, 0.04]", "direction": "做多", "decision": "reverse", "reason": "曲线持续下降，最终收益-0.0856，平均收益-0.0421", "sample_ratio": 0.032}
+{"slice": "[0.48, 0.50]", "direction": "做多", "decision": "giveup", "reason": "曲线呈S型围绕零轴波动，方向不明确", "sample_ratio": 0.051}
+{"slice": "[0.84, 0.86]", "direction": "做多", "decision": "good", "reason": "曲线稳定上升，平均收益为正", "sample_ratio": 0.028}
+```
+
+**JSON字段说明：**
+- `slice` (string): 切片区间，如 "[0.02, 0.04]"
+- `direction` (string): 交易方向，"做多" 或 "做空"
+- `decision` (string): 决策类型，"good" / "reverse" / "giveup"
+- `reason` (string): 决策理由简述（包含关键指标）
+- `sample_ratio` (float): 样本占比（0-1之间）
+
+**断点续传逻辑：**
+- 如果分析过程意外中断，下次启动时会自动检测临时文件
+- 读取已完成的切片，仅处理剩余图片
+- 用户可以随时中断和继续，不会丢失进度
+
+#### 配置代码生成示例
+
 ```python
 from strategies.BinanceBtcDeapV1Voting.models.config import LGBMContainer
 
 # 初始化模型容器（参数从路径自动解析）
 mc = LGBMContainer(
-    model_type="c",  # 从路径解析
+    model_type="c",  # 从 temp/c_L3_N1 解析
     lag=3,           # 从路径解析
     pred_next=1,     # 从路径解析
     threshold=0.5,   # 根据模型类型自动推断
 )
 
-print(mc.MODEL_NAME)  # 验证模型名称
+print(mc.MODEL_NAME)  # 验证: model_c_L3_N1
 
-# 添加反向操作过滤器
+# 添加反向操作过滤器（从临时文件汇总）
 mc.add_reverse_filter(0.02, 0.04)
 mc.add_reverse_filter(0.06, 0.08)
 # ...
 
-# 添加空仓过滤器
+# 添加空仓过滤器（从临时文件汇总）
 mc.add_giveup_filter(0.48, 0.50)
 mc.add_giveup_filter(0.50, 0.52)
 # ...
 
 # 保存过滤器配置
 mc.save_filters()
+print(f"过滤器配置已保存至: {mc.filter_file_path}")
 ```
 
 ### 5. 输出格式示例
+
+#### 分析开始阶段
+
+```markdown
+## 置信度切片分析 - 开始
+
+**模型路径：** temp/c_L3_N1
+
+**解析的模型参数：**
+- 模型类型：分类模型 (c)
+- LAG：3
+- PRED_NEXT：1
+- THRESHOLD：0.5
+- LOWER_BOUND：0.0
+- UPPER_BOUND：1.0
+
+**扫描结果：**
+- 发现 50 张切片图片
+- 临时文件：temp/c_L3_N1_analysis_progress.jsonl（不存在，将创建新文件）
+
+**执行计划：**
+- 将启动 10 个 child agent 并行分析（每组5张图片）
+- 分析结果将保存到临时文件，支持断点续传
+- 预计耗时：约2-3分钟
+```
+
+#### 进度更新（可选）
+
+```markdown
+**分析进度更新：**
+- 已完成 25/50 张图片分析（50%）
+- 良好区间：16个，反向区间：4个，放弃区间：5个
+```
+
+#### 最终分析报告
 
 ```markdown
 ## 置信度切片分析报告
@@ -185,9 +282,9 @@ mc.save_filters()
 
 ### 分析结果摘要
 - 总切片数量：50
-- 良好区间：32个（64%）
-- 反向区间：8个（16%）
-- 放弃区间：10个（20%）
+- 良好区间：32个（64%）- 无需配置
+- 反向区间：8个（16%）- 需要 add_reverse_filter
+- 放弃区间：10个（20%）- 需要 add_giveup_filter
 
 ### 详细分析
 
@@ -197,7 +294,8 @@ mc.save_filters()
    - 盈利面积占比仅28%，模型预测与实际相反
 
 2. **[0.06, 0.08]** - 样本占比2.8%
-   - ...
+   - 曲线单调下降，平均收益-0.0312
+   - 建议反向操作
 
 #### 放弃区间（需要add_giveup_filter）
 1. **[0.48, 0.50]** - 样本占比5.1%
@@ -205,10 +303,39 @@ mc.save_filters()
    - 盈利面积占比49%，接近随机
 
 2. **[0.00, 0.02]** - 样本占比0%
-   - 无交易数据
+   - 无交易数据，自动放弃
 
 ### 配置代码
-[生成的Python代码，使用解析的参数]
+
+```python
+from strategies.BinanceBtcDeapV1Voting.models.config import LGBMContainer
+
+# 初始化模型容器
+mc = LGBMContainer(
+    model_type="c",
+    lag=3,
+    pred_next=1,
+    threshold=0.5,
+)
+
+print(mc.MODEL_NAME)  # 验证: model_c_L3_N1
+
+# 添加反向操作过滤器（8个区间）
+mc.add_reverse_filter(0.02, 0.04)
+mc.add_reverse_filter(0.06, 0.08)
+# ... 共8个
+
+# 添加空仓过滤器（10个区间）
+mc.add_giveup_filter(0.00, 0.02)
+mc.add_giveup_filter(0.48, 0.50)
+# ... 共10个
+
+# 保存过滤器配置
+mc.save_filters()
+print(f"过滤器配置已保存至: {mc.filter_file_path}")
+```
+
+**分析完成！** 临时文件已删除。
 ```
 
 ## 注意事项
@@ -220,20 +347,37 @@ mc.save_filters()
    - 在报告开头明确列出解析的参数，让用户验证
    - 如果路径格式不符合约定，向用户确认参数
 
-2. **边界情况处理：**
+2. **并行分析策略（重要）：**
+   - **优先使用 Task tool 启动 child agent 进行并行分析**
+   - 每张图片独立分析，互不依赖，天然适合并行
+   - 建议每组5-10张图片，避免启动过多 agent
+   - 所有 child agent 应将结果写入同一个临时文件（追加模式）
+
+3. **临时文件管理（必需）：**
+   - **必须**创建临时进度文件：`temp/{模型名称}_analysis_progress.jsonl`
+   - 开始分析前检查临时文件，实现断点续传
+   - 使用 JSONL 格式（每行一个独立的 JSON 对象），便于追加和解析
+   - 分析完成后生成最终报告和代码，然后删除临时文件
+   - 如果用户要求"重新分析"，先删除旧临时文件
+
+4. **边界情况处理：**
    - 如果曲线看起来"几乎单调"但有小幅回撤，仍可归为良好/反向区间
    - 如果无法明确判断，倾向于保守，归为放弃区间
 
-3. **样本占比考量：**
+5. **样本占比考量：**
    - 样本占比过高（>10%）的区间，需要特别重视其配置
+   - 样本占比为0的区间，自动归为放弃区间
 
-4. **上下文整体性：**
+6. **上下文整体性：**
    - 可以建议合并相邻的同类型区间
+   - 在最终报告中按区间顺序排列，便于查看连续性
 
-5. **沟通方式：**
+7. **沟通方式：**
    - 用清晰的术语描述曲线特征
    - 提供决策的明确理由
    - 代码格式规范，易于复制粘贴
+   - 在开始并行分析时，告知用户将启动多个 child agent
+   - 定期更新进度（如"已完成30/50张图片分析"）
 
 ## 关键术语
 
@@ -246,3 +390,7 @@ mc.save_filters()
 - **时序对齐（Temporal Alignment）**：score[i]预测 → close_diff[i+pred_next]
 - **LAG**：log return lag，特征工程中使用的滞后期数
 - **PRED_NEXT**：预测未来第N个标签，影响时序对齐
+- **Child Agent 并行分析**：使用 Task tool 启动多个独立的分析代理，并行处理不同的图片组
+- **临时进度文件（Progress File）**：JSONL格式文件，记录每个切片的分析结果，支持断点续传
+- **断点续传（Resume from Checkpoint）**：分析中断后，从临时文件读取已完成的进度，继续未完成的任务
+- **JSONL 格式**：每行一个独立的JSON对象，便于追加写入和逐行解析
