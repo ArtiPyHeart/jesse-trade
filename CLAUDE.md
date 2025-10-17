@@ -12,6 +12,7 @@
 - `research/`：离线研究实验（勿在生产导入）
 - `extern/`：参考资料（勿导入）
 - `tests/`：pytest测试
+- `skills/`：Claude专用SKILL文档，定义特定领域的工作流程和标准
 
 ## 运行入口
 该项目的运行入口为 `strategies/` 下的各项策略，需要启动jesse后运行，无法直接使用python运行
@@ -39,6 +40,13 @@ pip install -r requirements-dev.txt  # 开发依赖
 - 使用`assert`拦截非法输入，避免宽泛`try/except`
 - 简单测试用`if __name__ == "__main__"`，复杂测试放`tests/`
 - EasyLanguage角度→Python弧度：用`src/utils/math_tools.py`
+
+## SKILL文档使用
+`skills/`目录包含针对特定任务的专业工作流程和标准：
+- **触发条件**：当用户提及相关任务时，主动读取对应SKILL文档
+- **现有SKILL**：
+  - `CONFIDENCE_SLICE_ANALYSIS_SKILL.md`：置信度切片分析与过滤器配置
+- **使用原则**：严格遵循SKILL中定义的决策准则、输出格式和沟通方式
 
 ## 关键提醒
 - 开发时使用mcp context7 查看最新文档，如果mcp调用失败，停下来提示用户先配置

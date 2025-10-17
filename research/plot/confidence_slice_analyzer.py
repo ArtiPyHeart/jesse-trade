@@ -1,13 +1,12 @@
 import os
+
+# 配置matplotlib中文显示
+import platform
 from typing import Union
 
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-import matplotlib.dates as mdates
-
-# 配置matplotlib中文显示
-import platform
 
 # 根据系统平台选择合适的中文字体
 if platform.system() == "Darwin":  # macOS
@@ -47,6 +46,7 @@ class ConfidenceSliceAnalyzer:
         lower_bound: float = 0.0,
         upper_bound: float = 1.0,
         threshold: float = 0.5,
+        show_color_blocks: bool = True,
     ):
         """
         初始化分析器
@@ -76,6 +76,8 @@ class ConfidenceSliceAnalyzer:
             分析值上限（默认1）
         threshold : float
             多空分界点（默认0.5）
+        show_color_blocks : bool
+            是否在图表中显示盈利/亏损的红绿色块（默认True）
         """
         self.granularity = granularity
         self.capital = capital
@@ -85,6 +87,7 @@ class ConfidenceSliceAnalyzer:
         self.upper_bound = upper_bound
         self.threshold = threshold
         self.pred_next = pred_next
+        self.show_color_blocks = show_color_blocks
 
         # 验证参数
         assert isinstance(pred_next, int) and pred_next >= 1, "pred_next必须是>=1的整数"
@@ -109,9 +112,9 @@ class ConfidenceSliceAnalyzer:
 
         # 检查数据长度是否足够进行时序对齐
         data_len = len(time_data)
-        assert data_len > self.pred_next, (
-            f"数据长度({data_len})必须大于pred_next({self.pred_next})才能进行时序对齐"
-        )
+        assert (
+            data_len > self.pred_next
+        ), f"数据长度({data_len})必须大于pred_next({self.pred_next})才能进行时序对齐"
 
         # 转换为numpy array进行验证
         score_array = np.asarray(score_data)
@@ -160,10 +163,12 @@ class ConfidenceSliceAnalyzer:
         # 时序对齐：
         # score[i] 预测 -> close_diff[i+pred_next]
         # 截断数据以对齐（去掉最后pred_next个没有对应未来价格的预测）
-        aligned_score = score_array[:-self.pred_next]  # 前 N-pred_next 个预测
-        aligned_close_diff = close_diff[self.pred_next:]  # 后 N-pred_next 个价格变化
-        aligned_timestamp = time_array[self.pred_next:]  # 后 N-pred_next 个时间戳（验证时刻）
-        aligned_close_price = close_array[self.pred_next:]  # 后 N-pred_next 个收盘价
+        aligned_score = score_array[: -self.pred_next]  # 前 N-pred_next 个预测
+        aligned_close_diff = close_diff[self.pred_next :]  # 后 N-pred_next 个价格变化
+        aligned_timestamp = time_array[
+            self.pred_next :
+        ]  # 后 N-pred_next 个时间戳（验证时刻）
+        aligned_close_price = close_array[self.pred_next :]  # 后 N-pred_next 个收盘价
 
         # 根据阈值生成交易信号：>= threshold为做多(1)，< threshold为做空(-1)
         signal = np.where(aligned_score >= self.threshold, 1, -1)
@@ -274,7 +279,7 @@ class ConfidenceSliceAnalyzer:
 
             # 根据变化方向填充颜色（状态延续逻辑）
             # 上升后持平保持绿色，下降后持平保持红色，直到方向改变
-            if len(y_values) > 1:
+            if self.show_color_blocks and len(y_values) > 1:
                 # 计算变化方向：1=上升，-1=下降，0=持平
                 direction = np.sign(np.diff(y_values))
 
@@ -314,28 +319,29 @@ class ConfidenceSliceAnalyzer:
                 for start, end, state_sign in segments:
                     if state_sign > 0:  # 上升状态（绿色）
                         ax.fill_between(
-                            x_axis[start:end+1],
-                            y_values[start:end+1],
+                            x_axis[start : end + 1],
+                            y_values[start : end + 1],
                             0,
                             color="lightgreen",
                             alpha=0.3,
-                            edgecolor='none'
+                            edgecolor="none",
                         )
                     elif state_sign < 0:  # 下降状态（红色）
                         ax.fill_between(
-                            x_axis[start:end+1],
-                            y_values[start:end+1],
+                            x_axis[start : end + 1],
+                            y_values[start : end + 1],
                             0,
                             color="lightcoral",
                             alpha=0.3,
-                            edgecolor='none'
+                            edgecolor="none",
                         )
 
                 # 添加图例（手动创建）
                 from matplotlib.patches import Patch
+
                 legend_elements = [
-                    Patch(facecolor='lightgreen', alpha=0.3, label='上升状态（盈利）'),
-                    Patch(facecolor='lightcoral', alpha=0.3, label='下降状态（亏损）')
+                    Patch(facecolor="lightgreen", alpha=0.3, label="上升状态（盈利）"),
+                    Patch(facecolor="lightcoral", alpha=0.3, label="下降状态（亏损）"),
                 ]
 
             # 绘制主曲线
@@ -352,10 +358,12 @@ class ConfidenceSliceAnalyzer:
             )
 
             # 添加零线作为参考（使用黑色加粗线条以在灰色网格中突出显示）
-            ax.axhline(y=0, color="black", linestyle="-", linewidth=1.2, alpha=0.7, zorder=5)
+            ax.axhline(
+                y=0, color="black", linestyle="-", linewidth=1.2, alpha=0.7, zorder=5
+            )
 
             # 添加图例（包含颜色填充说明）
-            if len(y_values) > 1:
+            if self.show_color_blocks and len(y_values) > 1:
                 handles, labels = ax.get_legend_handles_labels()
                 handles = legend_elements + handles
                 ax.legend(handles=handles, loc="best", fontsize=10)
@@ -370,7 +378,9 @@ class ConfidenceSliceAnalyzer:
             except:
                 is_datetime = False
 
-            tick_indices = np.linspace(0, len(x_axis) - 1, min(tick_count, len(x_axis)), dtype=int)
+            tick_indices = np.linspace(
+                0, len(x_axis) - 1, min(tick_count, len(x_axis)), dtype=int
+            )
             ax.set_xticks(tick_indices)
 
             if is_datetime:
@@ -437,6 +447,7 @@ def analyze_confidence_slices(
     lower_bound: float = 0.0,
     upper_bound: float = 1.0,
     threshold: float = 0.5,
+    show_color_blocks: bool = False,
 ):
     """
     便捷函数：执行置信度切片分析
@@ -466,6 +477,8 @@ def analyze_confidence_slices(
         分析值上限（默认1）
     threshold : float
         多空分界点（默认0.5）
+    show_color_blocks : bool
+        是否在图表中显示盈利/亏损的红绿色块（默认False）
     """
     analyzer = ConfidenceSliceAnalyzer(
         time_data=time_data,
@@ -479,5 +492,6 @@ def analyze_confidence_slices(
         lower_bound=lower_bound,
         upper_bound=upper_bound,
         threshold=threshold,
+        show_color_blocks=show_color_blocks,
     )
     analyzer.analyze()
