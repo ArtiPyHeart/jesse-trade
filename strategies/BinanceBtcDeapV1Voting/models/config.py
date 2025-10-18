@@ -55,10 +55,11 @@ class SSMContainer:
         if self.model_type == "deep_ssm":
             # DeepSSM 使用 process_single
             res = self.model_inference.process_single(arr)
+            res = res.reshape(1, -1)
             return pd.DataFrame(
-                res.reshape(1, -1),
+                res,
                 index=df_one_row.index,
-                columns=[f"{self.prefix}_{i}" for i in range(len(res))],
+                columns=[f"{self.prefix}_{i}" for i in range(res.shape[1])],
             )
         else:  # lg_ssm
             # LGSSM 使用 update_single
@@ -70,10 +71,11 @@ class SSMContainer:
             )
             if self.first_observation:
                 self.first_observation = False
+            state = self.state.reshape(1, -1)
             return pd.DataFrame(
-                self.state.reshape(1, -1),
+                state,
                 index=df_one_row.index,
-                columns=[f"{self.prefix}_{i}" for i in range(len(self.state))],
+                columns=[f"{self.prefix}_{i}" for i in range(self.state.shape[1])],
             )
 
 
