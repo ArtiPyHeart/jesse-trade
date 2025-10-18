@@ -3,29 +3,12 @@ from collections import deque
 from pathlib import Path
 from typing import Literal
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 
 from src.models.deep_ssm.deep_ssm import DeepSSM
 from src.models.lgssm import LGSSM
-
-path_features = Path(__file__).parent / "feature_info.json"
-with open(path_features) as f:
-    feature_info = json.load(f)
-
-FEAT_FRACDIFF = feature_info["fracdiff"]
-ALL_RAW_FEAT = set()
-for k, v in feature_info.items():
-    # if not k.startswith("r_"):
-    ALL_RAW_FEAT.update(v)
-ALL_RAW_FEAT = sorted(
-    [
-        i
-        for i in ALL_RAW_FEAT
-        if not i.startswith("deep_ssm") and not i.startswith("lg_ssm")
-    ]
-)
 
 
 class SSMContainer:
@@ -94,10 +77,49 @@ class SSMContainer:
             )
 
 
+def model_name_to_params(name: str) -> tuple[str, int, int, float]:
+    """
+    将模型名称转化为可以设定LGBMContainer的参数组
+    比如，将r_L3_N2转化为r, 3, 2, 0.0
+    也就是model_type, lag, pred_next, threshold的组合
+    c开头的模型为分类模型，threshold=0.5
+    r开头的模型为回归模型，threshold=0
+    """
+    # 分割模型名称，格式为 "{model_type}_L{lag}_N{pred_next}"
+    parts = name.split("_")
+    assert (
+        len(parts) == 3
+    ), f"Invalid model name format: {name}, expected format: {{model_type}}_L{{lag}}_N{{pred_next}}"
+
+    # 提取 model_type
+    model_type = parts[0]
+    assert model_type.startswith(
+        ("c", "r")
+    ), f"Invalid model_type: {model_type}, expected to start with 'c' or 'r'"
+
+    # 提取 lag (去掉 "L" 前缀)
+    assert parts[1].startswith(
+        "L"
+    ), f"Invalid lag format: {parts[1]}, expected 'L' prefix"
+    lag = int(parts[1][1:])
+
+    # 提取 pred_next (去掉 "N" 前缀)
+    assert parts[2].startswith(
+        "N"
+    ), f"Invalid pred_next format: {parts[2]}, expected 'N' prefix"
+    pred_next = int(parts[2][1:])
+
+    # 根据 model_type 设置 threshold
+    # c开头的为分类模型，r开头的为回归模型
+    threshold = 0.5 if model_type.startswith("c") else 0.0
+
+    return model_type, lag, pred_next, threshold
+
+
 class LGBMContainer:
     def __init__(
         self,
-        model_type: Literal["c", "r"],
+        model_type: Literal["c", "r", "r2"],
         lag: int,
         pred_next: int,
         threshold: float,
@@ -238,25 +260,22 @@ class LGBMContainer:
             try:
                 with open(filter_path, "r") as f:
                     self._filters = json.load(f)
-                print(
-                    f"Auto-loaded {len(self._filters)} filters for {self.MODEL_NAME}"
-                )
+                print(f"Auto-loaded {len(self._filters)} filters for {self.MODEL_NAME}")
             except Exception as e:
                 print(f"Failed to auto-load filters: {e}")
                 self._filters = []
 
-    def predict_proba(self, all_feat_df_one_row: pd.DataFrame):
+    def predict_proba(self, feat_df_one_row: pd.DataFrame):
         """
         获取模型的原始预测概率
 
         Args:
-            all_feat_df_one_row: 包含所有特征的单行DataFrame
+            feat_df_one_row: 包含当前模型所有特征的单行DataFrame
 
         Returns:
             预测概率值
         """
-        _feature_names = feature_info[f"{self.MODEL_NAME}"]
-        self.preds = self.model.predict(all_feat_df_one_row[_feature_names])[-1]
+        self.preds = self.model.predict(feat_df_one_row)[-1]
         return self.preds[0]
 
     def _apply_filters(self, pred_proba: float) -> int:
@@ -289,18 +308,18 @@ class LGBMContainer:
 
         return current_pred
 
-    def final_predict(self, all_feat_df_one_row: pd.DataFrame) -> int:
+    def final_predict(self, feat_df_one_row: pd.DataFrame) -> int:
         """
         执行完整预测流程：获取原始预测概率 -> 应用filters -> 输出最终结果
 
         Args:
-            all_feat_df_one_row: 包含所有特征的单行DataFrame
+            feat_df_one_row: 包含当前模型特征的单行DataFrame
 
         Returns:
             最终预测方向: -1=做空, 0=不持仓, 1=做多
         """
         # 1. 获取原始预测概率
-        pred_proba = self.predict_proba(all_feat_df_one_row)
+        pred_proba = self.predict_proba(feat_df_one_row)
 
         # 2. 处理NaN值
         if np.isnan(pred_proba):

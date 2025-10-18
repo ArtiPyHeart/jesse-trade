@@ -1,7 +1,6 @@
-from src.bars.fusion.deap_v1 import DeapBarV1
-from src.features.simple_feature_calculator import SimpleFeatureCalculator
-
+import json
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -11,11 +10,12 @@ from joblib._parallel_backends import LokyBackend  # 内部 API
 from joblib.externals.loky import get_reusable_executor
 from joblib.parallel import register_parallel_backend
 
+from src.bars.fusion.demo import DemoBar
+from src.features.simple_feature_calculator import SimpleFeatureCalculator
 from .models.config import (
+    model_name_to_params,
     LGBMContainer,
-    FEAT_FRACDIFF,
     SSMContainer,
-    ALL_RAW_FEAT,
 )
 
 # joblib设置
@@ -27,16 +27,36 @@ backend = LokyBackend(executor=executor, timeout=None)
 # ② 把它注册成全局 backend
 register_parallel_backend("loky_reuse", lambda **kw: backend, make_default=True)
 
-META_MODEL_THRESHOLD = 0.5
-SIDE_MODEL_THRESHOLD = 0.5
 STOP_LOSS_RATIO_NO_LEVERAGE = 0.05
-ORDER_TIMEOUT = 600 * 1000
+POSITION_SIZE_RATIO = 0.95
+
+# 模型与特征设置
+MODELS = [
+    "c_L4_N1",
+    "c_L5_N1",
+]
+
+path_features = Path(__file__).parent / "models" / "feature_info.json"
+with open(path_features) as f:
+    feature_info: dict[str, list[str]] = json.load(f)
+FEAT_FRACDIFF: list[str] = feature_info["fracdiff"]
+ALL_RAW_FEAT = []
+for m in MODELS:
+    ALL_RAW_FEAT.extend(feature_info[m])
+ALL_RAW_FEAT = set(ALL_RAW_FEAT)
+ALL_RAW_FEAT = sorted(
+    [
+        i
+        for i in ALL_RAW_FEAT
+        if not i.startswith("deep_ssm") and not i.startswith("lg_ssm")
+    ]
+)
 
 
 class BinanceBtcDeapV1Voting(Strategy):
     def __init__(self):
         super().__init__()
-        self.bar_container = DeapBarV1(max_bars=2500)
+        self.bar_container = DemoBar(max_bars=5000)
         self.fc = SimpleFeatureCalculator()
 
         self.deep_ssm_model = SSMContainer("deep_ssm")
@@ -45,35 +65,10 @@ class BinanceBtcDeapV1Voting(Strategy):
         self._init_models()
 
     def _init_models(self):
-        self.model_c_L4_N1 = LGBMContainer(
-            "c", 4, 1, is_livetrading=self.is_livetrading
-        )
-        self.model_c_L5_N1 = LGBMContainer(
-            "c", 5, 1, is_livetrading=self.is_livetrading
-        )
-        self.model_c_L6_N1 = LGBMContainer(
-            "c", 6, 1, is_livetrading=self.is_livetrading
-        )
-
-        self.model_c_L4_N2 = LGBMContainer(
-            "c", 4, 2, is_livetrading=self.is_livetrading
-        )
-        self.model_c_L5_N2 = LGBMContainer(
-            "c", 5, 2, is_livetrading=self.is_livetrading
-        )
-        self.model_c_L6_N2 = LGBMContainer(
-            "c", 6, 2, is_livetrading=self.is_livetrading
-        )
-
-        self.model_c_L4_N3 = LGBMContainer(
-            "c", 4, 3, is_livetrading=self.is_livetrading
-        )
-        self.model_c_L5_N3 = LGBMContainer(
-            "c", 5, 3, is_livetrading=self.is_livetrading
-        )
-        self.model_c_L6_N3 = LGBMContainer(
-            "c", 6, 3, is_livetrading=self.is_livetrading
-        )
+        for m in MODELS:
+            model_container = LGBMContainer(*model_name_to_params(m))
+            model_container.is_livetrading = self.is_livetrading
+            setattr(self, f"model_{m}", model_container)
 
     @property
     def cleaned_candles(self):
@@ -111,52 +106,22 @@ class BinanceBtcDeapV1Voting(Strategy):
 
     @property
     @cached
-    def model_c_N1_vote(self):
-        preds = [
-            self.model_c_L4_N1.predict_proba(self.df_all_features),
-            self.model_c_L5_N1.predict_proba(self.df_all_features),
-            self.model_c_L6_N1.predict_proba(self.df_all_features),
-        ]
-        preds = [0 if np.isnan(i) else (1 if i > 0.5 else -1) for i in preds]
-        return sum(preds)
-
-    @property
-    @cached
-    def model_c_N2_vote(self):
-        preds = [
-            self.model_c_L4_N2.predict_proba(self.df_all_features),
-            self.model_c_L5_N2.predict_proba(self.df_all_features),
-            self.model_c_L6_N2.predict_proba(self.df_all_features),
-        ]
-        preds = [0 if np.isnan(i) else (1 if i > 0.5 else -1) for i in preds]
-        return sum(preds)
-
-    @property
-    @cached
-    def model_c_N3_vote(self):
-        preds = [
-            self.model_c_L4_N3.predict_proba(self.df_all_features),
-            self.model_c_L5_N3.predict_proba(self.df_all_features),
-            self.model_c_L6_N3.predict_proba(self.df_all_features),
-        ]
-        preds = [0 if np.isnan(i) else (1 if i > 0.5 else -1) for i in preds]
-        return sum(preds)
+    def votes(self) -> list[int]:
+        preds = []
+        for m in MODELS:
+            mc: LGBMContainer = getattr(self, f"model_{m}")
+            preds.append(
+                mc.final_predict(self.df_all_features[feature_info[mc.MODEL_NAME]])
+            )
+        return preds
 
     @property
     def model_shows_long(self) -> bool:
-        vote = []
-        vote.append(self.model_c_N1_vote == 3)
-        vote.append(self.model_c_N2_vote == 3)
-        vote.append(self.model_c_N3_vote == 3)
-        return all(vote)
+        return all([v == 1 for v in self.votes])
 
     @property
     def model_shows_short(self) -> bool:
-        vote = []
-        vote.append(self.model_c_N1_vote == -3)
-        vote.append(self.model_c_N2_vote == -3)
-        vote.append(self.model_c_N3_vote == -3)
-        return all(vote)
+        return all([v == -1 for v in self.votes])
 
     def should_long(self) -> bool:
         if not self.should_trade_bar:
@@ -177,7 +142,9 @@ class BinanceBtcDeapV1Voting(Strategy):
     def go_long(self):
         entry_price = self.price
         qty = utils.size_to_qty(
-            self.leveraged_available_margin * 0.95, entry_price, fee_rate=self.fee_rate
+            self.leveraged_available_margin * POSITION_SIZE_RATIO,
+            entry_price,
+            fee_rate=self.fee_rate,
         )
         self.buy = qty, entry_price
         self.stop_loss = qty, entry_price * (1 - self.loss_ratio_with_leverage)
@@ -185,7 +152,9 @@ class BinanceBtcDeapV1Voting(Strategy):
     def go_short(self):
         entry_price = self.price
         qty = utils.size_to_qty(
-            self.leveraged_available_margin * 0.95, entry_price, fee_rate=self.fee_rate
+            self.leveraged_available_margin * POSITION_SIZE_RATIO,
+            entry_price,
+            fee_rate=self.fee_rate,
         )
         self.sell = qty, entry_price
         self.stop_loss = qty, entry_price * (1 + self.loss_ratio_with_leverage)
