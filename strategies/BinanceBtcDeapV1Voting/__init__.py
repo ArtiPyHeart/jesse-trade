@@ -41,6 +41,7 @@ with open(path_features) as f:
     feature_info: dict[str, list[str]] = json.load(f)
 FEAT_FRACDIFF: list[str] = feature_info["fracdiff"]
 ALL_RAW_FEAT = []
+ALL_RAW_FEAT.extend(FEAT_FRACDIFF)
 for m in MODELS:
     ALL_RAW_FEAT.extend(feature_info[m])
 ALL_RAW_FEAT = set(ALL_RAW_FEAT)
