@@ -32,8 +32,8 @@ POSITION_SIZE_RATIO = 0.95
 
 # 模型与特征设置
 MODELS = [
+    "c_L3_N1",
     "c_L4_N1",
-    "c_L5_N1",
 ]
 
 path_features = Path(__file__).parent / "models" / "feature_info.json"
@@ -57,7 +57,7 @@ ALL_RAW_FEAT = sorted(
 class BinanceBtcDeapV1Voting(Strategy):
     def __init__(self):
         super().__init__()
-        self.bar_container = DemoBar(max_bars=5000)
+        self.bar_container = DemoBar(max_bars=3500)
         self.fc = SimpleFeatureCalculator()
 
         self.deep_ssm_model = SSMContainer("deep_ssm")

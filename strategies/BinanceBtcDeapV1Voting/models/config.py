@@ -6,9 +6,47 @@ from typing import Literal
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+from numba import jit
 
 from src.models.deep_ssm.deep_ssm import DeepSSM
 from src.models.lgssm import LGSSM
+
+
+@jit(nopython=True, cache=True)
+def _apply_filters_numba(
+    pred_proba: float,
+    threshold: float,
+    filter_types: np.ndarray,
+    lower_bounds: np.ndarray,
+    upper_bounds: np.ndarray,
+) -> int:
+    """
+    Numba加速的filter应用函数
+
+    Args:
+        pred_proba: 原始预测概率
+        threshold: 多空分界阈值
+        filter_types: filter类型数组 (0=giveup, 1=reverse)
+        lower_bounds: 下界数组
+        upper_bounds: 上界数组
+
+    Returns:
+        过滤后的预测结果: -1=做空, 0=不持仓, 1=做多
+    """
+    # 根据阈值得到原始预测方向
+    raw_pred = 1 if pred_proba >= threshold else -1
+
+    # 按顺序应用每个filter
+    current_pred = raw_pred
+    for i in range(len(filter_types)):
+        # 检查pred_proba是否落在当前filter区间内
+        if lower_bounds[i] <= pred_proba < upper_bounds[i]:
+            if filter_types[i] == 0:  # giveup
+                return 0
+            elif filter_types[i] == 1:  # reverse
+                current_pred = -current_pred
+
+    return current_pred
 
 
 class SSMContainer:
@@ -140,6 +178,12 @@ class LGBMContainer:
         # 置信度切片过滤器列表
         self._filters = []
 
+        # 编译后的filter数组（用于numba加速）
+        self._filter_types = np.array([], dtype=np.int32)
+        self._lower_bounds = np.array([], dtype=np.float64)
+        self._upper_bounds = np.array([], dtype=np.float64)
+        self._filters_compiled = False
+
         # 尝试自动加载filter配置
         self._auto_load_filters()
 
@@ -171,6 +215,28 @@ class LGBMContainer:
     def preds(self, value):
         self._preds.append(value)
 
+    def _compile_filters(self):
+        """将filter列表编译为numpy数组，用于numba加速"""
+        if not self._filters:
+            self._filter_types = np.array([], dtype=np.int32)
+            self._lower_bounds = np.array([], dtype=np.float64)
+            self._upper_bounds = np.array([], dtype=np.float64)
+            self._filters_compiled = True
+            return
+
+        n_filters = len(self._filters)
+        self._filter_types = np.empty(n_filters, dtype=np.int32)
+        self._lower_bounds = np.empty(n_filters, dtype=np.float64)
+        self._upper_bounds = np.empty(n_filters, dtype=np.float64)
+
+        for i, filt in enumerate(self._filters):
+            # 将type编码为整数: giveup=0, reverse=1
+            self._filter_types[i] = 0 if filt["type"] == "giveup" else 1
+            self._lower_bounds[i] = filt["lower_bound"]
+            self._upper_bounds[i] = filt["upper_bound"]
+
+        self._filters_compiled = True
+
     def add_giveup_filter(self, lower_bound: float, upper_bound: float):
         """
         添加放弃持仓的预测概率区间，落入此区间时最终pred输出0
@@ -187,6 +253,7 @@ class LGBMContainer:
                 "upper_bound": upper_bound,
             }
         )
+        self._filters_compiled = False  # 标记需要重新编译
 
     def add_reverse_filter(self, lower_bound: float, upper_bound: float):
         """
@@ -208,10 +275,12 @@ class LGBMContainer:
                 "upper_bound": upper_bound,
             }
         )
+        self._filters_compiled = False  # 标记需要重新编译
 
     def clear_filters(self):
         """清除所有过滤器"""
         self._filters = []
+        self._filters_compiled = False  # 标记需要重新编译
 
     def get_filters(self):
         """获取所有过滤器配置"""
@@ -253,6 +322,7 @@ class LGBMContainer:
         with open(filepath, "r") as f:
             self._filters = json.load(f)
 
+        self._filters_compiled = False  # 标记需要重新编译
         print(f"Loaded {len(self._filters)} filters from {filepath}")
 
     def _auto_load_filters(self):
@@ -262,10 +332,12 @@ class LGBMContainer:
             try:
                 with open(filter_path, "r") as f:
                     self._filters = json.load(f)
+                self._filters_compiled = False  # 标记需要重新编译
                 print(f"Auto-loaded {len(self._filters)} filters for {self.MODEL_NAME}")
             except Exception as e:
                 print(f"Failed to auto-load filters: {e}")
                 self._filters = []
+                self._filters_compiled = False
 
     def predict_proba(self, feat_df_one_row: pd.DataFrame):
         """
@@ -282,7 +354,7 @@ class LGBMContainer:
 
     def _apply_filters(self, pred_proba: float) -> int:
         """
-        应用所有filters并返回最终预测结果
+        应用所有filters并返回最终预测结果（使用numba加速）
 
         Args:
             pred_proba: 原始预测概率
@@ -290,25 +362,22 @@ class LGBMContainer:
         Returns:
             过滤后的预测结果: -1=做空, 0=不持仓, 1=做多
         """
-        # 根据阈值得到原始预测方向
-        raw_pred = 1 if pred_proba >= self.threshold else -1
+        # 如果filters未编译，先编译
+        if not self._filters_compiled:
+            self._compile_filters()
 
-        # 按顺序应用每个filter
-        current_pred = raw_pred
-        for filt in self._filters:
-            lower = filt["lower_bound"]
-            upper = filt["upper_bound"]
+        # 如果没有filters，直接返回原始预测
+        if len(self._filter_types) == 0:
+            return 1 if pred_proba >= self.threshold else -1
 
-            # 检查pred_proba是否落在当前filter区间内
-            if lower <= pred_proba < upper:
-                if filt["type"] == "giveup":
-                    # 放弃持仓，直接返回0
-                    return 0
-                elif filt["type"] == "reverse":
-                    # 反转预测
-                    current_pred = -current_pred
-
-        return current_pred
+        # 使用numba优化版本
+        return _apply_filters_numba(
+            pred_proba,
+            self.threshold,
+            self._filter_types,
+            self._lower_bounds,
+            self._upper_bounds,
+        )
 
     def final_predict(self, feat_df_one_row: pd.DataFrame) -> int:
         """
