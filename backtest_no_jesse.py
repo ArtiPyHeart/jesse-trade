@@ -17,7 +17,7 @@ from typing import Literal, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
+from tqdm.auto import tqdm
 
 from src.bars.fusion.demo import DemoBar
 from src.features.simple_feature_calculator import SimpleFeatureCalculator
@@ -309,8 +309,6 @@ class StrategyCore:
 
     def update_with_candles(self, candles: np.ndarray):
         """更新 bar 容器"""
-        # 过滤零成交量
-        candles = candles[candles[:, 5] > 0]
         self.bar_container.update_with_candles(candles)
 
     @property
@@ -508,8 +506,13 @@ class BacktestAnalyzer:
             return
 
         # 配置中文字体
-        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'PingFang SC', 'SimHei', 'DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+        plt.rcParams["font.sans-serif"] = [
+            "Arial Unicode MS",
+            "PingFang SC",
+            "SimHei",
+            "DejaVu Sans",
+        ]
+        plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
 
         # 提取数据
         timestamps = [e.timestamp for e in equity_curve]
@@ -687,14 +690,14 @@ def run_backtest(
     print("=" * 60)
 
     start_time = time.time()
-    progress_interval = max(
-        len(trading_candles) // 20, 1000
-    )  # 每5%或至少1000根打印一次
-    last_progress = 0
 
-    for i, candle in enumerate(trading_candles):
+    for i in tqdm(
+        range(len(trading_candles)), desc="Trading", unit="candle", ncols=100
+    ):
+        candle = trading_candles[i, :]
+
         timestamp = int(candle[0])
-        current_price = candle[2]  # close price
+        current_price = float(candle[2])  # close price
 
         # 初始化 Buy & Hold 基准
         if i == 0:
@@ -704,8 +707,10 @@ def run_backtest(
         if not backtester.position.is_flat:
             backtester.check_stop_loss(timestamp, current_price)
 
-        # 更新 bar 容器（单根 candle）
-        strategy.update_with_candles(candle.reshape(1, -1))
+        # 更新 bar 容器（传入完整历史数据：warmup + trading[:i+1]）
+        # FusionBarContainerBase 内部会通过时间戳对齐避免重复处理
+        all_candles = np.vstack([warmup_candles, trading_candles[: i + 1]])
+        strategy.update_with_candles(all_candles)
 
         # 检查是否生成新的 fusion bar
         if strategy.is_new_bar:
@@ -737,21 +742,6 @@ def run_backtest(
         # 记录权益（每100根记录一次）
         if i % 100 == 0:
             backtester.record_equity(timestamp, current_price)
-
-        # 打印进度
-        if i - last_progress >= progress_interval:
-            progress_pct = (i / len(trading_candles)) * 100
-            elapsed = time.time() - start_time
-            eta = elapsed / (i + 1) * (len(trading_candles) - i - 1)
-            print(
-                f"进度: {progress_pct:.1f}% | "
-                f"K线: {i:,}/{len(trading_candles):,} | "
-                f"仓位: {'多' if backtester.position.is_long else '空' if backtester.position.is_short else '无'} | "
-                f"余额: ${backtester.balance:,.2f} | "
-                f"权益: ${backtester.equity(current_price):,.2f} | "
-                f"ETA: {eta:.0f}秒"
-            )
-            last_progress = i
 
     # 最后记录一次权益
     final_timestamp = int(trading_candles[-1, 0])
@@ -833,6 +823,9 @@ if __name__ == "__main__":
         caching=False,
         is_for_jesse=False,
     )
+    # 过滤0成交量
+    warmup_candles = warmup_candles[warmup_candles[:, 5] >= 0]
+    trading_candles = trading_candles[trading_candles[:, 5] >= 0]
     print(
         f"数据加载完成: warmup={len(warmup_candles):,}, trading={len(trading_candles):,}\n"
     )
