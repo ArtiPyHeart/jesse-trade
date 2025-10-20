@@ -28,6 +28,26 @@ pip install -r requirements-dev.txt  # 开发依赖
 - 转换：`numpy_candles_to_dataframe(candles)`
 - 自定义K线：Dollar/Range/Entropy Bar，DEAP符号回归
 
+## 特征→模型流程
+完整的数据处理和预测流程（以 BinanceBtcDeapV1Voting 为例）：
+
+```
+原始 Candles → Fusion Bars → 特征计算 → 模型预测
+```
+
+### 特征计算流程
+1. **计算原始特征**（SimpleFeatureCalculator）
+   - 普通特征：直接用于模型
+   - fracdiff 特征：需进一步处理
+2. **SSM 推理**：fracdiff 特征 → `SSM.inference()` → SSM 特征
+3. **特征拼接**：`[SSM特征, 原始特征]` → 完整特征 DataFrame
+4. **模型预测**：从完整特征中选择 LGBM 需要的列 → `model.final_predict()` → 预测结果 (1/-1/0)
+
+### Warmup vs Trading
+- **Warmup**：批量计算 fracdiff 特征 → 逐行调用 `SSM.inference()` 更新状态（不保存输出）
+- **Trading**：每次新 fusion bar 生成时，计算最新特征 → SSM.inference() → 拼接 → 模型预测
+- **关键**：SSM 全程使用 `inference()`，不使用 `transform()`
+
 ## 指标开发
 - 位置：稳定→`src/indicators/prod/`，实验→`experimental/`
 - 规范：`sequential=True`返回全序列，`False`返回最新值
