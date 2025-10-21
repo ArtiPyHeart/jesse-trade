@@ -29,7 +29,43 @@ pub struct VmdOutput {
     pub omega: Array2<f64>,
 }
 
-/// 计算中心频率 omega_plus
+/// 计算单个模态的中心频率
+///
+/// 优化版本：只计算单个模态，避免重复计算
+///
+/// # Arguments
+/// * `freqs` - 频率数组
+/// * `u_hat_plus` - 正频率谱 (Niter, T, K)
+/// * `t` - 信号长度
+/// * `k` - 模态索引
+/// * `n` - 当前迭代索引
+///
+/// # Returns
+/// 该模态的中心频率
+pub fn compute_single_omega_plus(
+    freqs: &ArrayView1<f64>,
+    u_hat_plus: &Array3<Complex64>,
+    t: usize,
+    k: usize,
+    n: usize,
+) -> f64 {
+    let mut numerator = 0.0;
+    let mut denominator = 0.0;
+
+    for i in (t / 2)..t {
+        let abs_val_sq = u_hat_plus[[n + 1, i, k]].norm_sqr();
+        numerator += freqs[i] * abs_val_sq;
+        denominator += abs_val_sq;
+    }
+
+    if denominator > 0.0 {
+        numerator / denominator
+    } else {
+        0.0
+    }
+}
+
+/// 计算中心频率 omega_plus (批量版本，用于兼容性)
 ///
 /// 对应 Python 中的 `_compute_omega_plus`
 ///
@@ -52,18 +88,7 @@ pub fn compute_omega_plus(
     let mut omega_new = Array1::zeros(k_max);
 
     for k in 0..k_max {
-        let mut numerator = 0.0;
-        let mut denominator = 0.0;
-
-        for i in (t / 2)..t {
-            let abs_val_sq = u_hat_plus[[n + 1, i, k]].norm_sqr();
-            numerator += freqs[i] * abs_val_sq;
-            denominator += abs_val_sq;
-        }
-
-        if denominator > 0.0 {
-            omega_new[k] = numerator / denominator;
-        }
+        omega_new[k] = compute_single_omega_plus(freqs, u_hat_plus, t, k, n);
     }
 
     omega_new
@@ -181,8 +206,7 @@ pub fn vmd_core_loop(
 
         // 更新第一个 omega（如果不是 DC 模式）
         if !dc {
-            let omega_new = compute_omega_plus(freqs, &u_hat_plus, t, 1, n);
-            omega_plus[[n + 1, 0]] = omega_new[0];
+            omega_plus[[n + 1, 0]] = compute_single_omega_plus(freqs, &u_hat_plus, t, 0, n);
         }
 
         // 更新 total_sum：替换第一个模态的值从 n 到 n+1
@@ -210,8 +234,7 @@ pub fn vmd_core_loop(
             u_hat_plus.slice_mut(s![n + 1, .., k_idx]).assign(&u_hat_new);
 
             // 更新中心频率
-            let omega_new = compute_omega_plus(freqs, &u_hat_plus, t, k_idx + 1, n);
-            omega_plus[[n + 1, k_idx]] = omega_new[k_idx];
+            omega_plus[[n + 1, k_idx]] = compute_single_omega_plus(freqs, &u_hat_plus, t, k_idx, n);
 
             // 更新 total_sum：替换当前模态的值从 n 到 n+1
             for i in 0..t {
