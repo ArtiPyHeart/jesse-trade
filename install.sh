@@ -103,9 +103,8 @@ echo "   这可能需要几分钟,请耐心等待..."
 
 # 设置针对当前CPU的优化标志
 # target-cpu=native: 针对当前CPU架构优化
-# lto=fat: 完整链接时优化,跨crate内联
-# codegen-units=1: 单编译单元,更好的优化
-export RUSTFLAGS="-C target-cpu=native -C lto=fat -C codegen-units=1"
+# 注意: lto和codegen-units已在Cargo.toml的[profile.release]中配置
+export RUSTFLAGS="-C target-cpu=native"
 
 # 编译,如果失败则退出
 if ! maturin develop --release; then
