@@ -8,6 +8,7 @@
 
 ## 项目结构
 - `src/`：生产代码（bars/features/indicators/utils）
+- `rust_indicators/`：rust化的高性能指标，目前实现了vmd指标的rust化
 - `strategies/`：Jesse策略（每策略独立目录）- **项目运行入口**
 - `research/`：离线研究实验（勿在生产导入）
 - `extern/`：参考资料（勿导入）
@@ -54,6 +55,10 @@ pip install -r requirements-dev.txt  # 开发依赖
 - 长度：用`np.nan`填充保持与K线一致
 - 类指标：继承`_cls_ind.py`基类
 
+### Rust高性能指标
+- **快速使用**: `import _rust_indicators`，已实现VMD/NRBO（50-100x加速）
+- **开发集成**: 阅读 `skills/RUST_INDICATORS_SKILL.md`
+
 ## 编码规范
 - 内部函数用`_`前缀
 - 数据操作用NumPy/Pandas
@@ -66,6 +71,7 @@ pip install -r requirements-dev.txt  # 开发依赖
 - **触发条件**：当用户提及相关任务时，主动读取对应SKILL文档
 - **现有SKILL**：
   - `CONFIDENCE_SLICE_ANALYSIS_SKILL.md`：置信度切片分析与过滤器配置
+  - `RUST_INDICATORS_SKILL.md`：Rust高性能指标开发、集成与维护
 - **使用原则**：严格遵循SKILL中定义的决策准则、输出格式和沟通方式
 
 ## 关键提醒
