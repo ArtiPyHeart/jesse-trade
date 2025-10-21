@@ -1,0 +1,42 @@
+[package]
+name = "rust-indicators"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jesse Trade Contributors"]
+description = "High-performance Rust indicators for Jesse Trade"
+license = "MIT"
+
+[lib]
+name = "rust_indicators"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.26", features = ["extension-module", "abi3-py38"] }
+numpy = "0.26"
+ndarray = { version = "0.15", features = ["approx"] }
+rustfft = "6.2"
+num-complex = "0.4"
+rayon = "1.10"
+thiserror = "2.0"
+rand = "0.8"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+approx = "0.5"
+proptest = "1.4"
+
+[[bench]]
+name = "vmd_bench"
+harness = false
+path = "benches/vmd_bench.rs"
+
+[[bench]]
+name = "nrbo_bench"
+harness = false
+path = "benches/nrbo_bench.rs"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true

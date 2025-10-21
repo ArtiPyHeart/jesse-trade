@@ -40,6 +40,41 @@ else
   python -m pip install -r requirements.txt
 fi
 
+# ========== Rust Indicators 编译 ==========
+echo ""
+echo ">>> 步骤 4/4: 编译 Rust Indicators..."
+
+# 检查 Rust 是否安装
+if ! command -v cargo &> /dev/null; then
+    echo "⚠️  未检测到 Rust，跳过 Rust Indicators 编译"
+    echo "   如需使用 Rust 加速的 VMD/NRBO，请安装 Rust:"
+    echo "   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+else
+    RUST_VERSION=$(rustc --version)
+    echo ">>> 检测到 $RUST_VERSION"
+
+    # 检查 maturin 是否已安装
+    if ! command -v maturin &> /dev/null; then
+        echo ">>> 安装 maturin (Rust-Python 构建工具)..."
+        python -m pip install maturin
+    fi
+
+    # 进入 rust_indicators 目录
+    if [ -d "rust_indicators" ]; then
+        cd rust_indicators
+
+        echo ">>> 编译 Rust 扩展 (release 模式)..."
+        maturin develop --release
+
+        cd ..
+
+        echo ">>> ✅ Rust Indicators 编译完成！"
+        echo "   VMD 和 NRBO 现在可以使用 10-20x 加速版本"
+    else
+        echo "⚠️  rust_indicators 目录不存在，跳过 Rust 编译"
+    fi
+fi
+
 # 检查是否为 Linux 系统
 if [[ "$(uname)" == "Linux" ]]; then
     systemctl restart pgbouncer

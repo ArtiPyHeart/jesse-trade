@@ -8,3 +8,6 @@ torch
 safetensors
 giotto-ph
 jesse
+
+# Rust 构建工具（用于编译 rust_indicators）
+maturin>=1.0,<2.0

@@ -98,6 +98,17 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
+# Rust indicators specific
+/rust_indicators/**/target/
+/rust_indicators/**/*.so
+/rust_indicators/**/*.pyd
+/rust_indicators/**/*.dylib
+/rust_indicators/**/*.dll
+/rust_indicators/python/__pycache__/
+/rust_indicators/python/*.egg-info/
+/rust_indicators/python/.pytest_cache/
+/rust_indicators/**/Cargo.lock
+
 ### Linux template
 *~
 
@@ -349,3 +360,5 @@ optuna_storage/optuna_study.db
 data/btc_1m.h5
 data/btc_1m.npz
 /temp/
+/rust_indicators/benchmark_results/
+/rust_indicators/test_data/
