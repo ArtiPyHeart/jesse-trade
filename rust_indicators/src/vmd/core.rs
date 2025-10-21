@@ -152,12 +152,19 @@ pub fn vmd_core_loop(
     let mut u_diff = tol + f64::EPSILON;
 
     while (u_diff > tol) && (n < niter - 1) {
+        // 预计算所有模态的总和（使用上一轮迭代的值）
+        let mut total_sum: Array1<Complex64> = Array1::zeros(t);
+        for i in 0..t {
+            for j in 0..k {
+                total_sum[i] += u_hat_plus[[n, i, j]];
+            }
+        }
+
         // 更新第一个模态
         let mut sum_uk = Array1::zeros(t);
         for i in 0..t {
-            for j in 1..k {
-                sum_uk[i] += u_hat_plus[[n, i, j]];
-            }
+            // sum_uk = total_sum - u_hat_plus[n][i][0]
+            sum_uk[i] = total_sum[i] - u_hat_plus[[n, i, 0]];
         }
 
         let u_hat_new = update_u_hat_plus(
@@ -178,20 +185,16 @@ pub fn vmd_core_loop(
             omega_plus[[n + 1, 0]] = omega_new[0];
         }
 
+        // 更新 total_sum：替换第一个模态的值从 n 到 n+1
+        for i in 0..t {
+            total_sum[i] = total_sum[i] - u_hat_plus[[n, i, 0]] + u_hat_plus[[n + 1, i, 0]];
+        }
+
         // 更新其他模态
         for k_idx in 1..k {
-            // 重新计算 sum_uk
-            sum_uk.fill(Complex64::new(0.0, 0.0));
+            // 使用增量更新：sum_uk = total_sum - u_hat_plus[n][i][k_idx]
             for i in 0..t {
-                for j in 0..k {
-                    if j != k_idx {
-                        if j < k_idx {
-                            sum_uk[i] += u_hat_plus[[n + 1, i, j]];
-                        } else {
-                            sum_uk[i] += u_hat_plus[[n, i, j]];
-                        }
-                    }
-                }
+                sum_uk[i] = total_sum[i] - u_hat_plus[[n, i, k_idx]];
             }
 
             let u_hat_new = update_u_hat_plus(
@@ -209,6 +212,11 @@ pub fn vmd_core_loop(
             // 更新中心频率
             let omega_new = compute_omega_plus(freqs, &u_hat_plus, t, k_idx + 1, n);
             omega_plus[[n + 1, k_idx]] = omega_new[k_idx];
+
+            // 更新 total_sum：替换当前模态的值从 n 到 n+1
+            for i in 0..t {
+                total_sum[i] = total_sum[i] - u_hat_plus[[n, i, k_idx]] + u_hat_plus[[n + 1, i, k_idx]];
+            }
         }
 
         // 对偶上升
