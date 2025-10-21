@@ -679,21 +679,32 @@ def run_backtest(
     strategy = StrategyCore(models, feature_info)
 
     # ========== Phase 1: Warmup ==========
-    start_time = time.time()
+    print("Warmup 阶段开始...")
+    warmup_start = time.perf_counter()
     strategy.warmup(warmup_candles)
-    warmup_time = time.time() - start_time
-    print(f"Warmup 耗时: {warmup_time:.2f}秒\n")
+    warmup_end = time.perf_counter()
+    warmup_time = warmup_end - warmup_start
+    print(f"Warmup 完成，耗时: {warmup_time:.2f}秒\n")
 
     # ========== Phase 2: Trading ==========
     print("=" * 60)
     print("Trading 阶段开始")
     print("=" * 60)
 
-    start_time = time.time()
+    # 性能优化：预先拼接所有 candles，避免循环中重复 vstack
+    warmup_len = len(warmup_candles)
+    all_candles_full = np.vstack([warmup_candles, trading_candles])
+    print(f"预拼接完成，总K线数: {len(all_candles_full):,}\n")
+
+    # 性能统计变量
+    total_update_times = []
+    trading_start = time.perf_counter()
 
     for i in tqdm(
         range(len(trading_candles)), desc="Trading", unit="candle", ncols=100
     ):
+        update_start = time.perf_counter()
+
         candle = trading_candles[i, :]
 
         timestamp = int(candle[0])
@@ -707,10 +718,12 @@ def run_backtest(
         if not backtester.position.is_flat:
             backtester.check_stop_loss(timestamp, current_price)
 
-        # 更新 bar 容器（传入完整历史数据：warmup + trading[:i+1]）
+        # 更新 bar 容器（使用切片视图，避免重复拼接）
         # FusionBarContainerBase 内部会通过时间戳对齐避免重复处理
-        all_candles = np.vstack([warmup_candles, trading_candles[: i + 1]])
-        strategy.update_with_candles(all_candles)
+        strategy.update_with_candles(all_candles_full[: warmup_len + i + 1])
+
+        update_end = time.perf_counter()
+        total_update_times.append(update_end - update_start)
 
         # 检查是否生成新的 fusion bar
         if strategy.is_new_bar:
@@ -752,12 +765,40 @@ def run_backtest(
     if not backtester.position.is_flat:
         backtester.close_position(final_timestamp, final_price, reason="force_close")
 
-    trading_time = time.time() - start_time
+    trading_end = time.perf_counter()
+    trading_time = trading_end - trading_start
 
     print("\n" + "=" * 60)
     print("Trading 阶段完成")
-    print(f"Trading 耗时: {trading_time:.2f}秒")
+    print("=" * 60)
+    print(f"Trading 总耗时: {trading_time:.2f}秒")
     print(f"平均速度: {len(trading_candles)/trading_time:.0f} 根/秒")
+
+    # 详细性能统计
+    print("\n--- 性能剖析 ---")
+    print(f"平均每次更新耗时: {np.mean(total_update_times)*1000:.2f}ms")
+    print(f"更新耗时中位数: {np.median(total_update_times)*1000:.2f}ms")
+    print(f"更新耗时95分位: {np.percentile(total_update_times, 95)*1000:.2f}ms")
+
+    # SSM 推理时间统计
+    deep_ssm_times = strategy.deep_ssm_model.inference_times if hasattr(strategy.deep_ssm_model, 'inference_times') else []
+    lg_ssm_times = strategy.lg_ssm_model.inference_times if hasattr(strategy.lg_ssm_model, 'inference_times') else []
+
+    if deep_ssm_times:
+        print(f"\nDeepSSM 平均推理耗时: {np.mean(deep_ssm_times)*1000:.2f}ms")
+        print(f"DeepSSM 总调用次数: {len(deep_ssm_times)}")
+        print(f"DeepSSM 总耗时: {np.sum(deep_ssm_times):.2f}s")
+
+    if lg_ssm_times:
+        print(f"\nLGSSM 平均推理耗时: {np.mean(lg_ssm_times)*1000:.2f}ms")
+        print(f"LGSSM 总调用次数: {len(lg_ssm_times)}")
+        print(f"LGSSM 总耗时: {np.sum(lg_ssm_times):.2f}s")
+
+    if deep_ssm_times or lg_ssm_times:
+        total_ssm_time = np.sum(deep_ssm_times) + np.sum(lg_ssm_times)
+        print(f"\nSSM 总耗时: {total_ssm_time:.2f}s")
+        print(f"SSM 占比: {total_ssm_time/trading_time*100:.1f}%")
+
     print("=" * 60 + "\n")
 
     # ========== Phase 3: 结果分析 ==========
@@ -795,6 +836,10 @@ if __name__ == "__main__":
     from jesse import helpers, research
 
     # ========== 配置 ==========
+    # 测试模式：启用后只处理前 N 根 trading candles
+    TEST_MODE = False
+    TEST_CANDLES = 10000
+
     MODELS = [
         "c_L4_N1",
         "c_L5_N1",
@@ -826,6 +871,12 @@ if __name__ == "__main__":
     # 过滤0成交量
     warmup_candles = warmup_candles[warmup_candles[:, 5] >= 0]
     trading_candles = trading_candles[trading_candles[:, 5] >= 0]
+
+    # 测试模式：截取部分 trading candles
+    if TEST_MODE:
+        trading_candles = trading_candles[:TEST_CANDLES]
+        print(f"[测试模式] 只处理前 {TEST_CANDLES:,} 根 trading candles")
+
     print(
         f"数据加载完成: warmup={len(warmup_candles):,}, trading={len(trading_candles):,}\n"
     )
