@@ -219,13 +219,9 @@ pub fn vmd_core_loop(
             }
         }
 
-        // 对偶上升
+        // 对偶上升（直接使用 total_sum，它已经包含所有 n+1 时刻的模态和）
         for i in 0..t {
-            let mut sum_modes = Complex64::new(0.0, 0.0);
-            for k_idx in 0..k {
-                sum_modes += u_hat_plus[[n + 1, i, k_idx]];
-            }
-            lambda_hat[[n + 1, i]] = lambda_hat[[n, i]] + tau * (sum_modes - f_hat_plus[i]);
+            lambda_hat[[n + 1, i]] = lambda_hat[[n, i]] + tau * (total_sum[i] - f_hat_plus[i]);
         }
 
         n += 1;
