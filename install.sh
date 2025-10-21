@@ -98,8 +98,26 @@ fi
 
 cd rust_indicators
 
+echo ">>> 清理旧的编译产物 (确保干净构建)..."
+# 删除 target 目录（编译产物）
+if [ -d "target" ]; then
+    rm -rf target
+    echo "  ✓ 已删除 target/ 目录"
+fi
+
+# 删除 Cargo.lock（依赖锁文件）以确保依赖重新解析
+if [ -f "Cargo.lock" ]; then
+    rm -f Cargo.lock
+    echo "  ✓ 已删除 Cargo.lock 文件"
+fi
+
+# 使用 cargo clean 清理（额外保险）
+if command -v cargo &> /dev/null; then
+    cargo clean 2>/dev/null || true
+fi
+
 echo ">>> 编译 Rust 扩展 (针对当前CPU优化的release模式)..."
-echo "   这可能需要几分钟,请耐心等待..."
+echo "   这是完整的干净构建,可能需要几分钟,请耐心等待..."
 
 # 设置针对当前CPU的优化标志
 # target-cpu=native: 针对当前CPU架构优化
