@@ -90,6 +90,12 @@ class SSMContainer:
         """单行实时推理"""
         arr = df_one_row.to_numpy()
 
+        # 修复：确保 arr 是 (obs_dim,) 而不是 (1, obs_dim)
+        # DataFrame.iloc[[i]].to_numpy() 返回 (1, obs_dim)
+        # 但 update_single 期望 (obs_dim,)
+        if arr.ndim == 2 and arr.shape[0] == 1:
+            arr = arr[0]
+
         if self.model_type == "deep_ssm":
             # DeepSSM 使用 process_single
             res = self.model_inference.process_single(arr)
@@ -109,11 +115,15 @@ class SSMContainer:
             )
             if self.first_observation:
                 self.first_observation = False
+
+            # self.state 是 (state_dim,) 形状，需要 reshape 为 (1, state_dim)
             state = self.state.reshape(1, -1)
+            state_dim = state.shape[1]
+
             return pd.DataFrame(
                 state,
                 index=df_one_row.index,
-                columns=[f"{self.prefix}_{i}" for i in range(self.state.shape[1])],
+                columns=[f"{self.prefix}_{i}" for i in range(state_dim)],
             )
 
 
