@@ -64,38 +64,48 @@ class KalmanFilter(nn.Module):
         y: torch.Tensor,
         C: torch.Tensor,
         R: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Update step of Kalman filter.
-        
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        """Update step of Kalman filter with NaN handling.
+
+        When observation contains NaN, skip the update step and return predicted state.
+        This is the standard approach for handling missing observations in Kalman filtering.
+
         Args:
             z_pred: Predicted state (state_dim,) or (batch, state_dim)
             P_pred: Predicted error covariance (state_dim, state_dim)
             y: Observation (obs_dim,) or (batch, obs_dim)
             C: Observation matrix (obs_dim, state_dim)
             R: Observation noise covariance (obs_dim, obs_dim)
-            
+
         Returns:
-            z: Updated state estimate
-            P: Updated error covariance
-            K: Kalman gain
+            z: Updated state estimate (or predicted state if NaN)
+            P: Updated error covariance (or predicted covariance if NaN)
+            K: Kalman gain (or None if NaN)
         """
+        # Check for NaN in observation
+        if torch.isnan(y).any():
+            # Skip update step when observation is missing (NaN)
+            # Return predicted state without update
+            return z_pred, P_pred, None
+
+        # Normal update step (no NaN)
         # Innovation
         y_pred = torch.matmul(C, z_pred.unsqueeze(-1)).squeeze(-1) if z_pred.dim() == 1 else torch.matmul(C, z_pred.unsqueeze(-1)).squeeze(-1)
         innovation = y - y_pred
-        
+
         # Innovation covariance
         S = C @ P_pred @ C.T + R
-        
+
         # Kalman gain using solve for numerical stability
         K = torch.linalg.solve(S.T, (P_pred @ C.T).T).T
-        
+
         # State update
         z = z_pred + torch.matmul(K, innovation.unsqueeze(-1)).squeeze(-1) if innovation.dim() == 1 else torch.matmul(K, innovation.unsqueeze(-1)).squeeze(-1)
-        
+
         # Covariance update using Joseph form for numerical stability
         I_KC = torch.eye(self.state_dim, device=self.device, dtype=self.dtype) - K @ C
         P = I_KC @ P_pred @ I_KC.T + K @ R @ K.T
-        
+
         return z, P, K
     
     def forward(
@@ -156,15 +166,17 @@ class KalmanFilter(nn.Module):
             states[t] = z
             covariances[t] = P
 
-            # Compute log likelihood contribution
-            y_pred = C @ z_pred
-            innovation = y[t] - y_pred
-            S = C @ P_pred @ C.T + R
+            # Compute log likelihood contribution only if update was performed (K is not None)
+            if K is not None:
+                y_pred = C @ z_pred
+                innovation = y[t] - y_pred
+                S = C @ P_pred @ C.T + R
 
-            # Log likelihood: -0.5 * (log|S| + innovation' @ S^-1 @ innovation + k*log(2π))
-            log_det_S = torch.logdet(S)
-            quad_form = torch.matmul(innovation.unsqueeze(0), torch.linalg.solve(S, innovation.unsqueeze(-1))).squeeze()
-            log_likelihood += -0.5 * (log_det_S + quad_form + self.obs_dim * torch.log(torch.tensor(2 * torch.pi)))
+                # Log likelihood: -0.5 * (log|S| + innovation' @ S^-1 @ innovation + k*log(2π))
+                log_det_S = torch.logdet(S)
+                quad_form = torch.matmul(innovation.unsqueeze(0), torch.linalg.solve(S, innovation.unsqueeze(-1))).squeeze()
+                log_likelihood += -0.5 * (log_det_S + quad_form + self.obs_dim * torch.log(torch.tensor(2 * torch.pi)))
+            # If K is None (NaN observation), we skip the log likelihood contribution for this time step
             
         return states, covariances, log_likelihood
     
