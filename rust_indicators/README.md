@@ -247,6 +247,14 @@ cargo fmt
 | 构建工具 | maturin 1.0+ | Python 扩展打包 |
 | 错误处理 | thiserror 2.0 | 类型安全错误 |
 
+### 依赖版本说明
+
+**PyO3 & numpy 版本锁定**:
+- 🔒 **当前版本**: PyO3 0.26 + numpy 0.26
+- ⚠️ **暂不升级至 PyO3 0.27**: rust-numpy 尚未发布兼容 PyO3 0.27 的版本
+- 📌 **升级条件**: 等待上游 [rust-numpy](https://github.com/PyO3/rust-numpy) 发布支持 PyO3 0.27 的版本
+- ✅ **当前状态**: PyO3 0.26 功能完整，满足所有生产需求
+
 ---
 
 ## 📝 版本历史
