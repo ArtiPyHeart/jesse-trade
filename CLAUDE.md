@@ -24,17 +24,6 @@
 pip install -r requirements-dev.txt  # 开发依赖
 ```
 
-### Python 运行规范
-- **PYTHONPATH 设置**：在项目中运行 Python 代码时，总是设置 `PYTHONPATH=.`（项目根目录）来保证 `import src` 等的正确性
-  ```bash
-  # 正确做法
-  PYTHONPATH=. python tests/test_example.py
-  PYTHONPATH=. python -m pytest tests/
-
-  # 错误做法（可能导致 ModuleNotFoundError）
-  python tests/test_example.py
-  ```
-
 ## Jesse K线规范
 - 格式：6列NumPy数组 `[timestamp, open, close, high, low, volume]`
 - 转换：`numpy_candles_to_dataframe(candles)`
