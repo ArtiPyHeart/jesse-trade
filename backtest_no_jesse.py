@@ -700,9 +700,12 @@ def run_backtest(
     total_update_times = []
     trading_start = time.perf_counter()
 
-    for i in tqdm(
-        range(len(trading_candles)), desc="Trading", unit="candle", ncols=100
-    ):
+    # 创建 tqdm 对象以便更新进度条信息
+    pbar = tqdm(
+        range(len(trading_candles)), desc="Trading", unit="candle", ncols=120
+    )
+
+    for i in pbar:
         update_start = time.perf_counter()
 
         candle = trading_candles[i, :]
@@ -751,6 +754,19 @@ def run_backtest(
                 elif backtester.position.is_short and signal == "long":
                     # 平空仓
                     backtester.close_position(timestamp, current_price, reason="close")
+
+        # 更新进度条显示（每10根更新一次，避免过于频繁）
+        if i % 10 == 0 or i == len(trading_candles) - 1:
+            current_equity = backtester.equity(current_price)
+            return_pct = (current_equity - starting_balance) / starting_balance * 100
+            position_status = backtester.position.side.upper()
+
+            pbar.set_postfix({
+                'Equity': f'${current_equity:,.0f}',
+                'Return': f'{return_pct:+.2f}%',
+                'Pos': position_status,
+                'Trades': len([t for t in backtester.trades if t.pnl != 0])
+            })
 
         # 记录权益（每100根记录一次）
         if i % 100 == 0:
