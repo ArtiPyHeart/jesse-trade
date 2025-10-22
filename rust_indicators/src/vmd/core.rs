@@ -315,6 +315,33 @@ pub fn vmd(
 
     let t = f_mirr.len();
 
+    // ========== Optimization: Pre-compute FFT plans ==========
+    // Calculate all FFT sizes needed:
+    // 1. Initial FFT: t (mirrored signal)
+    // 2. IFFT for reconstruction: t
+    // 3. FFT for output spectrum: t/2 (de-mirrored length)
+    let fft_cache = {
+        use rustfft::FftPlanner;
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        let mut planner = FftPlanner::new();
+        let mut cache = HashMap::new();
+
+        // Size 1: t (mirrored signal FFT/IFFT)
+        let fft_t = planner.plan_fft_forward(t);
+        let ifft_t = planner.plan_fft_inverse(t);
+        cache.insert(t, (fft_t, ifft_t));
+
+        // Size 2: t/2 (output spectrum FFT)
+        let t_half = t / 2;
+        let fft_t_half = planner.plan_fft_forward(t_half);
+        let ifft_t_half = planner.plan_fft_inverse(t_half);
+        cache.insert(t_half, (fft_t_half, ifft_t_half));
+
+        Some(Arc::new(cache))
+    };
+
     // 频率域离散化 (对应 Python: t = arange(1, T+1) / T - 0.5 - 1/T)
     let freqs: Array1<f64> = Array1::from_shape_fn(t, |i| {
         ((i + 1) as f64 / t as f64) - 0.5 - (1.0 / t as f64)
@@ -325,7 +352,7 @@ pub fn vmd(
         Complex64::new(f_mirr[i], 0.0)
     });
 
-    let f_hat_raw = super::utils::fft(&f_complex_input);
+    let f_hat_raw = super::utils::fft(&f_complex_input, fft_cache.as_ref());
 
     // fftshift
     let f_hat = super::utils::fftshift(&f_hat_raw.view());
@@ -441,8 +468,8 @@ pub fn vmd(
         // ifftshift
         let u_hat_k_shifted = super::utils::ifftshift(&u_hat_k.view());
 
-        // IFFT
-        let u_k_complex = super::utils::ifft(&u_hat_k_shifted);
+        // IFFT (with cache)
+        let u_k_complex = super::utils::ifft(&u_hat_k_shifted, fft_cache.as_ref());
 
         // 取实部
         for i in 0..t {
@@ -477,7 +504,7 @@ pub fn vmd(
         let u_k = u_final.row(k_idx).to_owned();
         let u_k_complex = Array1::from_shape_fn(u_hat_len, |i| Complex64::new(u_k[i], 0.0));
 
-        let u_hat_k_raw = super::utils::fft(&u_k_complex);
+        let u_hat_k_raw = super::utils::fft(&u_k_complex, fft_cache.as_ref());
         let u_hat_k_shifted = super::utils::fftshift(&u_hat_k_raw.view());
 
         for i in 0..u_hat_len {

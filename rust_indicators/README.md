@@ -251,6 +251,29 @@ cargo fmt
 
 ## 📝 版本历史
 
+### v0.2.2 (2025-10-22)
+
+**VMD 代码质量改进 - FFT Plan 架构优化**
+
+代码重构:
+- 🔧 **FFT Plan Cache 架构**: 引入 `FftPlanCache` 类型和可选 cache 参数
+- 🔧 **utils.rs 重构**: `fft()` 和 `ifft()` 支持 optional cache 参数
+- 🔧 **core.rs 优化**: VMD 主函数预计算所需的 FFT plan sizes
+
+技术细节:
+- 使用 `Arc<HashMap<usize, (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>)>>` 实现零成本共享
+- 预计算 2 种 FFT sizes: t (镜像信号) 和 t/2 (输出频谱)
+- 保持完美数值对齐（误差 < 1e-13）
+
+性能影响:
+- 单次调用内 FFT/IFFT 复用 cache，减少重复创建开销
+- Rolling window 场景（多次调用）暂未观察到显著提升
+- 为后续跨调用 cache 复用奠定架构基础
+
+测试:
+- ✅ 新增 `test_vmd_correctness.py` 数值正确性测试
+- ✅ 新增 `bench_vmd_opt.py` 和 `bench_vmd_rolling.py` 性能基准
+
 ### v0.2.1 (2025-10-22)
 
 **CWT 性能优化 - Phase 1 完成**

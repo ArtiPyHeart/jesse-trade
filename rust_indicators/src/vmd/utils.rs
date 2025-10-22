@@ -4,7 +4,13 @@
 
 use ndarray::{Array1, ArrayView1};
 use num_complex::Complex64;
-use rustfft::FftPlanner;
+use rustfft::{Fft, FftPlanner};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+/// FFT Plan Cache type
+/// Arc allows zero-cost sharing across threads
+pub type FftPlanCache = Arc<HashMap<usize, (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>)>>;
 
 /// FFT Shift (对应 numpy.fft.fftshift)
 ///
@@ -57,25 +63,59 @@ pub fn ifftshift<T: Clone>(arr: &ArrayView1<T>) -> Array1<T> {
 }
 
 /// FFT 包装函数
-pub fn fft(input: &Array1<Complex64>) -> Array1<Complex64> {
+///
+/// # Arguments
+/// * `input` - Input array
+/// * `fft_cache` - Optional FFT plan cache for performance
+pub fn fft(input: &Array1<Complex64>, fft_cache: Option<&FftPlanCache>) -> Array1<Complex64> {
     let n = input.len();
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(n);
+
+    // Get FFT plan (from cache or create new)
+    let fft_plan = if let Some(cache) = fft_cache {
+        if let Some((fft_plan, _)) = cache.get(&n) {
+            Arc::clone(fft_plan)
+        } else {
+            // Fallback: create on-demand if size not in cache
+            let mut planner = FftPlanner::new();
+            planner.plan_fft_forward(n)
+        }
+    } else {
+        // No cache provided, create plan on-demand
+        let mut planner = FftPlanner::new();
+        planner.plan_fft_forward(n)
+    };
 
     let mut buffer = input.to_vec();
-    fft.process(&mut buffer);
+    fft_plan.process(&mut buffer);
 
     Array1::from_vec(buffer)
 }
 
 /// IFFT 包装函数
-pub fn ifft(input: &Array1<Complex64>) -> Array1<Complex64> {
+///
+/// # Arguments
+/// * `input` - Input array
+/// * `fft_cache` - Optional FFT plan cache for performance
+pub fn ifft(input: &Array1<Complex64>, fft_cache: Option<&FftPlanCache>) -> Array1<Complex64> {
     let n = input.len();
-    let mut planner = FftPlanner::new();
-    let ifft = planner.plan_fft_inverse(n);
+
+    // Get IFFT plan (from cache or create new)
+    let ifft_plan = if let Some(cache) = fft_cache {
+        if let Some((_, ifft_plan)) = cache.get(&n) {
+            Arc::clone(ifft_plan)
+        } else {
+            // Fallback: create on-demand if size not in cache
+            let mut planner = FftPlanner::new();
+            planner.plan_fft_inverse(n)
+        }
+    } else {
+        // No cache provided, create plan on-demand
+        let mut planner = FftPlanner::new();
+        planner.plan_fft_inverse(n)
+    };
 
     let mut buffer = input.to_vec();
-    ifft.process(&mut buffer);
+    ifft_plan.process(&mut buffer);
 
     // 归一化
     for x in &mut buffer {
@@ -124,8 +164,8 @@ mod tests {
             Complex64::new(4.0, 0.0),
         ]);
 
-        let freq = fft(&input);
-        let reconstructed = ifft(&freq);
+        let freq = fft(&input, None);
+        let reconstructed = ifft(&freq, None);
 
         for i in 0..input.len() {
             assert_relative_eq!(reconstructed[i].re, input[i].re, epsilon = 1e-10);
