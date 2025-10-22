@@ -4,20 +4,35 @@
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-高性能 Rust 实现的交易技术指标，为 jesse-trade 量化交易框架提供 **50-100x** 性能提升。
+高性能 Rust 实现的交易技术指标，为 jesse-trade 量化交易框架提供 **5-100x** 性能提升。
 
 ---
 
 ## 🎯 核心特性
 
 ✅ **完美数值对齐**: 与 Python 参考实现误差达到浮点精度极限 (~1e-15)
-⚡ **极致性能**: NRBO 平均 53.6x 加速，VMD 平均 94.4x 加速
+⚡ **极致性能**: CWT 平均 5.8x 加速，NRBO 平均 53.6x 加速，VMD 平均 94.4x 加速
 🔒 **生产级质量**: 100% 测试通过，零编译警告
 🚀 **零运行时开销**: 无 JIT 编译延迟，性能可预测
 
 ---
 
 ## 📦 已实现的指标
+
+### CWT (Continuous Wavelet Transform)
+连续小波变换算法，用于时频分析和特征提取。
+
+**性能**:
+- 平均加速: **5.8x**
+- 小信号 (100样本): **2-3x**
+- 中信号 (1000样本): **5-7.6x**
+- 大信号 (5000-10000样本): **7-8x**
+
+**特性**:
+- 完美对齐 PyWavelets (误差 < 2e-14)
+- 支持 Complex Morlet 小波 (cmor)
+- 内置对称填充 (symmetric padding)
+- 可选 verbose 模式用于开发调试
 
 ### VMD (Variational Mode Decomposition)
 变分模态分解算法，用于信号分解和特征提取。
@@ -72,6 +87,14 @@ maturin develop --release
 import _rust_indicators
 import numpy as np
 
+# CWT 时频分析
+signal = np.sin(np.linspace(0, 10, 1000) * 2 * np.pi * 5)
+scales = np.logspace(np.log2(8), np.log2(64), 20, base=2)
+cwt_db, freqs = _rust_indicators.cwt_py(
+    signal, scales, 'cmor1.5-1.0',
+    sampling_period=0.5, precision=12, pad_width=20
+)
+
 # VMD 分解
 signal = np.sin(np.linspace(0, 1, 1000) * 2 * np.pi * 5)
 u, u_hat, omega = _rust_indicators.vmd_py(signal, alpha=2000, k=2)
@@ -84,6 +107,19 @@ optimized = _rust_indicators.nrbo_py(imf, max_iter=10, tol=1e-6)
 ---
 
 ## 📊 性能对比
+
+### CWT 性能
+
+| 信号长度 | Scales | Pad Width | PyWavelets | Rust | 加速比 |
+|---------|--------|-----------|------------|------|--------|
+| 100 | 10 | 0 | 0.54 ms | **0.28 ms** | **1.9x** |
+| 100 | 20 | 20 | 0.95 ms | **0.25 ms** | **3.9x** |
+| 1000 | 20 | 20 | 3.10 ms | **0.50 ms** | **6.2x** |
+| 1000 | 50 | 50 | 7.40 ms | **1.01 ms** | **7.4x** ⚡ |
+| 5000 | 20 | 20 | 13.0 ms | **1.63 ms** | **8.0x** |
+| **10000** | **20** | **20** | **25.5 ms** | **3.21 ms** | **7.9x** 🚀 |
+
+**注**: 信号越大，加速比越高。生产环境典型场景（1000-10000样本）可达 **6-8倍** 加速。
 
 ### NRBO 性能
 
@@ -125,6 +161,7 @@ python scripts/compare_with_python.py nrbo simple_sine --rust-output test_data/n
 ```
 
 **测试结果**:
+- CWT: 3/3 通过，误差 **< 2e-14**
 - NRBO: 4/4 通过，误差 **0.00e+00**
 - VMD: 5/5 通过，误差 **~1e-15**
 
@@ -147,6 +184,11 @@ rust_indicators/
 │
 ├── src/                            # Rust 源代码
 │   ├── lib.rs                      # 模块入口
+│   ├── cwt/
+│   │   ├── core.rs                 # CWT 核心算法
+│   │   ├── wavelets.rs             # 小波函数生成
+│   │   ├── utils.rs                # 工具函数（填充/dB转换）
+│   │   └── ffi.rs                  # Python 绑定
 │   ├── nrbo/
 │   │   ├── core.rs                 # NRBO 核心算法
 │   │   └── ffi.rs                  # Python 绑定
@@ -206,6 +248,26 @@ cargo fmt
 ---
 
 ## 📝 版本历史
+
+### v0.2.0 (2025-10-22)
+
+**CWT 实现 - 时频分析加速**
+
+新增功能:
+- ✅ CWT (Continuous Wavelet Transform) 完整实现
+- ✅ 支持 Complex Morlet 小波 (cmor)
+- ✅ 内置对称填充 (symmetric padding)
+- ✅ 可选 verbose 模式用于开发调试
+
+性能优化:
+- ⚡ 平均 5.8x 加速（vs PyWavelets）
+- ⚡ 大信号场景达到 7-8x 加速
+- ⚡ Rayon 并行化处理多 scale 计算
+
+数值精度:
+- ✅ 与 PyWavelets 完美对齐（误差 < 2e-14）
+- ✅ 3/3 集成测试通过
+- ✅ 零编译警告
 
 ### v0.1.0 (2025-10-21)
 

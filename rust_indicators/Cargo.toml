@@ -1,9 +1,9 @@
 [package]
 name = "rust-indicators"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jesse Trade Contributors"]
-description = "High-performance Rust indicators for Jesse Trade"
+description = "High-performance Rust indicators for Jesse Trade (VMD, NRBO, CWT)"
 license = "MIT"
 
 [lib]
