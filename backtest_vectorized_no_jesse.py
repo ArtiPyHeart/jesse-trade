@@ -938,8 +938,8 @@ if __name__ == "__main__":
     TEST_FUSION_BARS = 1000
 
     MODELS = [
-        "c_L4_N1",
         "c_L5_N1",
+        "c_L4_N2",
     ]
 
     # 加载特征信息

@@ -204,10 +204,11 @@ class LGBMContainer:
     @is_livetrading.setter
     def is_livetrading(self, value: bool):
         self._is_livetrading = value
-        if value:
-            path_model = Path(__file__).parent / f"model_{self.MODEL_NAME}_prod.txt"
-        else:
-            path_model = Path(__file__).parent / f"model_{self.MODEL_NAME}.txt"
+        # if value:
+        #     path_model = Path(__file__).parent / f"model_{self.MODEL_NAME}_prod.txt"
+        # else:
+        # prod模型置信度切片一致性待验证
+        path_model = Path(__file__).parent / f"model_{self.MODEL_NAME}.txt"
 
         self._model = lgb.Booster(model_file=path_model)
 
