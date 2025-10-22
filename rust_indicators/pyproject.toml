@@ -29,6 +29,5 @@ dev = [
 ]
 
 [tool.maturin]
-python-source = "python"
-module-name = "rust_indicators._rust_indicators"
+module-name = "_rust_indicators"
 bindings = "pyo3"
