@@ -53,7 +53,8 @@ pub fn compute_single_omega_plus(
     let mut denominator = 0.0;
 
     for i in (t / 2)..t {
-        let abs_val_sq = u_hat_plus[[n + 1, i, k]].norm_sqr();
+        // Optimized: u_hat_plus is now (niter, k, t)
+        let abs_val_sq = u_hat_plus[[n + 1, k, i]].norm_sqr();
         numerator += freqs[i] * abs_val_sq;
         denominator += abs_val_sq;
     }
@@ -140,10 +141,11 @@ pub fn compute_convergence(
 ) -> f64 {
     let mut u_diff = f64::EPSILON;
 
+    // Optimized: u_hat_plus is now (niter, k, t), so i iterates k, j iterates t
     for i in 0..k {
         let mut diff_sum = 0.0;
         for j in 0..t {
-            let diff = u_hat_plus[[n, j, i]] - u_hat_plus[[n - 1, j, i]];
+            let diff = u_hat_plus[[n, i, j]] - u_hat_plus[[n - 1, i, j]];
             diff_sum += diff.norm_sqr();
         }
         u_diff += (1.0 / t as f64) * diff_sum;
@@ -178,18 +180,19 @@ pub fn vmd_core_loop(
 
     while (u_diff > tol) && (n < niter - 1) {
         // 预计算所有模态的总和（使用上一轮迭代的值）
+        // Optimized: loop order changed for cache locality (k before t)
         let mut total_sum: Array1<Complex64> = Array1::zeros(t);
-        for i in 0..t {
-            for j in 0..k {
-                total_sum[i] += u_hat_plus[[n, i, j]];
+        for j in 0..k {
+            for i in 0..t {
+                total_sum[i] += u_hat_plus[[n, j, i]];
             }
         }
 
         // 更新第一个模态
         let mut sum_uk = Array1::zeros(t);
         for i in 0..t {
-            // sum_uk = total_sum - u_hat_plus[n][i][0]
-            sum_uk[i] = total_sum[i] - u_hat_plus[[n, i, 0]];
+            // sum_uk = total_sum - u_hat_plus[n][0][i]  // Optimized index order
+            sum_uk[i] = total_sum[i] - u_hat_plus[[n, 0, i]];
         }
 
         let u_hat_new = update_u_hat_plus(
@@ -202,7 +205,8 @@ pub fn vmd_core_loop(
             0,
             n,
         );
-        u_hat_plus.slice_mut(s![n + 1, .., 0]).assign(&u_hat_new);
+        // Optimized: slice index changed for new dimension order (niter, k, t)
+        u_hat_plus.slice_mut(s![n + 1, 0, ..]).assign(&u_hat_new);
 
         // 更新第一个 omega（如果不是 DC 模式）
         if !dc {
@@ -210,15 +214,17 @@ pub fn vmd_core_loop(
         }
 
         // 更新 total_sum：替换第一个模态的值从 n 到 n+1
+        // Optimized index order
         for i in 0..t {
-            total_sum[i] = total_sum[i] - u_hat_plus[[n, i, 0]] + u_hat_plus[[n + 1, i, 0]];
+            total_sum[i] = total_sum[i] - u_hat_plus[[n, 0, i]] + u_hat_plus[[n + 1, 0, i]];
         }
 
         // 更新其他模态
         for k_idx in 1..k {
-            // 使用增量更新：sum_uk = total_sum - u_hat_plus[n][i][k_idx]
+            // 使用增量更新：sum_uk = total_sum - u_hat_plus[n][k_idx][i]
+            // Optimized index order
             for i in 0..t {
-                sum_uk[i] = total_sum[i] - u_hat_plus[[n, i, k_idx]];
+                sum_uk[i] = total_sum[i] - u_hat_plus[[n, k_idx, i]];
             }
 
             let u_hat_new = update_u_hat_plus(
@@ -231,14 +237,16 @@ pub fn vmd_core_loop(
                 k_idx,
                 n,
             );
-            u_hat_plus.slice_mut(s![n + 1, .., k_idx]).assign(&u_hat_new);
+            // Optimized: slice index changed for new dimension order (niter, k, t)
+            u_hat_plus.slice_mut(s![n + 1, k_idx, ..]).assign(&u_hat_new);
 
             // 更新中心频率
             omega_plus[[n + 1, k_idx]] = compute_single_omega_plus(freqs, &u_hat_plus, t, k_idx, n);
 
             // 更新 total_sum：替换当前模态的值从 n 到 n+1
+            // Optimized index order
             for i in 0..t {
-                total_sum[i] = total_sum[i] - u_hat_plus[[n, i, k_idx]] + u_hat_plus[[n + 1, i, k_idx]];
+                total_sum[i] = total_sum[i] - u_hat_plus[[n, k_idx, i]] + u_hat_plus[[n + 1, k_idx, i]];
             }
         }
 
@@ -378,14 +386,14 @@ pub fn vmd(
         2 => {
             // 随机初始化（在 fs 到 0.5 之间）
             use rand::Rng;
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let fs = 1.0 / n as f64;
 
             let mut random_omegas: Vec<f64> = (0..k)
                 .map(|_| {
                     let log_fs = fs.ln();
                     let log_half = 0.5_f64.ln();
-                    let rand_val: f64 = rng.gen(); // [0, 1)
+                    let rand_val: f64 = rng.random(); // [0, 1) - updated for rand 0.9
                     (log_fs + (log_half - log_fs) * rand_val).exp()
                 })
                 .collect();
@@ -407,7 +415,7 @@ pub fn vmd(
     }
 
     let lambda_hat = Array2::zeros((niter, t));
-    let u_hat_plus = Array3::zeros((niter, t, k));
+    let u_hat_plus = Array3::zeros((niter, k, t));  // Optimized: k before t for cache locality
 
     // 主循环
     let (actual_niter, omega_final, _lambda_final, u_hat_plus_final) = vmd_core_loop(
@@ -435,9 +443,10 @@ pub fn vmd(
     let mut u_hat_reconstructed = Array2::zeros((t, k));
 
     // 填充正频率部分
-    for i in (t / 2)..t {
-        for k_idx in 0..k {
-            u_hat_reconstructed[[i, k_idx]] = u_hat_plus_final[[actual_niter - 1, i, k_idx]];
+    // Optimized: k loop first for cache locality
+    for k_idx in 0..k {
+        for i in (t / 2)..t {
+            u_hat_reconstructed[[i, k_idx]] = u_hat_plus_final[[actual_niter - 1, k_idx, i]];
         }
     }
 
@@ -445,12 +454,13 @@ pub fn vmd(
     // 对应 Python: idxs = flip(arange(1, T//2+1))
     //              u_hat[idxs] = conj(u_hat_plus[T//2 : T])
     // 即: u_hat[T//2], u_hat[T//2-1], ..., u_hat[1] = conj(u_hat_plus[T//2:T])
-    for i in 0..(t / 2) {
-        let src_idx = t / 2 + i;  // T//2, T//2+1, ..., T-1
-        let dst_idx = t / 2 - i;  // T//2, T//2-1, ..., 1
-        for k_idx in 0..k {
+    // Optimized: k loop first for cache locality
+    for k_idx in 0..k {
+        for i in 0..(t / 2) {
+            let src_idx = t / 2 + i;  // T//2, T//2+1, ..., T-1
+            let dst_idx = t / 2 - i;  // T//2, T//2-1, ..., 1
             u_hat_reconstructed[[dst_idx, k_idx]] =
-                u_hat_plus_final[[actual_niter - 1, src_idx, k_idx]].conj();
+                u_hat_plus_final[[actual_niter - 1, k_idx, src_idx]].conj();
         }
     }
 

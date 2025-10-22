@@ -1,6 +1,6 @@
 [package]
 name = "rust-indicators"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = ["Jesse Trade Contributors"]
 description = "High-performance Rust indicators for Jesse Trade (VMD, NRBO, CWT)"
@@ -18,10 +18,10 @@ rustfft = "6.2"
 num-complex = "0.4"
 rayon = "1.10"
 thiserror = "2.0"
-rand = "0.8"
+rand = "0.9"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 approx = "0.5"
 proptest = "1.4"
 
