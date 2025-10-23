@@ -138,7 +138,6 @@ unset RUSTFLAGS
 cd ..
 
 echo "✓ Rust Indicators 编译完成 (已针对当前CPU优化)"
-echo "  VMD/NRBO 可获得 50-100x 加速"
 
 # 检查是否为 Linux 系统
 if [[ "$(uname)" == "Linux" ]]; then
