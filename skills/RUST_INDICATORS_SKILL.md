@@ -17,15 +17,37 @@
 4. **显式传参**: Rust无默认值（如`max_iter=10, tol=1e-6`）
 
 ## 集成流程
+
+### 开发阶段：Rust/Python共存（Fallback模式）
 ```python
-# 1. 创建测试: tests/test_{indicator}_rust_integration.py
+# 开发测试阶段，支持Rust失败时回退到Python
+try:
+    import _rust_indicators
+    USE_RUST = True
+except ImportError:
+    USE_RUST = False
+
+def compute_indicator(signal, param):
+    if USE_RUST:
+        try:
+            return _rust_indicators.xxx_py(signal, param=param)
+        except Exception as e:
+            print(f"Rust failed: {e}, fallback to Python")
+    return python_implementation(signal, param)
+```
+
+### 生产阶段：强制Rust（验证通过后）
+```python
+# 数值验证通过 + 性能确认提升后，强制使用Rust
 import _rust_indicators
+
+def compute_indicator(signal, param):
+    # 直接调用Rust，不再fallback
+    return _rust_indicators.xxx_py(signal, param=param)
+
+# 测试: tests/test_{indicator}_rust_integration.py
 max_error = np.max(np.abs(result_python - result_rust))
 assert max_error < 1e-10
-
-# 2. 替换生产代码
-# Before: joblib.Parallel()(delayed(slow_func)(d) for d in data)
-# After:  [_rust_indicators.xxx_py(d, param=val) for d in data]
 ```
 
 ## 开发新指标（5步）
