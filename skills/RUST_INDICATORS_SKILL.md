@@ -72,6 +72,32 @@ cargo check && cargo clippy && maturin develop --release
 # 5. 数值验证（误差<1e-10）
 ```
 
+## 性能对比
+```python
+# 与Numba代码对比时，必须预热后再测试
+import time
+import numpy as np
+
+# ❌ 错误：首次调用包含JIT编译时间
+t0 = time.time()
+result_numba = numba_func(data)  # 包含编译时间！
+numba_time = time.time() - t0
+
+# ✓ 正确：预热后再测试
+numba_func(np.random.randn(10))  # 预热调用，触发JIT编译
+numba_func(np.random.randn(10))  # 第二次确保编译完成
+
+t0 = time.time()
+result_numba = numba_func(data)  # 纯执行时间
+numba_time = time.time() - t0
+
+t0 = time.time()
+result_rust = _rust_indicators.xxx_py(data)
+rust_time = time.time() - t0
+
+print(f"Numba: {numba_time:.4f}s | Rust: {rust_time:.4f}s | 加速比: {numba_time/rust_time:.2f}x")
+```
+
 ## 常见问题
 | 问题 | 解决 |
 |------|------|
