@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-高性能 Rust 实现的交易技术指标，为 jesse-trade 量化交易框架提供 **5-100x** 性能提升。
+高性能 Rust 实现的交易技术指标，为 jesse-trade 量化交易框架提供 **5-120x** 性能提升。
 
 ---
 
@@ -51,6 +51,20 @@
 - 平均加速: **53.6x**
 - 小信号: **200x** (N=100)
 - 大信号: **3-6x** (N≥500)
+
+### FTI (Frequency Tunable Indicator)
+频率可调谐指标，用于识别价格数据中的优势周期结构。
+
+**性能** (v0.3.0):
+- 平均加速: **41.7x**
+- 首次调用: **122x** (跳过 Numba JIT 编译)
+- 稳态调用: **1.3-1.4x** (vs Numba JIT)
+
+**特性**:
+- 完美数值对齐 (误差 0.00e+00)
+- 自动周期检测 (5-65 周期范围)
+- Gamma 累积分布函数变换
+- 可配置滤波器参数
 
 ---
 
@@ -104,6 +118,19 @@ u, u_hat, omega = _rust_indicators.vmd_py(signal, alpha=2000, k=2)
 # NRBO 优化
 imf = np.sin(np.linspace(0, 10, 100))
 optimized = _rust_indicators.nrbo_py(imf, max_iter=10, tol=1e-6)
+
+# FTI 周期检测
+price_data = np.random.randn(200) + 100  # 价格数据（最近的在索引0）
+fti, filtered_value, width, best_period = _rust_indicators.fti_process_py(
+    price_data,
+    use_log=True,
+    min_period=5,
+    max_period=65,
+    half_length=35,
+    lookback=150,
+    beta=0.95,
+    noise_cut=0.20
+)
 ```
 
 ---

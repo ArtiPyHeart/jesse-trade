@@ -1,9 +1,20 @@
+"""
+FTI (Frequency Tunable Indicator) - 频率可调谐指标
+
+架构说明:
+- 生产环境: 强制使用 Rust 实现 (_rust_indicators.fti_process_py)
+- 测试环境: 保留 Python numba 函数用于数值对齐验证
+
+已废弃的 Python 实现部分已注释，仅保留用于测试的 numba 函数。
+"""
+
 from typing import NamedTuple
 
+# 导入 Rust 实现
+import _rust_indicators
 import numpy as np
 from jesse import helpers
 from numba import njit
-from scipy import special
 
 
 class FTIResult(NamedTuple):
@@ -15,7 +26,12 @@ class FTIResult(NamedTuple):
     best_period: float  # 具有最大FTI的周期
 
 
-# 定义独立的numba加速函数
+# ============================================================================
+# Python Numba 实现 - 仅用于测试数值对齐验证
+# 生产环境使用 Rust 实现，不调用以下函数
+# ============================================================================
+
+
 @njit
 def _find_coefs_numba(min_period, period, half_length):
     """计算特定周期的滤波器系数 - numba加速版"""
@@ -234,6 +250,8 @@ class FTI:
     频率可调谐指标 (Frequency Tunable Indicator)
 
     原始指标由Govinda Khalsa开发，用于在价格数据中识别最佳周期结构。
+
+    注意: 生产环境强制使用 Rust 实现，Python 实现部分已废弃。
     """
 
     def __init__(
@@ -246,7 +264,7 @@ class FTI:
         beta: float = 0.95,  # 宽度计算的分位数（通常0.8-0.99）
         noise_cut: float = 0.20,  # 定义FTI噪声的最长内部移动的分数
     ):
-        """初始化FTI指标计算器"""
+        """初始化FTI指标计算器（仅存储参数，实际计算由 Rust 完成）"""
         # 检查参数有效性
         if max_period < min_period or min_period < 2:
             raise ValueError("max_period必须大于min_period且min_period至少为2")
@@ -255,6 +273,7 @@ class FTI:
         if lookback - half_length < 2:
             raise ValueError("lookback必须比half_length至少大2")
 
+        # 存储参数（传递给 Rust）
         self.use_log = use_log
         self.min_period = min_period
         self.max_period = max_period
@@ -263,25 +282,26 @@ class FTI:
         self.beta = beta
         self.noise_cut = noise_cut
 
-        # 初始化数组
-        self.y = np.zeros(lookback + half_length)
-        self.coefs = np.zeros((max_period - min_period + 1, half_length + 1))
-        self.filtered = np.zeros(max_period - min_period + 1)
-        self.width = np.zeros(max_period - min_period + 1)
-        self.fti_values = np.zeros(max_period - min_period + 1)
-        self.sorted = np.zeros(max_period - min_period + 1, dtype=np.int32)
-        self.diff_work = np.zeros(lookback)
-        self.leg_work = np.zeros(lookback)
-        self.sort_work = np.zeros(max_period - min_period + 1)
+        # 以下数组初始化已废弃 - Rust 实现不需要
+        # self.y = np.zeros(lookback + half_length)
+        # self.coefs = np.zeros((max_period - min_period + 1, half_length + 1))
+        # self.filtered = np.zeros(max_period - min_period + 1)
+        # self.width = np.zeros(max_period - min_period + 1)
+        # self.fti_values = np.zeros(max_period - min_period + 1)
+        # self.sorted = np.zeros(max_period - min_period + 1, dtype=np.int32)
+        # self.diff_work = np.zeros(lookback)
+        # self.leg_work = np.zeros(lookback)
+        # self.sort_work = np.zeros(max_period - min_period + 1)
 
-        # 计算每个周期的滤波器系数
-        for i in range(min_period, max_period + 1):
-            self._find_coefs(i)
+        # 以下系数预计算已废弃 - Rust 实现不需要
+        # for i in range(min_period, max_period + 1):
+        #     self._find_coefs(i)
 
-    def _find_coefs(self, period: int):
-        """计算特定周期的滤波器系数"""
-        idx = period - self.min_period
-        self.coefs[idx] = _find_coefs_numba(self.min_period, period, self.half_length)
+    # 已废弃方法 - Rust 实现不需要
+    # def _find_coefs(self, period: int):
+    #     """计算特定周期的滤波器系数"""
+    #     idx = period - self.min_period
+    #     self.coefs[idx] = _find_coefs_numba(self.min_period, period, self.half_length)
 
     def process(self, data):
         """
@@ -289,87 +309,54 @@ class FTI:
 
         :param data: 价格数据，最近的数据点在索引0
         """
-        # 检查数据长度
-        if len(data) < self.lookback:
-            raise ValueError(f"数据长度必须至少为{self.lookback}")
 
-        # 收集数据到本地数组，使其按时间顺序排列
-        # 最近的案例将在索引lookback-1
-        for i in range(self.lookback):
-            if self.use_log:
-                self.y[self.lookback - 1 - i] = np.log(data[i])
-            else:
-                self.y[self.lookback - 1 - i] = data[i]
-
-        # 拟合最小二乘线并扩展
-        self.y = _extrapolate_data_numba(self.y, self.lookback, self.half_length)
-
-        # 处理每个周期
-        for period_idx, period in enumerate(
-            range(self.min_period, self.max_period + 1)
-        ):
-            self._process_period(period_idx, period)
-
-        # 排序FTI局部最大值并保存排序后的索引
-        self.sorted = _sort_local_maxima_numba(
-            self.fti_values, self.min_period, self.max_period
+        fti, filtered_value, width, best_period = _rust_indicators.fti_process_py(
+            data,
+            use_log=self.use_log,
+            min_period=self.min_period,
+            max_period=self.max_period,
+            half_length=self.half_length,
+            lookback=self.lookback,
+            beta=self.beta,
+            noise_cut=self.noise_cut,
         )
-
-        # 返回结果
-        best_idx = self.sorted[0]
-        best_period = self.min_period + best_idx
-
-        # 获取相应的指标值
-        if self.use_log:
-            filtered_value = np.exp(self.filtered[best_idx])
-            width_value = 0.5 * (
-                np.exp(self.filtered[best_idx] + self.width[best_idx])
-                - np.exp(self.filtered[best_idx] - self.width[best_idx])
-            )
-        else:
-            filtered_value = self.filtered[best_idx]
-            width_value = self.width[best_idx]
-
-        # 计算最终的FTI值，包括Gamma累积分布函数变换
-        fti_value = self.fti_values[best_idx]
-        fti_transformed = 100.0 * special.gammainc(2.0, fti_value / 3.0) - 50.0
-
         return FTIResult(
-            fti=fti_transformed,
+            fti=fti,
             filtered_value=filtered_value,
-            width=width_value,
-            best_period=float(best_period),
+            width=width,
+            best_period=best_period,
         )
 
-    def _process_period(self, period_idx, period):
-        """处理单个周期的数据"""
-        # 获取该周期的滤波器系数
-        coefs = self.coefs[period_idx]
-
-        # 应用滤波器到数据块中的每个值
-        filtered_value, longest_leg, n_legs, self.diff_work, self.leg_work = (
-            _apply_filter_numba(
-                self.y,
-                coefs,
-                self.half_length,
-                self.lookback,
-                self.diff_work,
-                self.leg_work,
-            )
-        )
-
-        # 保存滤波值
-        self.filtered[period_idx] = filtered_value
-
-        # 计算通道宽度
-        self.width[period_idx] = _calculate_width_numba(
-            self.diff_work, self.lookback, self.half_length, self.beta
-        )
-
-        # 计算FTI值
-        self.fti_values[period_idx] = _calculate_fti_numba(
-            self.leg_work, self.width[period_idx], n_legs, longest_leg, self.noise_cut
-        )
+    # 已废弃方法 - Rust 实现不需要
+    # def _process_period(self, period_idx, period):
+    #     """处理单个周期的数据"""
+    #     # 获取该周期的滤波器系数
+    #     coefs = self.coefs[period_idx]
+    #
+    #     # 应用滤波器到数据块中的每个值
+    #     filtered_value, longest_leg, n_legs, self.diff_work, self.leg_work = (
+    #         _apply_filter_numba(
+    #             self.y,
+    #             coefs,
+    #             self.half_length,
+    #             self.lookback,
+    #             self.diff_work,
+    #             self.leg_work,
+    #         )
+    #     )
+    #
+    #     # 保存滤波值
+    #     self.filtered[period_idx] = filtered_value
+    #
+    #     # 计算通道宽度
+    #     self.width[period_idx] = _calculate_width_numba(
+    #         self.diff_work, self.lookback, self.half_length, self.beta
+    #     )
+    #
+    #     # 计算FTI值
+    #     self.fti_values[period_idx] = _calculate_fti_numba(
+    #         self.leg_work, self.width[period_idx], n_legs, longest_leg, self.noise_cut
+    #     )
 
 
 def fti(
