@@ -62,7 +62,10 @@ pip install -r requirements-dev.txt  # 开发依赖
 ## 编码规范
 - 内部函数用`_`前缀
 - 数据操作用NumPy/Pandas
-- 使用`assert`拦截非法输入，避免宽泛`try/except`
+- **Fail Fast**：立即暴露错误而非静默处理
+  - 使用`assert`拦截非法输入，避免宽泛`try/except`
+  - 特征计算/指标计算失败应立即抛出异常，不记录错误后继续
+  - 异常捕获仅用于明确可恢复的场景（如网络重试），不用于掩盖逻辑错误
 - 简单测试用`if __name__ == "__main__"`，复杂测试放`tests/`
 - EasyLanguage角度→Python弧度：用`src/utils/math_tools.py`
 
