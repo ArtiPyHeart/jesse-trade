@@ -256,11 +256,42 @@ class TrendAnalyzer:
 
         return min(score, 5)
 
+    def _get_hypothesis_test_explanation(
+        self, adf_result: Dict, kpss_result: Dict
+    ) -> str:
+        """
+        生成假设检验的详细解释
+
+        Returns:
+        --------
+        str: 包含原假设、检验结果和结论的解释
+        """
+        adf_p = adf_result["pvalue"]
+        kpss_p = kpss_result["pvalue"]
+
+        if np.isnan(adf_p) or np.isnan(kpss_p):
+            return "数据不足，无法进行假设检验"
+
+        # ADF 检验解释
+        adf_reject = adf_p <= 0.05
+        adf_conclusion = "拒绝原假设→序列平稳" if adf_reject else "无法拒绝原假设→序列非平稳"
+        adf_explanation = f"ADF检验[H0:存在单位根(非平稳)]: p={adf_p:.4f}, {adf_conclusion}"
+
+        # KPSS 检验解释
+        kpss_reject = kpss_p < 0.05
+        kpss_conclusion = "拒绝原假设→序列非平稳" if kpss_reject else "无法拒绝原假设→序列平稳"
+        kpss_warning_str = ""
+        if kpss_result.get("warning"):
+            kpss_warning_str = f" (警告:{kpss_result['warning']})"
+        kpss_explanation = f"KPSS检验[H0:序列平稳]: p={kpss_p:.4f}, {kpss_conclusion}{kpss_warning_str}"
+
+        return f"{adf_explanation}; {kpss_explanation}"
+
     def _classify_trend_type(
         self, hurst: float, adf_result: Dict, kpss_result: Dict
     ) -> str:
         """
-        基于三个指标分类趋势类型，并包含具体数值
+        基于三个指标分类趋势类型，并包含详细的假设检验解释
         """
         if np.isnan(hurst):
             return "无法确定（Hurst指数计算失败）"
@@ -271,23 +302,85 @@ class TrendAnalyzer:
         if np.isnan(adf_p) or np.isnan(kpss_p):
             return "数据不足"
 
-        # 构建数值说明部分，包含KPSS警告
-        values_str = f"[H={hurst:.3f}, ADF_p={adf_p:.3f}, KPSS_p={kpss_p:.3f}"
-        if kpss_result.get("warning"):
-            values_str += f", KPSS警告:{kpss_result['warning']}"
-        values_str += "]"
-        
-        # 判断趋势类型并添加数值
-        if hurst > 0.55 and adf_p > 0.05 and kpss_p < 0.05:
-            return f"强趋势且非平稳（适合趋势策略）{values_str}"
-        elif hurst > 0.55 and adf_p < 0.05 and kpss_p > 0.05:
-            return f"趋势但平稳（短期趋势可能）{values_str}"
-        elif hurst < 0.5 and adf_p < 0.05 and kpss_p > 0.05:
-            return f"震荡平稳（不适合趋势策略）{values_str}"
-        elif hurst > 0.55 and adf_p > 0.05 and kpss_p > 0.05:
-            return f"矛盾（需进一步验证）{values_str}"
+        # 获取假设检验详细解释
+        hypothesis_explanation = self._get_hypothesis_test_explanation(adf_result, kpss_result)
+
+        # Hurst 解释
+        if hurst > 0.6:
+            hurst_desc = "强趋势持续性"
+        elif hurst > 0.55:
+            hurst_desc = "趋势持续性"
+        elif hurst > 0.5:
+            hurst_desc = "弱趋势持续性"
+        elif hurst > 0.45:
+            hurst_desc = "接近随机游走"
         else:
-            return f"弱趋势或反趋势 {values_str}"
+            hurst_desc = "反持续性(均值回归)"
+
+        hurst_str = f"Hurst={hurst:.3f}({hurst_desc})"
+
+        # 综合判断
+        adf_nonstationary = adf_p > 0.05
+        kpss_nonstationary = kpss_p < 0.05
+
+        if hurst > 0.55 and adf_nonstationary and kpss_nonstationary:
+            # 三重确认：强趋势
+            return (f"【强趋势且非平稳-适合趋势策略】\n"
+                   f"  {hurst_str}\n"
+                   f"  {hypothesis_explanation}\n"
+                   f"  综合结论: 三重确认趋势特征，价格持续偏离均值，适合趋势跟踪")
+
+        elif hurst > 0.55 and not adf_nonstationary and not kpss_nonstationary:
+            # Hurst显示趋势，但两个检验都认为平稳
+            return (f"【趋势但平稳-短期趋势可能】\n"
+                   f"  {hurst_str}\n"
+                   f"  {hypothesis_explanation}\n"
+                   f"  综合结论: 价格具有持续性但围绕均值波动，可能是短期趋势或波段行情")
+
+        elif hurst < 0.5 and not adf_nonstationary and not kpss_nonstationary:
+            # 震荡平稳
+            return (f"【震荡平稳-不适合趋势策略】\n"
+                   f"  {hurst_str}\n"
+                   f"  {hypothesis_explanation}\n"
+                   f"  综合结论: 价格具有均值回归特性且序列平稳，适合震荡或均值回归策略")
+
+        elif hurst > 0.55 and adf_nonstationary and not kpss_nonstationary:
+            # 矛盾1: ADF说非平稳，KPSS说平稳，但Hurst显示趋势
+            return (f"【矛盾-需进一步验证】\n"
+                   f"  {hurst_str}\n"
+                   f"  {hypothesis_explanation}\n"
+                   f"  ⚠️ 矛盾分析: ADF认为非平稳但KPSS认为平稳（两个检验结论相反）\n"
+                   f"  可能原因: (1)序列处于临界状态 (2)窗口大小不当 (3)统计功效不足\n"
+                   f"  建议: 结合Hurst({hurst:.3f})倾向于有趋势性，但需谨慎对待，建议降低仓位或尝试不同窗口")
+
+        elif hurst < 0.5 and adf_nonstationary and kpss_nonstationary:
+            # 矛盾2: 两个检验都说非平稳，但Hurst显示反趋势
+            return (f"【矛盾-可能处于趋势转折】\n"
+                   f"  {hurst_str}\n"
+                   f"  {hypothesis_explanation}\n"
+                   f"  ⚠️ 矛盾分析: 检验显示非平稳但Hurst显示反持续性（可能正在转折）\n"
+                   f"  可能原因: (1)趋势正在反转 (2)序列包含结构突变 (3)窗口包含多个趋势阶段\n"
+                   f"  建议: 不建议交易，等待趋势明朗或使用更小窗口重新分析")
+
+        elif not adf_nonstationary and kpss_nonstationary:
+            # 矛盾3: ADF说平稳，KPSS说非平稳
+            return (f"【矛盾-需进一步验证】\n"
+                   f"  {hurst_str}\n"
+                   f"  {hypothesis_explanation}\n"
+                   f"  ⚠️ 矛盾分析: ADF认为平稳但KPSS认为非平稳（两个检验结论相反，罕见情况）\n"
+                   f"  可能原因: (1)序列包含去趋势后的平稳成分 (2)KPSS检测到线性趋势 (3)统计检验边界情况\n"
+                   f"  建议: 高度不确定，不建议交易")
+
+        else:
+            # 其他情况
+            adf_stat_str = "非平稳" if adf_nonstationary else "平稳"
+            kpss_stat_str = "非平稳" if kpss_nonstationary else "平稳"
+
+            return (f"【弱趋势或其他】\n"
+                   f"  {hurst_str}\n"
+                   f"  {hypothesis_explanation}\n"
+                   f"  综合结论: ADF判断{adf_stat_str}, KPSS判断{kpss_stat_str}, "
+                   f"Hurst={hurst:.3f}, 趋势特征不明显，不建议强趋势策略")
 
     def analyze_window(
         self,
