@@ -55,7 +55,7 @@
 ### FTI (Frequency Tunable Indicator)
 频率可调谐指标，用于识别价格数据中的优势周期结构。
 
-**性能** (v0.3.0):
+**性能** (v0.3.x):
 - 平均加速: **41.7x**
 - 首次调用: **122x** (跳过 Numba JIT 编译)
 - 稳态调用: **1.3-1.4x** (vs Numba JIT)
@@ -65,6 +65,7 @@
 - 自动周期检测 (5-65 周期范围)
 - Gamma 累积分布函数变换
 - 可配置滤波器参数
+- **v0.3.1**: 升级到 PyO3 0.27 + numpy 0.27，支持 Python 3.14
 
 ---
 
@@ -267,24 +268,50 @@ cargo fmt
 | 组件 | 技术 | 用途 |
 |-----|------|------|
 | 核心语言 | Rust 1.74+ | 高性能实现 |
-| Python 绑定 | PyO3 0.26 | Python 互操作 (Bound API) |
-| 数组操作 | ndarray 0.15 | N 维数组 |
-| NumPy 绑定 | numpy 0.26 | 零拷贝数组转换 |
-| FFT | rustfft 6.2 | 快速傅里叶变换 |
+| Python 绑定 | PyO3 0.27 | Python 互操作 (Bound API, Python 3.14) |
+| 数组操作 | ndarray 0.16 | N 维数组 |
+| NumPy 绑定 | numpy 0.27 | 零拷贝数组转换 |
+| FFT | rustfft 6.4 | 快速傅里叶变换 |
+| 并行计算 | rayon 1.11 | CPU 多核并行 |
 | 构建工具 | maturin 1.0+ | Python 扩展打包 |
 | 错误处理 | thiserror 2.0 | 类型安全错误 |
 
 ### 依赖版本说明
 
-**PyO3 & numpy 版本锁定**:
-- 🔒 **当前版本**: PyO3 0.26 + numpy 0.26
-- ⚠️ **暂不升级至 PyO3 0.27**: rust-numpy 尚未发布兼容 PyO3 0.27 的版本
-- 📌 **升级条件**: 等待上游 [rust-numpy](https://github.com/PyO3/rust-numpy) 发布支持 PyO3 0.27 的版本
-- ✅ **当前状态**: PyO3 0.26 功能完整，满足所有生产需求
+**PyO3 & numpy 版本**:
+- ✅ **当前版本**: PyO3 0.27.1 + numpy 0.27.0 (v0.3.1+)
+- 🎉 **Python 3.14 支持**: PyO3 0.27 首次测试 Python 3.14.0 final
+- 🔧 **平滑升级**: 无 breaking changes，所有指标验证通过
+- 📚 **历史版本**: v0.3.0 使用 PyO3 0.26 + numpy 0.26
 
 ---
 
 ## 📝 版本历史
+
+### v0.3.1 (2025-10-24)
+**依赖升级**: PyO3 0.27 + numpy 0.27
+
+**变更内容**:
+- ⬆️ 升级 PyO3: 0.26.0 → 0.27.1
+- ⬆️ 升级 numpy: 0.26.0 → 0.27.0
+- ⬆️ 升级 rayon: 1.10 → 1.11
+- 🎉 支持 Python 3.14.0 final
+- ✅ 所有指标验证通过（FTI/CWT/VMD 冒烟测试）
+- 📚 新增冒烟测试套件 (`rust_indicators/tests/`)
+
+**测试结果**:
+```
+✅ FTI 冒烟测试通过
+✅ CWT 冒烟测试通过 (cmor1.5-1.0 wavelet)
+✅ VMD 冒烟测试通过 (能量守恒验证)
+```
+
+**升级影响**:
+- ✨ 无 breaking changes，平滑升级
+- 🔒 代码无需修改，干净编译（零警告）
+- 📊 性能保持不变
+
+---
 
 ### v0.2.3 (2025-10-22)
 
