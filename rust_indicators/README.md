@@ -14,6 +14,7 @@
 ⚡ **极致性能**: CWT 平均 5.8x 加速，NRBO 平均 53.6x 加速，VMD 平均 94.4x 加速
 🔒 **生产级质量**: 100% 测试通过，零编译警告
 🚀 **零运行时开销**: 无 JIT 编译延迟，性能可预测
+🎨 **友好的 Python API** (v0.3.1+): 类型提示、参数验证、详细文档
 
 ---
 
@@ -98,40 +99,73 @@ cd /path/to/jesse-trade/rust_indicators
 maturin develop --release
 ```
 
-### 使用
+### Python API 使用指南 (推荐)
+
+从 v0.3.1 开始，提供了友好的 Python 接口层 `pyrs_indicators`，提供完整的类型提示、参数验证和详细文档。
+
+#### 📚 导入方式
 
 ```python
-import _rust_indicators
+# 推荐：使用分类导入（清晰明确）
+from pyrs_indicators.ind_decomposition import vmd
+from pyrs_indicators.ind_wavelets import cwt
+from pyrs_indicators.ind_trend import fti
+```
+
+#### 🎯 快速示例
+
+```python
 import numpy as np
+from pyrs_indicators.ind_decomposition import vmd
+from pyrs_indicators.ind_wavelets import cwt
+from pyrs_indicators.ind_trend import fti
+
+# VMD 信号分解
+signal = np.sin(2 * np.pi * 5 * np.linspace(0, 1, 200))
+modes = vmd(signal, alpha=2000.0, K=3)  # 返回 (K, N) 模态矩阵
+print(modes.shape)  # (3, 200)
+
+# 获取完整输出（模态 + 频谱 + 频率演化）
+modes, spectrum, omega = vmd(signal, alpha=2000.0, K=3, return_full=True)
 
 # CWT 时频分析
-signal = np.sin(np.linspace(0, 10, 1000) * 2 * np.pi * 5)
-scales = np.logspace(np.log2(8), np.log2(64), 20, base=2)
-cwt_db, freqs = _rust_indicators.cwt_py(
-    signal, scales, 'cmor1.5-1.0',
-    sampling_period=0.5, precision=12, pad_width=20
+scales = np.logspace(np.log2(8), np.log2(128), num=32, base=2)
+coef, freqs = cwt(
+    signal,
+    scales,
+    wavelet='cmor1.5-1.0',
+    sampling_period=0.5,
+    pad_width=int(max(scales))
 )
+print(coef.shape)  # (200, 32) - [时间, 尺度]
 
-# VMD 分解
-signal = np.sin(np.linspace(0, 1, 1000) * 2 * np.pi * 5)
-u, u_hat, omega = _rust_indicators.vmd_py(signal, alpha=2000, k=2)
-
-# NRBO 优化
-imf = np.sin(np.linspace(0, 10, 100))
-optimized = _rust_indicators.nrbo_py(imf, max_iter=10, tol=1e-6)
-
-# FTI 周期检测
-price_data = np.random.randn(200) + 100  # 价格数据（最近的在索引0）
-fti, filtered_value, width, best_period = _rust_indicators.fti_process_py(
-    price_data,
+# FTI 趋势检测
+prices = 100 + np.cumsum(np.random.randn(200) * 0.5)
+fti_value, filtered, width, period = fti(
+    prices,
     use_log=True,
     min_period=5,
     max_period=65,
-    half_length=35,
-    lookback=150,
-    beta=0.95,
-    noise_cut=0.20
+    lookback=150
 )
+print(f"FTI: {fti_value:.1f}, Best Period: {period:.0f}")
+```
+
+#### 💡 新接口优势
+
+- ✅ **类型提示**: 完整的 `numpy.typing` 支持，IDE 自动补全
+- ✅ **参数验证**: Fail Fast 原则，非法参数立即抛出 `ValueError`
+- ✅ **详细文档**: 每个函数都有完整的 docstring（参数说明、使用示例、注意事项）
+- ✅ **返回值简化**: 默认只返回最常用的结果，可选返回完整输出
+- ✅ **错误提示**: 友好的错误信息，快速定位问题
+
+#### 📖 查看文档
+
+```python
+# 在 Python 中查看完整文档
+help(vmd)
+help(cwt)
+help(fti)
 ```
 
 ---
@@ -287,6 +321,39 @@ cargo fmt
 ---
 
 ## 📝 版本历史
+
+### v0.4.0 (2025-10-24)
+**重大更新**: Python API 接口层 🎨
+
+**新增功能**:
+- 🎨 新增 `pyrs_indicators` Python 接口层
+  - 分类组织：`ind_wavelets/`, `ind_decomposition/`, `ind_trend/`
+  - 完整类型提示：`numpy.typing` 支持，IDE 自动补全
+  - 参数验证：Fail Fast 原则，非法参数立即抛 `ValueError`
+  - 详细文档：每个函数都有完整 docstring
+  - 简化返回值：默认只返回常用结果，可选返回完整输出
+- 🔄 迁移所有生产代码到新接口
+  - `src/indicators/prod/emd/cls_vmd_indicator.py`
+  - `src/indicators/prod/wavelets/cls_cwt_swt.py`
+  - `src/indicators/prod/fti.py`
+- 📚 更新文档和测试使用新接口
+- 🗑️ 移除旧 `_rust_indicators` 直接调用文档
+
+**破坏性变更**:
+- ⚠️ 推荐使用新接口，旧接口 `_rust_indicators` 仍然可用但不推荐
+
+**使用示例**:
+```python
+# 新接口（推荐）
+from pyrs_indicators.ind_decomposition import vmd
+from pyrs_indicators.ind_wavelets import cwt
+from pyrs_indicators.ind_trend import fti
+
+signal = np.sin(2 * np.pi * 5 * np.linspace(0, 1, 200))
+modes = vmd(signal, alpha=2000.0, K=3)
+```
+
+---
 
 ### v0.3.1 (2025-10-24)
 **依赖升级**: PyO3 0.27 + numpy 0.27

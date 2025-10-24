@@ -8,13 +8,13 @@ import sys
 import numpy as np
 import pytest
 
-# 导入 Rust 实现
+# 导入新的 Python 接口
 try:
-    import _rust_indicators
-    HAS_RUST = True
+    from pyrs_indicators.ind_wavelets import cwt
+    from pyrs_indicators import HAS_RUST
 except ImportError:
     HAS_RUST = False
-    print("⚠️  Warning: _rust_indicators not available, run: cd rust_indicators && maturin develop --release")
+    print("⚠️  Warning: pyrs_indicators not available, run: cd rust_indicators && cargo clean && maturin develop --release")
 
 
 @pytest.mark.skipif(not HAS_RUST, reason="Rust implementation not available")
@@ -33,10 +33,10 @@ def test_cwt_cmor_wavelet():
 
     # Rust 实现
     try:
-        coef_rust, freqs = _rust_indicators.cwt_py(
+        coef_rust, freqs = cwt(
             signal,
             scales,
-            wavelet,
+            wavelet=wavelet,
             sampling_period=sampling_period,
             precision=12,
             pad_width=pad_width,
@@ -79,10 +79,10 @@ def test_cwt_periodic_signal():
     wavelet = 'cmor1.5-1.0'
 
     try:
-        coef_rust, freqs = _rust_indicators.cwt_py(
+        coef_rust, freqs = cwt(
             signal,
             scales,
-            wavelet,
+            wavelet=wavelet,
             sampling_period=1.0,
             precision=10,
             pad_width=int(max(scales)),

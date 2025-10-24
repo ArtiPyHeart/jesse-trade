@@ -1,0 +1,8 @@
+"""信号分解指标子包
+
+提供基于 Rust 的高性能信号分解算法。
+"""
+
+from .vmd import vmd
+
+__all__ = ["vmd"]

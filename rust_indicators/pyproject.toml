@@ -3,9 +3,9 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "rust-indicators"
-version = "0.1.0"
-description = "High-performance Rust indicators for Jesse Trade"
+name = "pyrs-indicators"
+version = "0.4.0"
+description = "High-performance Rust-powered technical indicators with Python interface"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
@@ -29,5 +29,7 @@ dev = [
 ]
 
 [tool.maturin]
-module-name = "_rust_indicators"
+module-name = "pyrs_indicators._rust_indicators"  # Rust 扩展作为 pyrs_indicators 的子模块
 bindings = "pyo3"
+python-source = "."  # Python 包（pyrs_indicators/）位于项目根目录
+features = ["pyo3/extension-module"]

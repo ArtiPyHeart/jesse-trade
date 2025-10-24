@@ -1,7 +1,8 @@
 import numpy as np
 import pywt
 from jesse.helpers import get_candle_source
-import _rust_indicators
+
+from pyrs_indicators.ind_wavelets import cwt
 
 from src.indicators.prod._indicator_base._cls_ind import IndicatorBase
 
@@ -33,11 +34,11 @@ def _cwt(src: np.ndarray):
     if len(_valid_scales) < 5:
         raise ValueError("Not enough valid scales")
 
-    # Rust implementation: 3.5x faster, numerical alignment < 3e-14
-    cwt_dB, _freqs = _rust_indicators.cwt_py(
+    # 使用新的 Python 接口
+    cwt_dB, _freqs = cwt(
         src,
         _valid_scales,
-        "cmor1.5-1.0",
+        wavelet="cmor1.5-1.0",
         sampling_period=SAMPLING_HOURS,
         precision=12,
         pad_width=_pad_width,

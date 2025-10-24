@@ -2,7 +2,7 @@
 FTI (Frequency Tunable Indicator) - 频率可调谐指标
 
 架构说明:
-- 生产环境: 强制使用 Rust 实现 (_rust_indicators.fti_process_py)
+- 生产环境: 强制使用 Rust 实现 (pyrs_indicators.ind_trend.fti)
 - 测试环境: 保留 Python numba 函数用于数值对齐验证
 
 已废弃的 Python 实现部分已注释，仅保留用于测试的 numba 函数。
@@ -10,8 +10,8 @@ FTI (Frequency Tunable Indicator) - 频率可调谐指标
 
 from typing import NamedTuple
 
-# 导入 Rust 实现
-import _rust_indicators
+# 导入 Rust 实现（新接口）
+from pyrs_indicators.ind_trend import fti as rust_fti
 import numpy as np
 from jesse import helpers
 from numba import njit
@@ -310,7 +310,8 @@ class FTI:
         :param data: 价格数据，最近的数据点在索引0
         """
 
-        fti, filtered_value, width, best_period = _rust_indicators.fti_process_py(
+        # 使用新的 Python 接口
+        fti_value, filtered_value, width, best_period = rust_fti(
             data,
             use_log=self.use_log,
             min_period=self.min_period,
@@ -321,7 +322,7 @@ class FTI:
             noise_cut=self.noise_cut,
         )
         return FTIResult(
-            fti=fti,
+            fti=fti_value,
             filtered_value=filtered_value,
             width=width,
             best_period=best_period,

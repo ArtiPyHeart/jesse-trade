@@ -8,13 +8,13 @@ import sys
 import numpy as np
 import pytest
 
-# 导入 Rust 实现
+# 导入新的 Python 接口
 try:
-    import _rust_indicators
-    HAS_RUST = True
+    from pyrs_indicators.ind_decomposition import vmd
+    from pyrs_indicators import HAS_RUST
 except ImportError:
     HAS_RUST = False
-    print("⚠️  Warning: _rust_indicators not available, run: cd rust_indicators && maturin develop --release")
+    print("⚠️  Warning: pyrs_indicators not available, run: cd rust_indicators && cargo clean && maturin develop --release")
 
 
 @pytest.mark.skipif(not HAS_RUST, reason="Rust implementation not available")
@@ -33,8 +33,8 @@ def test_vmd_basic_decomposition():
     init = 1
     tol = 1e-7
 
-    # Rust 实现 (返回 tuple: (u, u_hat, omega))
-    u_modes, _, _ = _rust_indicators.vmd_py(signal, alpha, tau, K, DC, init, tol)
+    # 使用新的 Python 接口
+    u_modes, _, _ = vmd(signal, alpha=alpha, tau=tau, K=K, DC=DC, init=init, tol=tol, return_full=True)
 
     print(f"\n  VMD 输出形状: {u_modes.shape}")
     print(f"  期望形状: ({K}, {len(signal)}) [模态 x 时间]")
@@ -80,8 +80,8 @@ def test_vmd_price_signal():
     init = 1
     tol = 1e-6
 
-    # Rust 实现 (返回 tuple: (u, u_hat, omega))
-    u_modes, _, _ = _rust_indicators.vmd_py(signal, alpha, tau, K, DC, init, tol)
+    # 使用新的 Python 接口
+    u_modes, _, _ = vmd(signal, alpha=alpha, tau=tau, K=K, DC=DC, init=init, tol=tol, return_full=True)
 
     print(f"\n  VMD (价格信号) 输出形状: {u_modes.shape}")
     for i in range(K):
