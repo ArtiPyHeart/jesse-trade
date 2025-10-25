@@ -8,6 +8,10 @@ pub mod nrbo;
 pub mod cwt;
 pub mod fti;
 
+// Ripser 模块（独立开发，暂不导出到 Python）
+// 用于持久同调计算，处于迭代开发阶段
+pub mod ripser;
+
 use pyo3::prelude::*;
 
 /// Python module definition
@@ -24,6 +28,9 @@ fn _rust_indicators(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // 注册 FTI 函数
     m.add_function(wrap_pyfunction!(fti::fti_process_py, m)?)?;
+
+    // 注册 Ripser 函数
+    ripser::ffi::register_ripser_functions(m)?;
 
     Ok(())
 }
