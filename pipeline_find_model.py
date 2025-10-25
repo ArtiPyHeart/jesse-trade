@@ -36,10 +36,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # 用于保存deep ssm与lg ssm
 # 使用 path = MODEL_SAVE_DIR / "deep_ssm"
 # path.resolve().as_posix()的方式生成路径
-MODEL_SAVE_DIR = Path("strategies/BinanceBtcDeapV1Voting/models")
+MODEL_SAVE_DIR = Path("strategies/BinanceBtcDemoBarV2/models")
 
 # 固定训练集切分点，从而固定训练集，节约特征生成和筛选的时间。测试集主要用于回测
-TRAIN_TEST_SPLIT_DATE = "2025-03-01"
+TRAIN_TEST_SPLIT_DATE = "2025-04-30"
+CANDLE_START = "2022-07-01"
+CANDLE_END = "2025-10-20"
 RESULTS_FILE = "model_search_results.csv"
 
 
@@ -162,7 +164,7 @@ logger.info("加载K线数据: Binance Perpetual Futures BTC-USDT 1m")
 candle_container = FusionCandles(
     exchange="Binance Perpetual Futures", symbol="BTC-USDT", timeframe="1m"
 )
-candles = candle_container.get_candles("2022-07-01", "2025-09-25")
+candles = candle_container.get_candles(CANDLE_START, CANDLE_END)
 logger.info(f"K线数据加载完成: {len(candles)} 条记录")
 logger.info(
     f"时间范围: {pd.to_datetime(candles[0][0], unit='ms')} - {pd.to_datetime(candles[-1][0], unit='ms')}"
@@ -299,7 +301,7 @@ def evaluate_regressor(
 
 if __name__ == "__main__":
     # 参数配置
-    log_return_lags = list(range(3, 10))
+    log_return_lags = list(range(4, 8))
     pred_next_steps = [1, 2, 3]
 
     # 获取待完成的任务

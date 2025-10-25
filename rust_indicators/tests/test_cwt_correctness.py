@@ -1,11 +1,12 @@
 """
-CWT (Continuous Wavelet Transform) 冒烟测试
+CWT (Continuous Wavelet Transform) 冒烟与一致性测试
 
-验证 Rust 实现能正常运行并返回合理的值
+验证 Rust 实现能正常运行并与 PyWavelets 数值对齐
 """
 
 import sys
 import numpy as np
+import pywt
 import pytest
 
 # 导入新的 Python 接口
@@ -15,6 +16,31 @@ try:
 except ImportError:
     HAS_RUST = False
     print("⚠️  Warning: pyrs_indicators not available, run: cd rust_indicators && cargo clean && maturin develop --release")
+
+
+EPSILON_DB = 1e-12
+
+
+def _pywt_reference(signal, scales, wavelet, sampling_period, pad_width):
+    """Reference implementation using PyWavelets (cmor family only)."""
+    if pad_width:
+        padded = np.pad(signal, pad_width, mode="symmetric")
+    else:
+        padded = signal
+
+    coef_py, _ = pywt.cwt(
+        padded,
+        scales,
+        wavelet,
+        sampling_period=sampling_period,
+        method="fft",
+    )
+    if pad_width:
+        coef_py = coef_py[:, pad_width : pad_width + len(signal)]
+
+    coef_py_db = 20.0 * np.log10(np.abs(coef_py) + EPSILON_DB)
+    freqs_py = pywt.scale2frequency(wavelet, scales) / sampling_period
+    return coef_py_db.T, freqs_py
 
 
 @pytest.mark.skipif(not HAS_RUST, reason="Rust implementation not available")
@@ -101,6 +127,63 @@ def test_cwt_periodic_signal():
     except Exception as e:
         print(f"  ⚠️  CWT (周期信号) 测试失败: {e}")
         return False
+
+
+@pytest.mark.skipif(not HAS_RUST, reason="Rust implementation not available")
+def test_cwt_matches_pywt_without_padding():
+    """Rust CWT 输出需与 PyWavelets 完全一致（无填充）"""
+    t = np.linspace(0, 1, 256)
+    signal = (np.sin(2 * np.pi * 15 * t) + 0.2 * np.sin(2 * np.pi * 5 * t)).astype(np.float64)
+
+    scales = np.logspace(np.log2(4), np.log2(64), num=24, base=2, dtype=np.float64)
+    wavelet = "cmor1.5-1.0"
+    sampling_period = 0.5
+
+    coef_rust, freqs_rust = cwt(
+        signal,
+        scales,
+        wavelet=wavelet,
+        sampling_period=sampling_period,
+        precision=12,
+        pad_width=0,
+        verbose=False,
+    )
+    coef_py_db, freqs_py = _pywt_reference(signal, scales, wavelet, sampling_period, pad_width=0)
+
+    np.testing.assert_allclose(coef_rust, coef_py_db, atol=6e-13)
+    np.testing.assert_allclose(freqs_rust, freqs_py, atol=1e-15)
+
+
+@pytest.mark.skipif(not HAS_RUST, reason="Rust implementation not available")
+def test_cwt_matches_pywt_with_symmetric_padding():
+    """Rust CWT 输出需与 PyWavelets 完全一致（含对称填充）"""
+    rng = np.random.default_rng(123)
+    signal = rng.normal(loc=100.0, scale=0.8, size=300).cumsum().astype(np.float64)
+
+    scales = np.logspace(np.log2(8), np.log2(128), num=32, base=2, dtype=np.float64)
+    wavelet = "cmor1.5-1.0"
+    sampling_period = 0.5
+    pad_width = int(max(scales))
+
+    coef_rust, freqs_rust = cwt(
+        signal,
+        scales,
+        wavelet=wavelet,
+        sampling_period=sampling_period,
+        precision=12,
+        pad_width=pad_width,
+        verbose=False,
+    )
+    coef_py_db, freqs_py = _pywt_reference(
+        signal,
+        scales,
+        wavelet,
+        sampling_period,
+        pad_width=pad_width,
+    )
+
+    np.testing.assert_allclose(coef_rust, coef_py_db, atol=6e-13)
+    np.testing.assert_allclose(freqs_rust, freqs_py, atol=1e-15)
 
 
 if __name__ == "__main__":

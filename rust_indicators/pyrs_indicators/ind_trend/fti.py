@@ -51,9 +51,9 @@ def fti(
 
     Returns:
         (fti_value, filtered_value, width, best_period): 四元组
-        - fti_value: FTI 指标值 [0, 100]
-            0: 强噪声/无趋势
-            100: 强趋势
+        - fti_value: FTI 指标值（>= 0，无上界）
+            接近 0: 强噪声/无趋势
+            数值越大: 趋势越强
         - filtered_value: 滤波后的价格值
         - width: 趋势宽度（振幅）
         - best_period: 检测到的最佳周期
@@ -88,7 +88,7 @@ def fti(
         - 数据长度必须 >= lookback
         - lookback 必须 >= max_period + half_length
         - FTI 值接近 0 表示价格处于噪声状态
-        - FTI 值接近 100 表示价格具有明显趋势
+        - FTI 值越大表示趋势越强（根据 mean_move/width 计算）
         - best_period 是自动检测的主导周期
         - Rust 实现比 Python/Numba 快 50-100 倍
 
@@ -187,10 +187,10 @@ def fti(
             "Try adjusting parameters or check input data for NaN/Inf."
         )
 
-    # 检查 FTI 值域
-    if not (0 <= fti_value <= 100):
+    # 检查 FTI 值域（根据公式 mean_move/width，应该 >= 0）
+    if fti_value < 0:
         raise RuntimeError(
-            f"FTI value out of range [0, 100]: got {fti_value}"
+            f"FTI value must be non-negative: got {fti_value}"
         )
 
     # 检查 best_period 范围

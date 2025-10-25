@@ -12,19 +12,21 @@ import lightgbm as lgb
 from jesse.helpers import date_to_timestamp
 
 # 准备工作
-DATA_DIR = Path("./data")
-MODEL_DIR = Path("./strategies/BinanceBtcDeapV1Voting/models")
+MODEL_DIR = Path("./strategies/BinanceBtcDemoBarV2/models")
 # 已训练的SSM模型路径
 MODEL_DEEP_SSM_PATH = MODEL_DIR / "deep_ssm"
 MODEL_LG_SSM_PATH = MODEL_DIR / "lg_ssm"
-TRAIN_TEST_SPLIT_DATE = "2025-03-01"
+TRAIN_TEST_SPLIT_DATE = "2025-04-30"
+CANDLE_START = "2022-07-01"
+CANDLE_END = "2025-10-20"
+
 df_params = pd.read_csv(Path(__file__).parent / "model_search_results.csv")
 df_params["best_params"] = df_params["best_params"].apply(json.loads)
 df_params["selected_features"] = df_params["selected_features"].apply(json.loads)
 candle_container = FusionCandles(
     exchange="Binance Perpetual Futures", symbol="BTC-USDT", timeframe="1m"
 )
-candles = candle_container.get_candles("2022-07-01", "2025-10-10")
+candles = candle_container.get_candles(CANDLE_START, CANDLE_END)
 # 特征生成只关心特征名称和原始数据
 feature_loader = FeatureLoader(candles)
 # 加载已训练的deep ssm与lg ssm模型
@@ -107,9 +109,9 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False, seed: int
     model = lgb.train(best_model_param, lgb.Dataset(train_x, train_y))
     model.save_model(model_path.resolve().as_posix())
 
-    print(f"fitting {MODEL_NAME} prod model with {full_x.shape[1]} features")
-    model_prod = lgb.train(best_model_param, lgb.Dataset(full_x, label))
-    model_prod.save_model(model_prod_path.resolve().as_posix())
+    # print(f"fitting {MODEL_NAME} prod model with {full_x.shape[1]} features")
+    # model_prod = lgb.train(best_model_param, lgb.Dataset(full_x, label))
+    # model_prod.save_model(model_prod_path.resolve().as_posix())
 
 
 if __name__ == "__main__":
@@ -123,16 +125,16 @@ if __name__ == "__main__":
     print(f"=" * 60 + "\n")
 
     # classifiers
-    for lag in range(3, 7):
+    for lag in range(4, 7):
         for pred_next in range(1, 4):
             print(f"building classifier for {lag = } and {pred_next = }")
             build_model(lag, pred_next, is_regression=False, seed=GLOBAL_SEED)
 
     # regressors
     print("building regression model...")
-    build_model(5, 1, is_regression=True, seed=GLOBAL_SEED)
-    build_model(6, 2, is_regression=True, seed=GLOBAL_SEED)
-    build_model(6, 3, is_regression=True, seed=GLOBAL_SEED)
+    for lag in range(5, 8):
+        for pred_next in range(1, 4):
+            build_model(lag, pred_next, is_regression=True, seed=GLOBAL_SEED)
 
     print("\n" + "=" * 60)
     print("All models built with unified random seed")

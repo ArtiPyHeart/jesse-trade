@@ -399,12 +399,11 @@ impl FTI {
             (self.filtered[best_idx], self.width[best_idx])
         };
 
-        // 计算最终的FTI值，包括Gamma累积分布函数变换
+        // 返回原始 FTI 值（与 Python 实现保持一致）
         let fti_value = self.fti_values[best_idx];
-        let fti_transformed = 100.0 * gammainc(2.0, fti_value / 3.0) - 50.0;
 
         Ok(FTIResult {
-            fti: fti_transformed,
+            fti: fti_value,
             filtered_value,
             width: width_value,
             best_period: best_period as f64,
@@ -438,51 +437,6 @@ impl FTI {
             self.noise_cut,
         );
     }
-}
-
-/// Gamma累积分布函数的近似实现
-///
-/// 对应 scipy.special.gammainc
-fn gammainc(a: f64, x: f64) -> f64 {
-    // 使用级数展开近似
-    // P(a,x) = gamma(a,x)/Gamma(a) = 1 - exp(-x) * sum(x^k / (a+k)!)
-
-    if x <= 0.0 {
-        return 0.0;
-    }
-
-    // 对于 a=2, 有简化形式: P(2,x) = 1 - (1+x)*exp(-x)
-    if (a - 2.0).abs() < 1e-10 {
-        return 1.0 - (1.0 + x) * (-x).exp();
-    }
-
-    // 一般情况使用级数展开
-    let mut sum = 0.0;
-    let mut term = 1.0 / a;
-    sum += term;
-
-    for k in 1..100 {
-        term *= x / (a + k as f64);
-        sum += term;
-        if term.abs() < 1e-10 {
-            break;
-        }
-    }
-
-    let result = (-x).exp() * x.powf(a) * sum / gamma(a);
-    result.min(1.0).max(0.0)
-}
-
-/// Gamma函数近似
-fn gamma(z: f64) -> f64 {
-    // 对于整数参数，使用阶乘
-    if (z - 2.0).abs() < 1e-10 {
-        return 1.0; // Gamma(2) = 1! = 1
-    }
-
-    // Stirling近似
-    let sqrt_2pi = (2.0 * PI).sqrt();
-    sqrt_2pi * z.powf(z - 0.5) * (-z).exp()
 }
 
 // 需要导入 s! 宏来使用切片

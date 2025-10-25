@@ -1,5 +1,4 @@
 import numpy as np
-import optuna
 
 from src.bars.fusion.base import FusionBarContainerBase
 
@@ -12,7 +11,8 @@ class DemoBar(FusionBarContainerBase):
     def __init__(
         self,
         max_bars=50000,
-        threshold=6.528824,
+        # threshold=6.528824,
+        threshold=5.8085,
     ):
         super().__init__(max_bars, threshold)
 
