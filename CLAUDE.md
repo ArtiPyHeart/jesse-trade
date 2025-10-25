@@ -77,9 +77,40 @@ pip install -r requirements-dev.txt  # 开发依赖
   - `RUST_INDICATORS_SKILL.md`：Rust高性能指标开发、集成与维护
 - **使用原则**：严格遵循SKILL中定义的决策准则、输出格式和沟通方式
 
+## 开发工具
+
+### 调用 Codex 获取技术指导
+
+当遇到算法或架构问题需要专业建议时，可通过 mcp-shell-server 调用 codex：
+
+```python
+# 使用 mcp__mcp-shell-server__shell_exec 工具
+mcp__mcp-shell-server__shell_exec(
+    command='cd /Users/yangqiuyu/Github/jesse-trade && codex exec "你的问题"'
+)
+```
+
+**使用场景**：
+- 算法复杂度分析（如 Ripser 的 O(N³) 复杂度）
+- 架构设计建议（如 apparent pairs 优化）
+- 数学/物理概念解释
+- 最佳实践咨询
+
+**关键点**：
+- 必须使用 `codex exec` 子命令（非交互模式）
+- 需要在项目目录中运行（cd 到 repo）
+- 问题要简洁明确，建议限制回答长度（如"2-3 sentences"）
+- 从 stdout 直接获取答案
+
+**示例**：
+```bash
+cd /Users/yangqiuyu/Github/jesse-trade && codex exec "What is the time complexity of matrix reduction in persistent homology? Answer in 2 sentences."
+```
+
 ## 关键提醒
 - 开发时使用mcp context7 查看最新文档，如果mcp调用失败，停下来提示用户先配置
 - 如果WebFetch直接获取网页失败，可使用chrome devtools mcp打开网页并阅读内容（**优先使用 headless 模式**以提高效率，仅需可视化调试时使用常规模式）
+- **遇到复杂算法/架构问题**：使用 codex exec 获取专业建议，避免盲目尝试
 - 生产代码仅从`src/`导入
 - 策略间保持独立，避免交叉依赖
 - 功能实现后必须单元测试
