@@ -101,6 +101,7 @@ mcp__mcp-shell-server__shell_exec(
 - 需要在项目目录中运行（cd 到 repo）
 - 问题要简洁明确，建议限制回答长度（如"2-3 sentences"）
 - 从 stdout 直接获取答案
+- **给予充分思考时间**：复杂问题需要长时间推理，应设置最长超时（600000ms）或使用后台任务（run_in_background: true）
 
 **示例**：
 ```bash
