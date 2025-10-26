@@ -87,9 +87,9 @@ pub fn symmetric_pad(signal: &Array1<f64>, pad_width: usize) -> Array1<f64> {
 
 /// Convert complex CWT coefficients to dB scale
 ///
-/// dB = 20 * log10(abs(cwt_coef) + epsilon)
+/// dB = log10(abs(cwt_coef) + epsilon)
 pub fn to_db(cwtmat: &ndarray::Array2<Complex64>, epsilon: f64) -> ndarray::Array2<f64> {
-    cwtmat.mapv(|c| 20.0 * (c.norm() + epsilon).log10())
+    cwtmat.mapv(|c| (c.norm() + epsilon).log10())
 }
 
 /// Compute next power of 2 (for FFT optimization)
@@ -119,10 +119,9 @@ mod tests {
         ]);
         let db = to_db(&cwtmat, 1e-12);
 
-        assert!((db[[0, 0]] - 0.0).abs() < 1e-10);    // 20*log10(1) = 0
-        assert!((db[[0, 1]] - 20.0).abs() < 1e-10);   // 20*log10(10) = 20
-        assert!((db[[1, 0]] - 40.0).abs() < 1e-10);   // 20*log10(100) = 40
-        assert!((db[[1, 1]] - 60.0).abs() < 1e-10);   // 20*log10(1000) = 60
+        assert!((db[[0, 0]] - 0.0).abs() < 1e-10);  // log10(1) = 0
+        assert!((db[[0, 1]] - 1.0).abs() < 1e-10);  // log10(10) = 1
+        assert!((db[[1, 0]] - 2.0).abs() < 1e-10);  // log10(100) = 2
     }
 
     #[test]

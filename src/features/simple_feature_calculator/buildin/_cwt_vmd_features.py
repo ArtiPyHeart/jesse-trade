@@ -3,10 +3,8 @@ import numpy as np
 from src.features.simple_feature_calculator import (
     class_feature,
 )
-from src.indicators.prod import (
-    VMD_NRBO,
-    CWT_SWT,
-)
+from src.indicators.prod import VMD_NRBO
+from src.indicators.prod.wavelets import CWT_SWT_Rust as CWT_SWT
 
 
 # 注册类型特征

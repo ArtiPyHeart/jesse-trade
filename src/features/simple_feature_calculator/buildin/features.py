@@ -28,7 +28,6 @@ from src.indicators.prod import (
     ehlers_convolution,
     ehlers_early_onset_trend,
     evenbetter_sinewave,
-    fti,
     hurst_coefficient,
     iqr_ratio,
     FTIResult,
@@ -58,6 +57,7 @@ from src.indicators.prod import (
     bar_low,
     bar_close,
 )
+from src.indicators.prod.fti_rust import fti
 
 # 小波与VMD特征
 from . import _cwt_vmd_features  # noqa

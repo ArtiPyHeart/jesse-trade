@@ -1,8 +1,7 @@
 import numpy as np
 import pywt
 from jesse.helpers import get_candle_source
-
-from pyrs_indicators.ind_wavelets import cwt
+from joblib import delayed, Parallel
 
 from src.indicators.prod._indicator_base._cls_ind import IndicatorBase
 
@@ -25,25 +24,18 @@ _pad_width = round(max(_valid_scales))
 
 
 def _cwt(src: np.ndarray):
-    """
-    Compute CWT using Rust implementation (3.5x faster than PyWavelets).
-
-    Rust implementation provides significant speedup with perfect numerical
-    alignment (error < 3e-14).
-    """
     if len(_valid_scales) < 5:
         raise ValueError("Not enough valid scales")
 
-    # 使用新的 Python 接口
-    cwt_dB, _freqs = cwt(
-        src,
+    x_pad = pywt.pad(src, _pad_width, mode="symmetric")
+    cwtmat, _freqs = pywt.cwt(
+        x_pad,
         _valid_scales,
-        wavelet="cmor1.5-1.0",
+        "cmor1.5-1.0",
         sampling_period=SAMPLING_HOURS,
-        precision=12,
-        pad_width=_pad_width,
-        verbose=False,  # Production mode: no progress output
     )
+    cwtmat = cwtmat[:, _pad_width:-_pad_width]
+    cwt_dB = np.log10(np.abs(cwtmat) + 1e-12).T
     return cwt_dB
 
 
@@ -70,8 +62,6 @@ class CWT_SWT(IndicatorBase):
             self.src[idx - self.window : idx]
             for idx in range(self.window, len(self.src) + 1)
         ]
-        # Rust implementation has internal parallelization via rayon
-        # Direct loop is sufficient (no need for joblib)
-        res = [_cwt(i) for i in src_with_window]
+        res = Parallel()(delayed(_cwt)(i) for i in src_with_window)
 
         self.raw_result.extend(res)
