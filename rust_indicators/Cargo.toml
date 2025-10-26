@@ -1,6 +1,6 @@
 [package]
 name = "rust-indicators"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 authors = ["Jesse Trade Contributors"]
 description = "High-performance Rust indicators for Jesse Trade (VMD, NRBO, CWT, FTI)"
@@ -34,11 +34,6 @@ path = "benches/vmd_bench.rs"
 name = "nrbo_bench"
 harness = false
 path = "benches/nrbo_bench.rs"
-
-[[bench]]
-name = "ripser_benches"
-harness = false
-path = "benches/ripser_benches.rs"
 
 [profile.release]
 lto = "fat"

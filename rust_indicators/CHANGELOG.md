@@ -6,6 +6,46 @@
 
 ---
 
+## [0.6.0] - 2025-10-26
+
+### 🗑️ 移除功能
+
+**移除 Ripser 拓扑数据分析模块**
+- 原因：性能远低于 giotto-ph 的 ripser_parallel（实测速度远达不到预期）
+- 移除内容：
+  - 完整的 Rust 实现（`src/ripser/` 目录）
+  - Python 包装（`pyrs_indicators/topology/` 模块）
+  - 所有相关测试（`tests/ripser/`, `test_ripser_*.py`）
+  - 基准测试（`benches/ripser_benches.rs`）
+  - 文档（`RIPSER_ALGORITHM.md`）
+- 替代方案：使用 giotto-ph 的 `ripser_parallel` 进行拓扑数据分析
+
+### 🔧 架构优化
+
+**项目聚焦核心优势**
+- 专注于高性能信号处理指标：VMD、NRBO、CWT、FTI
+- 移除未达标的拓扑数据分析模块，保持代码库质量
+- 清理项目结构，提升维护性
+
+### ⚠️ 破坏性变更
+
+**不再支持拓扑数据分析**
+- `pyrs_indicators.topology` 模块已完全移除
+- 原有代码若依赖 `from pyrs_indicators.topology import ripser` 需迁移至 giotto-ph
+
+**迁移指南**：
+```python
+# 旧代码（不再可用）
+from pyrs_indicators.topology import ripser
+result = ripser(points, max_dim=1, threshold=2.0)
+
+# 新代码（推荐）
+from gtda.externals import ripser_parallel
+result = ripser_parallel(points, maxdim=1, thresh=2.0)
+```
+
+---
+
 ## [0.5.0] - 2025-10-25
 
 ### ✨ 新增功能

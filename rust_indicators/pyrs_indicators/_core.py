@@ -14,8 +14,6 @@ try:
         cwt_py as _rust_cwt,
         fti_process_py as _rust_fti,
         nrbo_py as _rust_nrbo,  # 内部使用，不导出到公开 API
-        ripser_compute,
-        ripser_compute_from_distance_matrix,
     )
     HAS_RUST = True
     _IMPORT_ERROR = None
@@ -41,8 +39,6 @@ except ImportError as e:
     _rust_cwt = _raise_import_error
     _rust_fti = _raise_import_error
     _rust_nrbo = _raise_import_error
-    ripser_compute = _raise_import_error
-    ripser_compute_from_distance_matrix = _raise_import_error
 
 
 __all__ = [
@@ -50,7 +46,5 @@ __all__ = [
     "_rust_vmd",
     "_rust_cwt",
     "_rust_fti",
-    "ripser_compute",
-    "ripser_compute_from_distance_matrix",
     # 注意：_rust_nrbo 不在 __all__ 中，表示仅供内部使用
 ]
