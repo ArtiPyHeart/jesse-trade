@@ -217,7 +217,7 @@ class ModelTuning:
             direction="maximize",  # R²需要最大化
             pruner=optuna.pruners.HyperbandPruner(),
             sampler=optuna.samplers.TPESampler(
-                n_startup_trials=20, multivariate=True, constant_liar=True
+                n_startup_trials=100, multivariate=True, constant_liar=True
             ),
         )
         # 设置 Optuna 日志级别为警告，隐藏详细日志
@@ -225,7 +225,7 @@ class ModelTuning:
         # 使用 show_progress_bar 显示进度条
         # n_jobs=1 在M4 Pro上避免过度并行导致的性能下降
         study.optimize(
-            objective, n_trials=100, n_jobs=1, show_progress_bar=True
+            objective, n_trials=350, n_jobs=1, show_progress_bar=True
         )  # 减少试验次数
 
         params = {

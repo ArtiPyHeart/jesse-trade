@@ -813,11 +813,14 @@ def rolling_persistent_homology_entropy(array: np.ndarray, window: int) -> np.nd
 
             try:
                 # 计算持久性图
+                # 注意：对于1D点云（时间序列），maxdim=0与maxdim=1数学等价
+                # 因为1D点集无法形成真正的1-cycles（H₁恒为0）
+                # 使用maxdim=0可提升性能，尤其是在大窗口时
                 ph_result = ripser_parallel(
                     X,
-                    maxdim=1,  # 计算0维和1维同调
+                    maxdim=0,  # 对1D时间序列，仅需0维同调
                     metric="euclidean",
-                    n_threads=1,  # 单线程以减少开销
+                    n_threads=1,  # 小窗口时单线程最优
                 )
 
                 # 提取所有维度的寿命
