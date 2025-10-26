@@ -348,6 +348,135 @@ def rolling_median(array: np.ndarray, window: int) -> np.ndarray:
 
 
 @njit(cache=True)
+def rolling_normalize(array: np.ndarray, window: int) -> np.ndarray:
+    """
+    滚动归一化到[0,1]区间
+
+    将每个窗口的数据归一化到[0,1]区间：
+    - 0：窗口最小值
+    - 1：窗口最大值
+    - 0.5：窗口中点
+
+    用途：
+    - 去除量纲影响，便于跨资产/跨周期比较
+    - 检测价格在区间的相对位置（类似%K指标）
+    - 识别突破信号（接近0或1）
+
+    Args:
+        array: 输入数组
+        window: 窗口大小
+
+    Returns:
+        滚动归一化结果，前window-1个值为nan
+    """
+    if array.ndim == 1:
+        result = np.full_like(array, np.nan, dtype=np.float64)
+        for i in range(window - 1, len(array)):
+            window_data = array[i - window + 1 : i + 1]
+
+            # 跳过包含nan的窗口
+            valid_mask = ~np.isnan(window_data)
+            if not np.all(valid_mask):
+                continue
+
+            min_val = np.min(window_data)
+            max_val = np.max(window_data)
+
+            # 如果窗口内数据恒定，返回0.5（中性值）
+            if max_val - min_val > 1e-10:
+                result[i] = (array[i] - min_val) / (max_val - min_val)
+            else:
+                result[i] = 0.5
+        return result
+    else:
+        # 处理2D数组
+        result = np.full_like(array, np.nan, dtype=np.float64)
+        for col in range(array.shape[1]):
+            for i in range(window - 1, array.shape[0]):
+                window_data = array[i - window + 1 : i + 1, col]
+
+                valid_mask = ~np.isnan(window_data)
+                if not np.all(valid_mask):
+                    continue
+
+                min_val = np.min(window_data)
+                max_val = np.max(window_data)
+
+                if max_val - min_val > 1e-10:
+                    result[i, col] = (array[i, col] - min_val) / (max_val - min_val)
+                else:
+                    result[i, col] = 0.5
+        return result
+
+
+@njit(cache=True)
+def rolling_zscore(array: np.ndarray, window: int) -> np.ndarray:
+    """
+    滚动Z-score标准化
+
+    将每个窗口的数据标准化为Z-score：
+    - Z = (x - μ) / σ
+    - μ：窗口均值
+    - σ：窗口标准差
+
+    Z-score的含义：
+    - Z > 2：超买（偏离均值2个标准差以上）
+    - Z < -2：超卖
+    - |Z| < 1：正常波动范围
+
+    用途：
+    - 超买超卖信号
+    - 均值回归策略
+    - 异常值检测
+
+    Args:
+        array: 输入数组
+        window: 窗口大小
+
+    Returns:
+        滚动Z-score，前window-1个值为nan
+    """
+    if array.ndim == 1:
+        result = np.full_like(array, np.nan, dtype=np.float64)
+        for i in range(window - 1, len(array)):
+            window_data = array[i - window + 1 : i + 1]
+
+            # 跳过包含nan的窗口
+            valid_mask = ~np.isnan(window_data)
+            if not np.all(valid_mask):
+                continue
+
+            mean = np.mean(window_data)
+            std = np.std(window_data)
+
+            # 如果标准差太小，返回0（无偏离）
+            if std > 1e-10:
+                result[i] = (array[i] - mean) / std
+            else:
+                result[i] = 0.0
+        return result
+    else:
+        # 处理2D数组
+        result = np.full_like(array, np.nan, dtype=np.float64)
+        for col in range(array.shape[1]):
+            for i in range(window - 1, array.shape[0]):
+                window_data = array[i - window + 1 : i + 1, col]
+
+                valid_mask = ~np.isnan(window_data)
+                if not np.all(valid_mask):
+                    continue
+
+                mean = np.mean(window_data)
+                std = np.std(window_data)
+
+                if std > 1e-10:
+                    result[i, col] = (array[i, col] - mean) / std
+                else:
+                    result[i, col] = 0.0
+        return result
+
+
+@njit(cache=True)
 def rolling_curvature(array: np.ndarray, window: int) -> np.ndarray:
     """
     滚动曲率
@@ -877,6 +1006,8 @@ class TransformChain:
         "skew": rolling_skew,
         "kurt": rolling_kurt,
         "median": rolling_median,
+        "norm": rolling_normalize,
+        "zscore": rolling_zscore,
         "hurst": rolling_hurst,
         "curv": rolling_curvature,
         "phent": rolling_persistent_homology_entropy,
