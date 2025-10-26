@@ -70,27 +70,55 @@ def gmm_labeler_find_best_params(
 
     study = optuna.create_study(
         direction="maximize",
-        sampler=optuna.samplers.TPESampler(n_startup_trials=5),
+        sampler=optuna.samplers.TPESampler(n_startup_trials=10),
     )
-    study.optimize(objective, n_trials=15)
+    study.optimize(objective, n_trials=25)
 
-    # 检查是否有有效的trial
-    if (
-        len(
-            [
-                t
-                for t in study.trials
-                if t.value is not None and t.value != float("-inf")
-            ]
+    # 收集所有有效的trials
+    valid_trials = [
+        (t.params["random_state"], t.value)
+        for t in study.trials
+        if t.value is not None and t.value != float("-inf")
+    ]
+
+    if len(valid_trials) == 0:
+        # 如果所有trial都失败了，抛出异常（Fail Fast原则）
+        raise RuntimeError(
+            "All GMM trials failed! This indicates a problem with the data or parameters. "
+            "Please check your input candles and lag_n value."
         )
-        == 0
-    ):
-        # 如果所有trial都失败了，返回一个默认的random_state
-        if verbose:
-            print("Warning: All GMM trials failed, using default random_state=42")
-        return {"random_state": 42}
 
-    return study.best_params
+    # 按回报率降序排列
+    valid_trials.sort(key=lambda x: x[1], reverse=True)
+
+    # 寻找第一个不孤立的seed（至少有一个其他seed回报率相差小于1e-6）
+    eps = 1e-6
+    for i, (random_state, final_ret) in enumerate(valid_trials):
+        # 检查是否有其他seed的回报率与当前相差小于eps
+        has_similar = any(
+            abs(other_ret - final_ret) < eps
+            for j, (_, other_ret) in enumerate(valid_trials)
+            if j != i
+        )
+
+        if has_similar:
+            if verbose:
+                print(
+                    f"Selected random_state={random_state} (return={final_ret:.6%}, rank={i+1}/{len(valid_trials)})"
+                )
+                if i > 0:
+                    skipped_ret = valid_trials[0][1]
+                    print(
+                        f"  Skipped {i} isolated outlier(s), best was {skipped_ret:.6%}"
+                    )
+            return {"random_state": random_state}
+
+    # 如果所有seed都是孤立的，返回最佳的
+    if verbose:
+        print(
+            f"Warning: All seeds are isolated, using best random_state={valid_trials[0][0]}"
+        )
+    return {"random_state": valid_trials[0][0]}
 
 
 class GMMLabeler:

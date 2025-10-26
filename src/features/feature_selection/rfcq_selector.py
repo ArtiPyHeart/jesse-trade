@@ -209,7 +209,7 @@ class RFCQSelector:
         else:
             # 使用num_leaves替代max_depth，对应关系: 2^(depth+1)-1
             # 减少网格搜索空间以提速
-            param_grid = {"num_leaves": [15, 31, 63]}  # 对应max_depth 2,3,4
+            param_grid = {"num_leaves": [31, 63]}  # 对应max_depth 3,4
 
         # 网格搜索
         cv_model = GridSearchCV(
