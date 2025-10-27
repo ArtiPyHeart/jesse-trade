@@ -57,7 +57,7 @@ def _cwt_rust(src: np.ndarray) -> np.ndarray:
             sampling_period=SAMPLING_HOURS,
             precision=12,  # PyWavelets 默认精度
             pad_width=_pad_width,
-            verbose=False
+            verbose=False,
         )
     except Exception as e:
         raise RuntimeError(f"Rust CWT computation failed: {e}") from e
@@ -150,7 +150,6 @@ class CWT_SWT(IndicatorBase):
             for idx in range(self.window, len(self.src) + 1)
         ]
 
-        # 并行计算（使用 Rust 后端，每个窗口已经很快）
-        res = Parallel(n_jobs=-1)(delayed(_cwt_rust)(i) for i in src_with_window)
+        res = [_cwt_rust(i) for i in src_with_window]
 
         self.raw_result.extend(res)
