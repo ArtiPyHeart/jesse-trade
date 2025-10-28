@@ -299,7 +299,7 @@ class LGBMContainer:
 
     def save_filters(self, filepath: str = None):
         """
-        保存过滤器配置到JSON文件
+        保存过滤器配置到JSON文件（按置信度从低到高排序）
 
         Args:
             filepath: 保存路径，默认为 model_<MODEL_NAME>_filters.json
@@ -309,8 +309,11 @@ class LGBMContainer:
         else:
             filepath = Path(filepath)
 
+        # 按 lower_bound 从小到大排序
+        sorted_filters = sorted(self._filters, key=lambda f: f["lower_bound"])
+
         with open(filepath, "w") as f:
-            json.dump(self._filters, f, indent=2)
+            json.dump(sorted_filters, f, indent=2)
 
         print(f"Filters saved to {filepath}")
 
