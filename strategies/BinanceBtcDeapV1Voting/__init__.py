@@ -23,7 +23,7 @@ from .models.config import (
 executor = get_reusable_executor(
     max_workers=os.cpu_count(), timeout=None, reuse=True
 )  # 永不过期
-backend = LokyBackend(executor=executor, timeout=None)
+backend = LokyBackend(executor=executor, idle_worker_timeout=None)
 # ② 把它注册成全局 backend
 register_parallel_backend("loky_reuse", lambda **kw: backend, make_default=True)
 
@@ -57,7 +57,7 @@ ALL_RAW_FEAT = sorted(
 class BinanceBtcDeapV1Voting(Strategy):
     def __init__(self):
         super().__init__()
-        self.bar_container = DemoBar(max_bars=3500)
+        self.bar_container = DemoBar(max_bars=3500, threshold=6.528824)
         self.fc = SimpleFeatureCalculator()
 
         self.deep_ssm_model = SSMContainer("deep_ssm")
