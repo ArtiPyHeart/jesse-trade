@@ -57,7 +57,7 @@ ALL_RAW_FEAT = sorted(
 class BinanceBtcDemoBarV2(Strategy):
     def __init__(self):
         super().__init__()
-        self.bar_container = DemoBar(max_bars=3500, threshold=1.4535)
+        self.bar_container = DemoBar(max_bars=3500, threshold=1.399)
         self.fc = SimpleFeatureCalculator()
 
         self.deep_ssm_model = SSMContainer("deep_ssm")

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from jesse.helpers import date_to_timestamp
 
-from research.model_pick.candle_fetch import FusionCandles
+from research.model_pick.candle_fetch import FusionCandles, bar_container
 from research.model_pick.feature_select import FeatureSelector
 from research.model_pick.features import FeatureLoader
 from research.model_pick.labeler import PipelineLabeler
@@ -164,6 +164,7 @@ logger.info("加载K线数据: Binance Perpetual Futures BTC-USDT 1m")
 candle_container = FusionCandles(
     exchange="Binance Perpetual Futures", symbol="BTC-USDT", timeframe="1m"
 )
+logger.info(f"{bar_container.THRESHOLD = }")
 candles = candle_container.get_candles(CANDLE_START, CANDLE_END)
 logger.info(f"K线数据加载完成: {len(candles)} 条记录")
 logger.info(
