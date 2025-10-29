@@ -25,7 +25,7 @@ from tqdm.auto import tqdm
 
 from src.bars.fusion.demo import DemoBar
 from src.features.simple_feature_calculator import SimpleFeatureCalculator
-from strategies.BinanceBtcDeapV1Voting.models.config import (
+from strategies.BinanceBtcDemoBarV2.models.config import (
     model_name_to_params,
     LGBMContainer,
     SSMContainer,
@@ -348,8 +348,17 @@ class BacktestAnalyzer:
         equity_curve: list[EquityPoint],
         starting_balance: float,
         output_path: Path,
+        trades: list[Trade] = None,
     ):
-        """绘制权益曲线对比图"""
+        """
+        绘制权益曲线对比图（含交易标记）
+
+        Args:
+            equity_curve: 权益曲线数据点
+            starting_balance: 初始资金
+            output_path: 输出路径
+            trades: 交易记录列表（可选，用于在图上标注交易点）
+        """
         if len(equity_curve) == 0:
             print("⚠️  无权益数据，跳过绘图")
             return
@@ -375,7 +384,7 @@ class BacktestAnalyzer:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10), height_ratios=[3, 1])
 
         # ========== 上图：权益曲线对比 ==========
-        ax1.plot(dates, equity_values, label="Strategy", linewidth=2, color="#2E86DE")
+        ax1.plot(dates, equity_values, label="Strategy", linewidth=2, color="#2E86DE", zorder=1)
         ax1.plot(
             dates,
             benchmark_values,
@@ -383,10 +392,77 @@ class BacktestAnalyzer:
             linewidth=2,
             linestyle="--",
             color="#EE5A6F",
+            zorder=1,
         )
         ax1.axhline(
             y=starting_balance, color="gray", linestyle=":", alpha=0.5, label="Initial"
         )
+
+        # ========== 标注交易点 ==========
+        if trades:
+            # 创建时间戳到权益值的映射（用于在交易时间点查找对应的权益）
+            timestamp_to_equity = {ts: eq for ts, eq in zip(timestamps, equity_values)}
+
+            # 分类交易（只保留开仓和止损）
+            open_long_trades = []
+            open_short_trades = []
+            stop_loss_trades = []
+
+            for trade in trades:
+                trade_time = pd.to_datetime(trade.timestamp, unit="ms")
+                # 找到最接近的权益值
+                equity_at_trade = timestamp_to_equity.get(
+                    trade.timestamp,
+                    None  # 如果找不到精确匹配，使用 None
+                )
+
+                # 如果找不到精确匹配，插值估算
+                if equity_at_trade is None:
+                    # 找到最近的两个时间点进行线性插值
+                    idx = np.searchsorted(timestamps, trade.timestamp)
+                    if idx == 0:
+                        equity_at_trade = equity_values[0]
+                    elif idx >= len(timestamps):
+                        equity_at_trade = equity_values[-1]
+                    else:
+                        # 线性插值
+                        t0, t1 = timestamps[idx - 1], timestamps[idx]
+                        e0, e1 = equity_values[idx - 1], equity_values[idx]
+                        ratio = (trade.timestamp - t0) / (t1 - t0) if t1 != t0 else 0
+                        equity_at_trade = e0 + ratio * (e1 - e0)
+
+                if trade.action == "open_long":
+                    open_long_trades.append((trade_time, equity_at_trade))
+                elif trade.action == "open_short":
+                    open_short_trades.append((trade_time, equity_at_trade))
+                elif "stop_loss" in trade.action:
+                    stop_loss_trades.append((trade_time, equity_at_trade))
+
+            # 绘制交易标记（简化版：只显示开仓和止损）
+            marker_size = 35
+            marker_alpha = 0.85  # 提高到0.85，让标记更清晰
+            edge_width = 0.5  # 恢复到0.5，边框更明显
+
+            if open_long_trades:
+                times, equities = zip(*open_long_trades)
+                ax1.scatter(
+                    times, equities, marker="^", s=marker_size, c="#00D2FF",
+                    alpha=marker_alpha, label="开多", zorder=3, edgecolors="white", linewidths=edge_width
+                )
+
+            if open_short_trades:
+                times, equities = zip(*open_short_trades)
+                ax1.scatter(
+                    times, equities, marker="v", s=marker_size, c="#FF6B6B",
+                    alpha=marker_alpha, label="开空", zorder=3, edgecolors="white", linewidths=edge_width
+                )
+
+            if stop_loss_trades:
+                times, equities = zip(*stop_loss_trades)
+                ax1.scatter(
+                    times, equities, marker="X", s=marker_size*1.3, c="#FD79A8",
+                    alpha=marker_alpha, label="止损", zorder=3, edgecolors="white", linewidths=edge_width
+                )
 
         # 设置标题和标签
         final_equity = equity_values[-1]
@@ -402,7 +478,13 @@ class BacktestAnalyzer:
             fontweight="bold",
         )
         ax1.set_ylabel("权益 ($)", fontsize=12)
-        ax1.legend(loc="best", fontsize=11)
+
+        # 图例设置：简化后使用2列显示
+        if trades:
+            ax1.legend(loc="upper left", fontsize=10, ncol=2, framealpha=0.9)
+        else:
+            ax1.legend(loc="best", fontsize=11)
+
         ax1.grid(True, alpha=0.3, linestyle="--")
         ax1.set_xlim(dates[0], dates[-1])
 
@@ -436,6 +518,114 @@ class BacktestAnalyzer:
         print(f"权益曲线图已保存到 {output_path}")
 
     @staticmethod
+    def create_paired_trades_report(trades: list[Trade]) -> pd.DataFrame:
+        """
+        创建配对交易报告，将开仓和平仓配对在一起
+
+        Returns:
+            DataFrame with columns:
+            - trade_num: 交易编号
+            - direction: 方向 (long/short)
+            - open_time: 开仓时间
+            - close_time: 平仓时间
+            - holding_duration: 持仓时长 (分钟)
+            - open_price: 开仓价格
+            - close_price: 平仓价格
+            - qty: 数量
+            - position_value: 仓位价值 (开仓金额)
+            - open_fee: 开仓手续费
+            - close_fee: 平仓手续费
+            - pnl: 盈亏金额
+            - pnl_pct: 盈亏比例 (相对于仓位价值)
+            - close_reason: 平仓原因 (close/stop_loss/force_close)
+        """
+        paired_trades = []
+
+        i = 0
+        trade_num = 1
+
+        while i < len(trades):
+            trade = trades[i]
+
+            # 如果是开仓交易
+            if trade.action in ["open_long", "open_short"]:
+                direction = "long" if trade.action == "open_long" else "short"
+                open_trade = trade
+
+                # 查找对应的平仓交易
+                close_trade = None
+                for j in range(i + 1, len(trades)):
+                    if trades[j].action in [
+                        "close_long",
+                        "close_short",
+                        "stop_loss_long",
+                        "stop_loss_short",
+                        "force_close_long",
+                        "force_close_short",
+                    ]:
+                        close_trade = trades[j]
+                        i = j  # 更新索引到平仓位置
+                        break
+
+                if close_trade:
+                    # 计算持仓时长 (分钟)
+                    holding_duration = (
+                        close_trade.timestamp - open_trade.timestamp
+                    ) / (1000 * 60)
+
+                    # 计算仓位价值
+                    position_value = open_trade.qty * open_trade.price
+
+                    # 计算盈亏比例
+                    pnl_pct = (
+                        (close_trade.pnl / position_value) * 100
+                        if position_value > 0
+                        else 0
+                    )
+
+                    # 提取平仓原因
+                    if "stop_loss" in close_trade.action:
+                        close_reason = "stop_loss"
+                    elif "force_close" in close_trade.action:
+                        close_reason = "force_close"
+                    else:
+                        close_reason = "close"
+
+                    paired_trades.append(
+                        {
+                            "trade_num": trade_num,
+                            "direction": direction,
+                            "open_time": open_trade.timestamp,
+                            "close_time": close_trade.timestamp,
+                            "holding_duration": holding_duration,
+                            "open_price": open_trade.price,
+                            "close_price": close_trade.price,
+                            "qty": open_trade.qty,
+                            "position_value": position_value,
+                            "open_fee": open_trade.fee,
+                            "close_fee": close_trade.fee,
+                            "pnl": close_trade.pnl,
+                            "pnl_pct": pnl_pct,
+                            "close_reason": close_reason,
+                        }
+                    )
+
+                    trade_num += 1
+
+            i += 1
+
+        if not paired_trades:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(paired_trades)
+
+        # 转换时间戳为 datetime
+        df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
+        df["close_time"] = pd.to_datetime(df["close_time"], unit="ms")
+
+        return df
+
+    @staticmethod
     def save_results(
         trades: list[Trade],
         equity_curve: list[EquityPoint],
@@ -451,6 +641,34 @@ class BacktestAnalyzer:
             trades_df["timestamp"] = pd.to_datetime(trades_df["timestamp"], unit="ms")
             trades_df.to_csv(output_dir / "trades.csv", index=False)
             print(f"交易记录已保存到 {output_dir / 'trades.csv'}")
+
+            # 保存配对交易报告
+            paired_df = BacktestAnalyzer.create_paired_trades_report(trades)
+            if not paired_df.empty:
+                paired_df.to_csv(output_dir / "paired_trades.csv", index=False)
+                print(f"配对交易报告已保存到 {output_dir / 'paired_trades.csv'}")
+
+                # 打印摘要统计
+                print(f"\n配对交易摘要:")
+                print(f"  总交易次数: {len(paired_df)}")
+                print(f"  多头交易: {len(paired_df[paired_df['direction']=='long'])}")
+                print(f"  空头交易: {len(paired_df[paired_df['direction']=='short'])}")
+                print(
+                    f"  平均持仓时长: {paired_df['holding_duration'].mean():.1f} 分钟"
+                )
+                print(f"  平均盈亏比例: {paired_df['pnl_pct'].mean():.2f}%")
+                print(
+                    f"  最大单笔盈利: ${paired_df['pnl'].max():.2f} ({paired_df['pnl_pct'].max():.2f}%)"
+                )
+                print(
+                    f"  最大单笔亏损: ${paired_df['pnl'].min():.2f} ({paired_df['pnl_pct'].min():.2f}%)"
+                )
+
+                # 按平仓原因统计
+                close_reason_counts = paired_df["close_reason"].value_counts()
+                print(f"  平仓原因统计:")
+                for reason, count in close_reason_counts.items():
+                    print(f"    - {reason}: {count} ({count/len(paired_df)*100:.1f}%)")
 
         # 保存权益曲线
         if equity_curve:
@@ -482,6 +700,7 @@ class BacktestAnalyzer:
                 equity_curve,
                 metrics["starting_balance"],
                 output_dir / "equity_curve.png",
+                trades=trades,  # 传入交易记录用于标注
             )
 
 
@@ -548,7 +767,9 @@ def generate_all_fusion_bars_with_split(
         if warmup_fusion_bars_len is None:
             warmup_fusion_bars_len = len(fusion_bars)
 
-    print(f"Warmup 分界点: {warmup_fusion_bars_len} (占 {warmup_fusion_bars_len/len(fusion_bars)*100:.1f}%)")
+    print(
+        f"Warmup 分界点: {warmup_fusion_bars_len} (占 {warmup_fusion_bars_len/len(fusion_bars)*100:.1f}%)"
+    )
     print(f"Trading fusion bars: {len(fusion_bars) - warmup_fusion_bars_len}")
     print("=" * 60 + "\n")
 
@@ -660,7 +881,9 @@ def compute_features_vectorized(
     print(f"  - SSM Warmup耗时: {warmup_time:.2f}s")
     print(f"  - DeepSSM transform耗时: {deep_ssm_time:.2f}s")
     print(f"  - LGSSM transform耗时: {lg_ssm_time:.2f}s")
-    print(f"  - 总耗时: {raw_feat_time + fracdiff_time + warmup_time + deep_ssm_time + lg_ssm_time:.2f}s")
+    print(
+        f"  - 总耗时: {raw_feat_time + fracdiff_time + warmup_time + deep_ssm_time + lg_ssm_time:.2f}s"
+    )
     print("=" * 60 + "\n")
 
     return df_features_full
@@ -718,9 +941,7 @@ def predict_all_models(
     return predictions
 
 
-def aggregate_votes(
-    predictions: dict[str, list[int]], models: list[str]
-) -> list[str]:
+def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> list[str]:
     """
     汇总投票结果
 
@@ -756,9 +977,15 @@ def aggregate_votes(
     }
 
     print(f"信号统计:")
-    print(f"  - Long: {signal_counts['long']} ({signal_counts['long']/n_samples*100:.1f}%)")
-    print(f"  - Short: {signal_counts['short']} ({signal_counts['short']/n_samples*100:.1f}%)")
-    print(f"  - Flat: {signal_counts['flat']} ({signal_counts['flat']/n_samples*100:.1f}%)")
+    print(
+        f"  - Long: {signal_counts['long']} ({signal_counts['long']/n_samples*100:.1f}%)"
+    )
+    print(
+        f"  - Short: {signal_counts['short']} ({signal_counts['short']/n_samples*100:.1f}%)"
+    )
+    print(
+        f"  - Flat: {signal_counts['flat']} ({signal_counts['flat']/n_samples*100:.1f}%)"
+    )
     print("=" * 60 + "\n")
 
     return signals
@@ -836,9 +1063,14 @@ def run_vectorized_backtest(
         current_price = float(fusion_bar[2])  # close price
         signal = signals[i]
 
+        # 记录交易前的交易数量（用于判断是否发生了交易）
+        trades_count_before = len(backtester.trades)
+
         # 初始化 Buy & Hold 基准
         if i == 0:
             backtester.init_benchmark(current_price)
+            # 记录初始权益点
+            backtester.record_equity(timestamp, current_price)
 
         # 检查止损
         if not backtester.position.is_flat:
@@ -862,12 +1094,14 @@ def run_vectorized_backtest(
             elif backtester.position.is_short and signal == "long":
                 backtester.close_position(timestamp, current_price, reason="close")
 
+        # 如果发生了交易，记录权益点
+        if len(backtester.trades) > trades_count_before:
+            backtester.record_equity(timestamp, current_price)
+
         # 更新进度条显示（每10次更新）
         if i % 10 == 0 or i == len(trading_fusion_bars) - 1:
             current_equity = backtester.equity(current_price)
-            return_pct = (
-                (current_equity - starting_balance) / starting_balance * 100
-            )
+            return_pct = (current_equity - starting_balance) / starting_balance * 100
             position_status = backtester.position.side.upper()
 
             pbar.set_postfix(
@@ -879,7 +1113,7 @@ def run_vectorized_backtest(
                 }
             )
 
-        # 记录权益（每100根记录一次）
+        # 额外每100根记录一次权益（保持曲线平滑）
         if i % 100 == 0:
             backtester.record_equity(timestamp, current_price)
 
@@ -939,16 +1173,14 @@ if __name__ == "__main__":
 
     MODELS = [
         "c_L5_N1",
-        "c_L4_N2",
+        "c_L6_N1",
     ]
+
+    STRATEGY = "BinanceBtcDemoBarV2"
 
     # 加载特征信息
     path_features = (
-        Path(__file__).parent
-        / "strategies"
-        / "BinanceBtcDeapV1Voting"
-        / "models"
-        / "feature_info.json"
+        Path(__file__).parent / "strategies" / STRATEGY / "models" / "feature_info.json"
     )
     with open(path_features) as f:
         feature_info: dict[str, list[str]] = json.load(f)
@@ -959,8 +1191,8 @@ if __name__ == "__main__":
         "Binance Perpetual Futures",
         "BTC-USDT",
         "1m",
-        helpers.date_to_timestamp("2025-01-01"),
-        helpers.date_to_timestamp("2025-10-15"),
+        helpers.date_to_timestamp("2025-02-01"),
+        helpers.date_to_timestamp("2025-10-25"),
         warmup_candles_num=150000,
         caching=False,
         is_for_jesse=False,

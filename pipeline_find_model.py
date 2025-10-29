@@ -41,7 +41,7 @@ MODEL_SAVE_DIR = Path("strategies/BinanceBtcDemoBarV2/models")
 # 固定训练集切分点，从而固定训练集，节约特征生成和筛选的时间。测试集主要用于回测
 TRAIN_TEST_SPLIT_DATE = "2025-04-30"
 CANDLE_START = "2022-07-01"
-CANDLE_END = "2025-10-20"
+CANDLE_END = "2025-10-25"
 RESULTS_FILE = "model_search_results.csv"
 
 
