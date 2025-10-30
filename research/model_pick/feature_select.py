@@ -39,7 +39,7 @@ class FeatureSelector:
 
     @property
     def selector(self):
-        return RFCQSelector(verbose=False)
+        return RFCQSelector(verbose=True)
 
     def fit(self, train_x):
         if not self.deep_ssm_model.is_fitted:

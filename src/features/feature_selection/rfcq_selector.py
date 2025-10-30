@@ -5,7 +5,6 @@ from typing import List, Optional, Union
 import numba as nb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 from lightgbm import LGBMClassifier, LGBMRegressor
 from sklearn.model_selection import GridSearchCV
 from tqdm.auto import tqdm
@@ -97,6 +96,21 @@ class RFCQSelector:
     n_jobs: int, 默认=None
         并行任务数。None表示1，-1表示使用所有处理器。
 
+    use_mi_prefilter: bool, 默认=True
+        是否启用互信息（MI）预筛选。启用后，在 RF-MRMR 前先用 MI 快速筛除明显无关的特征。
+
+    mi_threshold: float or 'auto', 默认='auto'
+        MI 预筛选的阈值（单位：nats）。
+        - 'auto'：自动计算数据驱动的阈值 max(0.014 nats, null_95th_percentile)
+        - 具体数值：使用固定阈值
+
+    mi_min_reduction_ratio: float, 默认=0.5
+        MI 预筛选的最小削减比例。如果阈值筛选后保留特征 > (1 - 此值)，
+        则进一步按 MI 分数削减到 (1 - 此值)。例如：0.5 表示最多保留 50% 特征。
+
+    mi_n_neighbors: int, 默认=5
+        MI 计算使用的 k-NN 邻居数量。较小的值计算更快，3-5 为推荐范围。
+
     Attributes
     ----------
     features_to_drop_: list
@@ -107,6 +121,9 @@ class RFCQSelector:
 
     relevance_: numpy.ndarray
         每个特征与目标的相关性
+
+    mi_filter_: MIPreFilter or None
+        如果启用了 MI 预筛选，保存使用的 MIPreFilter 实例
     """
 
     def __init__(
@@ -119,6 +136,11 @@ class RFCQSelector:
         verbose: bool = True,
         random_state: Optional[int] = 42,
         n_jobs: Optional[int] = max(os.cpu_count() - 1, 1),
+        # MI 预筛选参数
+        use_mi_prefilter: bool = True,
+        mi_threshold: Union[float, str] = "auto",
+        mi_min_reduction_ratio: float = 0.5,
+        mi_n_neighbors: int = 5,
     ):
         self.max_features = max_features
         self.task_type = task_type
@@ -139,9 +161,18 @@ class RFCQSelector:
         self.verbose = verbose
         self.random_state = random_state
         self.n_jobs = n_jobs
+
+        # MI 预筛选参数
+        self.use_mi_prefilter = use_mi_prefilter
+        self.mi_threshold = mi_threshold
+        self.mi_min_reduction_ratio = mi_min_reduction_ratio
+        self.mi_n_neighbors = mi_n_neighbors
+
+        # Attributes
         self.features_to_drop_ = None
         self.variables_ = None
         self.relevance_ = None
+        self.mi_filter_ = None  # 保存 MI 过滤器实例
 
     def _find_numerical_variables(self, X: pd.DataFrame) -> List[str]:
         """
@@ -183,7 +214,6 @@ class RFCQSelector:
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,  # 禁用LightGBM内部日志
-                # M4 Pro性能优化
                 max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
                 histogram_pool_size=512,  # 限制histogram缓存大小(MB)
             )
@@ -198,7 +228,6 @@ class RFCQSelector:
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,  # 禁用LightGBM内部日志
-                # M4 Pro性能优化
                 max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
                 histogram_pool_size=512,  # 限制histogram缓存大小(MB)
             )
@@ -252,6 +281,39 @@ class RFCQSelector:
 
         if len(self.variables_) < 2:
             raise ValueError("至少需要2个数值型特征来执行特征选择")
+
+        # 保存原始特征列表（用于后续确定 features_to_drop_）
+        original_variables = self.variables_.copy()
+
+        # MI 预筛选（如果启用）
+        if self.use_mi_prefilter:
+            from .mi_prefilter import MIPreFilter
+
+            if self.verbose:
+                print(f"➤ MI 预筛选已启用 (初始特征数: {len(self.variables_)})")
+
+            # 创建并应用 MI 过滤器
+            self.mi_filter_ = MIPreFilter(
+                threshold=self.mi_threshold,
+                min_reduction_ratio=self.mi_min_reduction_ratio,
+                task_type=self.task_type,
+                n_neighbors=self.mi_n_neighbors,
+                verbose=self.verbose,
+                random_state=self.random_state,
+                n_jobs=self.n_jobs,
+            )
+
+            # 筛选特征
+            X_filtered = self.mi_filter_.fit_transform(X[self.variables_], y)
+
+            # 更新特征列表为筛选后的特征
+            self.variables_ = X_filtered.columns.tolist()
+
+            if self.verbose:
+                print(f"➤ MI 预筛选后特征数: {len(self.variables_)}\n")
+
+            if len(self.variables_) < 2:
+                raise ValueError("MI 预筛选后剩余特征少于 2 个，无法继续执行特征选择")
 
         # 计算相关性
         if self.verbose:
@@ -378,15 +440,14 @@ class RFCQSelector:
                 # 添加新的冗余度
                 redundance = np.vstack([redundance, new_redundance[np.newaxis, :]])
 
-        # 记录要丢弃的特征
-        self.features_to_drop_ = [f for f in self.variables_ if f not in selected]
+        # 记录要丢弃的特征（基于原始特征列表）
+        self.features_to_drop_ = [f for f in original_variables if f not in selected]
 
         if self.verbose:
-            total_features = len(self.variables_)
             selected_count = len(selected)
             dropped_count = len(self.features_to_drop_)
             print(
-                f"\n✅ 特征选择完成：从{total_features}个特征中选择了{selected_count}个，舍弃了{dropped_count}个"
+                f"\n✅ 特征选择完成：从{len(original_variables)}个原始特征中选择了{selected_count}个，舍弃了{dropped_count}个"
             )
             print(f"✅ 选择的特征: {selected}")
 
