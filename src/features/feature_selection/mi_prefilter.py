@@ -161,6 +161,12 @@ class MIPreFilter:
             raise ValueError("没有找到数值型特征")
 
         X_numeric = X[numeric_cols]
+        # 互信息估计不支持 NaN，需要提前验证
+        nan_counts = X_numeric.isna().sum()
+        nan_cols = nan_counts[nan_counts > 0]
+        if not nan_cols.empty:
+            details = ", ".join(f"{col}: {int(count)}" for col, count in nan_cols.items())
+            raise ValueError(f"检测到 NaN 值，请先处理后再调用 MI 预筛选。含 NaN 特征: {details}")
         X_values = X_numeric.values
         y_values = y.values
 
