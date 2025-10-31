@@ -251,17 +251,32 @@ class RFCQSelector:
 
         # 找出数值型变量
         if self.verbose:
-            print("➤ 识别数值型变量...")
+            print("=" * 80)
+            print("【阶段1/5】识别数值型变量")
+            print("-" * 80)
         self.variables_ = self._find_numerical_variables(X)
 
         if len(self.variables_) < 2:
             raise ValueError("至少需要2个数值型特征来执行特征选择")
 
+        if self.verbose:
+            print(f"✓ 识别到 {len(self.variables_)} 个数值型变量")
+            print(f"✓ 数据集维度: {X.shape[0]} 行 × {len(self.variables_)} 列\n")
+
         # 计算相关性
         if self.verbose:
-            print("➤ 计算特征与目标变量的相关性(使用随机森林)...")
+            print("【阶段2/5】计算特征与目标的相关性（使用LightGBM随机森林）")
+            print("-" * 80)
         X_numeric = X[self.variables_]
         self.relevance_ = self._calculate_relevance(X_numeric, y)
+
+        if self.verbose:
+            print(f"✓ 相关性计算完成")
+            print(
+                f"✓ 重要性范围: 最大={self.relevance_.max():.4f}, "
+                f"最小={self.relevance_.min():.4f}, "
+                f"平均={self.relevance_.mean():.4f}\n"
+            )
 
         # 预先获取所有特征数据
         X_data = X[self.variables_].values
@@ -275,8 +290,10 @@ class RFCQSelector:
         top_feature = remaining[n]
 
         if self.verbose:
+            print("【阶段3/5】选择种子特征")
+            print("-" * 80)
             print(
-                f"✓ 选择第1个特征: {top_feature} (最大重要性: {self.relevance_[n]:.4f})"
+                f"✓ 选择第1个特征（种子特征）: '{top_feature}' (重要性: {self.relevance_[n]:.4f})\n"
             )
 
         # 更新特征列表
@@ -289,12 +306,16 @@ class RFCQSelector:
 
         # 计算其他特征与最佳特征的冗余度
         if self.verbose:
-            print("➤ 计算特征冗余度...")
+            print("【阶段4/5】计算特征冗余度")
+            print("-" * 80)
         top_feature_idx = feature_to_idx[top_feature]
         remaining_indices = [feature_to_idx[f] for f in remaining]
         X_remaining = X_data[:, remaining_indices]
         y_values = X_data[:, top_feature_idx]
         redundance = fast_corrwith_numba(X_remaining, y_values)
+
+        if self.verbose:
+            print(f"✓ 已计算 {len(remaining)} 个候选特征与种子特征的冗余度\n")
 
         # 确定要选择的特征数量
         if self.max_features is None:
@@ -306,18 +327,21 @@ class RFCQSelector:
         n_to_select = n_to_select - 1
 
         if self.verbose:
+            print("【阶段5/5】MRMR迭代选择")
+            print("-" * 80)
             print(
-                f"➤ 总计选择{n_to_select + 1}个特征 (已选择1个，还需选择{n_to_select}个)..."
+                f"✓ 目标: 从 {len(self.variables_)} 个特征中选择 {n_to_select + 1} 个"
             )
-            print("➤ 开始MRMR迭代选择过程...")
+            print(f"✓ 已选: 1 个，待选: {n_to_select} 个\n")
 
         # 主循环：迭代选择特征
         for i in tqdm(
             range(n_to_select),
             disable=not self.verbose,
-            desc="选择特征",
+            desc="迭代选择",
             unit="特征",
             ncols=100,
+            leave=True,
         ):
             if len(remaining) == 0:
                 break
@@ -333,6 +357,14 @@ class RFCQSelector:
                 # 更新特征列表
                 feature = remaining[n]
                 feature_idx = feature_to_idx[feature]
+
+                if self.verbose:
+                    print(
+                        f"  ► 第 {i+2} 个: '{feature}' "
+                        f"(重要性={relevance[n]:.4f}, 冗余度={redundance[n]:.4f}, "
+                        f"MRMR={mrmr_scores[n]:.4f})"
+                    )
+
                 selected.append(feature)
                 remaining.remove(feature)
 
@@ -355,6 +387,14 @@ class RFCQSelector:
                 # 更新特征列表
                 feature = remaining[n]
                 feature_idx = feature_to_idx[feature]
+
+                if self.verbose:
+                    print(
+                        f"  ► 第 {i+2} 个: '{feature}' "
+                        f"(重要性={relevance[n]:.4f}, 平均冗余度={mean_redundance[n]:.4f}, "
+                        f"MRMR={mrmr_scores[n]:.4f})"
+                    )
+
                 selected.append(feature)
                 remaining.remove(feature)
 
@@ -389,10 +429,46 @@ class RFCQSelector:
             total_features = len(self.variables_)
             selected_count = len(selected)
             dropped_count = len(self.features_to_drop_)
+            print("\n" + "=" * 80)
+            print("【特征选择完成】")
+            print("=" * 80)
             print(
-                f"\n✅ 特征选择完成：从{total_features}个特征中选择了{selected_count}个，舍弃了{dropped_count}个"
+                f"✓ 从 {total_features} 个特征中选择了 {selected_count} 个 "
+                f"(保留率: {selected_count/total_features*100:.1f}%)"
             )
-            print(f"✅ 选择的特征: {selected}")
+            print(f"✓ 舍弃了 {dropped_count} 个冗余/低重要性特征\n")
+
+            # 显示选中特征的统计信息
+            selected_indices = [feature_to_idx[f] for f in selected]
+            selected_importance = self.relevance_[selected_indices]
+            print("【选中特征摘要】")
+            print("-" * 80)
+            print(
+                f"重要性统计: 最大={selected_importance.max():.4f}, "
+                f"最小={selected_importance.min():.4f}, "
+                f"平均={selected_importance.mean():.4f}"
+            )
+            print(f"\n选中的特征列表 (共{selected_count}个):")
+            for idx, feat in enumerate(selected, 1):
+                feat_idx = feature_to_idx[feat]
+                print(f"  {idx:2d}. {feat:40s} (重要性: {self.relevance_[feat_idx]:.4f})")
+
+            # 显示被舍弃特征的简要信息
+            if dropped_count > 0 and dropped_count <= 10:
+                print(f"\n被舍弃的特征 (共{dropped_count}个):")
+                for feat in self.features_to_drop_:
+                    feat_idx = feature_to_idx[feat]
+                    print(f"  - {feat:40s} (重要性: {self.relevance_[feat_idx]:.4f})")
+            elif dropped_count > 10:
+                print(
+                    f"\n被舍弃的特征 (共{dropped_count}个，显示前10个):"
+                )
+                for feat in self.features_to_drop_[:10]:
+                    feat_idx = feature_to_idx[feat]
+                    print(f"  - {feat:40s} (重要性: {self.relevance_[feat_idx]:.4f})")
+                print(f"  ... 还有 {dropped_count - 10} 个特征被舍弃")
+
+            print("=" * 80 + "\n")
 
         return self
 
