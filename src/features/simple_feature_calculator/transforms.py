@@ -239,14 +239,14 @@ def rolling_skew(array: np.ndarray, window: int) -> np.ndarray:
     偏度衡量分布的不对称性：
     - 正偏度：右尾较长，大部分值在左侧
     - 负偏度：左尾较长，大部分值在右侧
-    - 零偏度：对称分布
+    - 零偏度：对称分布或恒定序列
 
     Args:
         array: 输入数组
         window: 窗口大小
 
     Returns:
-        滚动偏度，前window-1个值为nan
+        滚动偏度，前window-1个值为nan（warmup期），std=0时为0（无偏度特征）
     """
     if array.ndim == 1:
         result = np.full_like(array, np.nan, dtype=np.float64)
@@ -254,12 +254,13 @@ def rolling_skew(array: np.ndarray, window: int) -> np.ndarray:
             window_data = array[i - window + 1 : i + 1]
             mean = np.mean(window_data)
             std = np.std(window_data)
-            if std > 0:
+            if std > 1e-10:
                 # 计算三阶中心矩
                 m3 = np.mean((window_data - mean) ** 3)
                 result[i] = m3 / (std**3)
             else:
-                result[i] = np.nan
+                # 恒定序列，无偏度特征
+                result[i] = 0.0
         return result
     else:
         result = np.full_like(array, np.nan, dtype=np.float64)
@@ -268,11 +269,12 @@ def rolling_skew(array: np.ndarray, window: int) -> np.ndarray:
                 window_data = array[i - window + 1 : i + 1, col]
                 mean = np.mean(window_data)
                 std = np.std(window_data)
-                if std > 0:
+                if std > 1e-10:
                     m3 = np.mean((window_data - mean) ** 3)
                     result[i, col] = m3 / (std**3)
                 else:
-                    result[i, col] = np.nan
+                    # 恒定序列，无偏度特征
+                    result[i, col] = 0.0
         return result
 
 
@@ -284,14 +286,14 @@ def rolling_kurt(array: np.ndarray, window: int) -> np.ndarray:
     峰度衡量分布的尾部厚度：
     - 正峰度（>0）：厚尾，极端值较多
     - 负峰度（<0）：薄尾，极端值较少
-    - 零峰度：正态分布（使用超额峰度，正态分布为0）
+    - 零峰度：正态分布或恒定序列（使用超额峰度，正态分布为0）
 
     Args:
         array: 输入数组
         window: 窗口大小
 
     Returns:
-        滚动超额峰度（减去3），前window-1个值为nan
+        滚动超额峰度（减去3），前window-1个值为nan（warmup期），std=0时为0（无峰度特征）
     """
     if array.ndim == 1:
         result = np.full_like(array, np.nan, dtype=np.float64)
@@ -299,13 +301,14 @@ def rolling_kurt(array: np.ndarray, window: int) -> np.ndarray:
             window_data = array[i - window + 1 : i + 1]
             mean = np.mean(window_data)
             std = np.std(window_data)
-            if std > 0:
+            if std > 1e-10:
                 # 计算四阶中心矩
                 m4 = np.mean((window_data - mean) ** 4)
                 # 返回超额峰度（减去3，使正态分布的峰度为0）
                 result[i] = m4 / (std**4) - 3.0
             else:
-                result[i] = np.nan
+                # 恒定序列，无峰度特征
+                result[i] = 0.0
         return result
     else:
         result = np.full_like(array, np.nan, dtype=np.float64)
@@ -314,11 +317,12 @@ def rolling_kurt(array: np.ndarray, window: int) -> np.ndarray:
                 window_data = array[i - window + 1 : i + 1, col]
                 mean = np.mean(window_data)
                 std = np.std(window_data)
-                if std > 0:
+                if std > 1e-10:
                     m4 = np.mean((window_data - mean) ** 4)
                     result[i, col] = m4 / (std**4) - 3.0
                 else:
-                    result[i, col] = np.nan
+                    # 恒定序列，无峰度特征
+                    result[i, col] = 0.0
         return result
 
 
