@@ -34,4 +34,14 @@ def drop_na_and_align_x_and_y(
     assert len(x) == len(
         y
     ), "drop_na_and_align_x_and_y: x and y length mismatch after max_na_len check"
+
+    # 3. 最终检查：确保x中不再存在任何NaN值
+    remaining_na = x.isna().sum()
+    columns_with_na = remaining_na[remaining_na > 0]
+    if len(columns_with_na) > 0:
+        error_msg = "drop_na_and_align_x_and_y: x still contains NaN values after alignment:\n"
+        for col_name, na_count in columns_with_na.items():
+            error_msg += f"  - Column '{col_name}': {na_count} NaN values\n"
+        raise ValueError(error_msg.strip())
+
     return x, y
