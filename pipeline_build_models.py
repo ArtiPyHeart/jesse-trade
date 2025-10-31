@@ -11,6 +11,8 @@ import numpy as np
 import lightgbm as lgb
 from jesse.helpers import date_to_timestamp
 
+from src.utils.drop_na import drop_na_and_align_x_and_y
+
 # 准备工作
 MODEL_DIR = Path("./strategies/BinanceBtcDemoBarV2/models")
 # 已训练的SSM模型路径
@@ -101,6 +103,9 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False, seed: int
     full_x = feature_selector.get_all_features_no_fit(df_feat)[feature_names]
     train_x = full_x[train_mask]
     assert full_x.shape[0] == len(label)
+
+    # full_x, label = drop_na_and_align_x_and_y(full_x, label)
+    train_x, train_y = drop_na_and_align_x_and_y(train_x, train_y)
 
     with open(feature_info_path, "w") as f_w:
         json.dump(feature_info, f_w, indent=4)

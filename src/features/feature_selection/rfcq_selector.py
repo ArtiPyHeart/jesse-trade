@@ -9,6 +9,8 @@ from lightgbm import LGBMClassifier, LGBMRegressor
 from sklearn.model_selection import GridSearchCV
 from tqdm.auto import tqdm
 
+from src.utils.drop_na import drop_na_and_align_x_and_y
+
 nb.set_num_threads(max(1, os.cpu_count() - 1))
 
 
@@ -273,6 +275,9 @@ class RFCQSelector:
             raise TypeError("X必须是pandas.DataFrame")
         if not isinstance(y, pd.Series):
             y = pd.Series(y)
+
+        # 对齐x与y的长度并去除x开头可能存在的空值
+        X, y = drop_na_and_align_x_and_y(X, y)
 
         # 找出数值型变量
         if self.verbose:

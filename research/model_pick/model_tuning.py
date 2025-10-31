@@ -7,6 +7,7 @@ from sklearn.metrics import f1_score, r2_score
 from sklearn.model_selection import KFold, StratifiedKFold
 import lightgbm as lgb
 
+from src.utils.drop_na import drop_na_and_align_x_and_y
 from .feature_select import FeatureSelector
 
 METRIC = "f1"
@@ -40,16 +41,15 @@ class ModelTuning:
         all_feats = selector.get_all_features(self.train_X)[feature_names]
         print(f"{len(feature_names)} features selected")
 
+        x, y = drop_na_and_align_x_and_y(all_feats, self.train_Y)
+
         # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
-        train_features = np.ascontiguousarray(all_feats.to_numpy(dtype=np.float32))
+        x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
+
         # 固定max_bin参数，避免在Dataset创建后修改导致错误
-        dtrain = lgb.Dataset(
-            train_features, self.train_Y, free_raw_data=False, params={"max_bin": 127}
-        )
+        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 127})
         cv_folds = list(
-            StratifiedKFold(n_splits=5, shuffle=True, random_state=42).split(
-                train_features, self.train_Y
-            )
+            StratifiedKFold(n_splits=5, shuffle=True, random_state=42).split(x, y)
         )
 
         def objective(trial):
@@ -132,18 +132,16 @@ class ModelTuning:
         all_feats = selector.get_all_features(self.train_X)[feature_names]
         print(f"{len(feature_names)} features selected")
 
+        x, y = drop_na_and_align_x_and_y(all_feats, self.train_Y)
+
         # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
-        train_features = np.ascontiguousarray(all_feats.to_numpy(dtype=np.float32))
+        x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
         # 固定max_bin参数，避免在Dataset创建后修改导致错误
-        dtrain = lgb.Dataset(
-            train_features, self.train_Y, free_raw_data=False, params={"max_bin": 127}
-        )
-        cv_folds = list(
-            KFold(n_splits=5, shuffle=True, random_state=42).split(train_features)
-        )
+        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 127})
+        cv_folds = list(KFold(n_splits=5, shuffle=True, random_state=42).split(x))
 
         # 预计算训练集标签的方差，用于计算R²
-        y_var = np.var(self.train_Y)
+        y_var = np.var(y)
 
         # 自定义R²评估函数（用于LightGBM的feval参数）
         def r2_eval(preds, eval_dataset):
