@@ -251,32 +251,17 @@ class RFCQSelector:
 
         # 找出数值型变量
         if self.verbose:
-            print("=" * 80)
-            print("【阶段1/5】识别数值型变量")
-            print("-" * 80)
+            print("➤ 识别数值型变量...")
         self.variables_ = self._find_numerical_variables(X)
 
         if len(self.variables_) < 2:
             raise ValueError("至少需要2个数值型特征来执行特征选择")
 
-        if self.verbose:
-            print(f"✓ 识别到 {len(self.variables_)} 个数值型变量")
-            print(f"✓ 数据集维度: {X.shape[0]} 行 × {len(self.variables_)} 列\n")
-
         # 计算相关性
         if self.verbose:
-            print("【阶段2/5】计算特征与目标的相关性（使用LightGBM随机森林）")
-            print("-" * 80)
+            print("➤ 计算特征与目标变量的相关性(使用随机森林)...")
         X_numeric = X[self.variables_]
         self.relevance_ = self._calculate_relevance(X_numeric, y)
-
-        if self.verbose:
-            print(f"✓ 相关性计算完成")
-            print(
-                f"✓ 重要性范围: 最大={self.relevance_.max():.4f}, "
-                f"最小={self.relevance_.min():.4f}, "
-                f"平均={self.relevance_.mean():.4f}\n"
-            )
 
         # 预先获取所有特征数据
         X_data = X[self.variables_].values
@@ -290,10 +275,8 @@ class RFCQSelector:
         top_feature = remaining[n]
 
         if self.verbose:
-            print("【阶段3/5】选择种子特征")
-            print("-" * 80)
             print(
-                f"✓ 选择第1个特征（种子特征）: '{top_feature}' (重要性: {self.relevance_[n]:.4f})\n"
+                f"✓ 选择第1个特征: {top_feature} (最大重要性: {self.relevance_[n]:.4f})"
             )
 
         # 更新特征列表
@@ -306,16 +289,12 @@ class RFCQSelector:
 
         # 计算其他特征与最佳特征的冗余度
         if self.verbose:
-            print("【阶段4/5】计算特征冗余度")
-            print("-" * 80)
+            print("➤ 计算特征冗余度...")
         top_feature_idx = feature_to_idx[top_feature]
         remaining_indices = [feature_to_idx[f] for f in remaining]
         X_remaining = X_data[:, remaining_indices]
         y_values = X_data[:, top_feature_idx]
         redundance = fast_corrwith_numba(X_remaining, y_values)
-
-        if self.verbose:
-            print(f"✓ 已计算 {len(remaining)} 个候选特征与种子特征的冗余度\n")
 
         # 确定要选择的特征数量
         if self.max_features is None:
@@ -327,24 +306,18 @@ class RFCQSelector:
         n_to_select = n_to_select - 1
 
         if self.verbose:
-            print("【阶段5/5】MRMR迭代选择")
-            print("-" * 80)
             print(
-                f"✓ 目标: 从 {len(self.variables_)} 个特征中选择 {n_to_select + 1} 个"
+                f"➤ 总计选择{n_to_select + 1}个特征 (已选择1个，还需选择{n_to_select}个)..."
             )
-            print(f"✓ 已选: 1 个，待选: {n_to_select} 个\n")
+            print("➤ 开始MRMR迭代选择过程...")
 
         # 主循环：迭代选择特征
-        # 用于收集选择的特征信息（仅在verbose时记录详情）
-        selection_details = []
-
         for i in tqdm(
             range(n_to_select),
             disable=not self.verbose,
-            desc="迭代选择",
+            desc="选择特征",
             unit="特征",
             ncols=100,
-            leave=True,
         ):
             if len(remaining) == 0:
                 break
@@ -360,17 +333,6 @@ class RFCQSelector:
                 # 更新特征列表
                 feature = remaining[n]
                 feature_idx = feature_to_idx[feature]
-
-                # 记录详情而非立即打印
-                if self.verbose:
-                    selection_details.append({
-                        'rank': i+2,
-                        'feature': feature,
-                        'relevance': relevance[n],
-                        'redundance': redundance[n],
-                        'mrmr': mrmr_scores[n]
-                    })
-
                 selected.append(feature)
                 remaining.remove(feature)
 
@@ -393,17 +355,6 @@ class RFCQSelector:
                 # 更新特征列表
                 feature = remaining[n]
                 feature_idx = feature_to_idx[feature]
-
-                # 记录详情而非立即打印
-                if self.verbose:
-                    selection_details.append({
-                        'rank': i+2,
-                        'feature': feature,
-                        'relevance': relevance[n],
-                        'redundance': mean_redundance[n],
-                        'mrmr': mrmr_scores[n]
-                    })
-
                 selected.append(feature)
                 remaining.remove(feature)
 
@@ -438,77 +389,9 @@ class RFCQSelector:
             total_features = len(self.variables_)
             selected_count = len(selected)
             dropped_count = len(self.features_to_drop_)
-
-            print("\n" + "=" * 80)
-            print("【特征选择完成】")
-            print("=" * 80)
             print(
-                f"✓ 从 {total_features} 个特征中选择了 {selected_count} 个 "
-                f"(保留率: {selected_count/total_features*100:.1f}%)"
+                f"\n✅ 特征选择完成：从{total_features}个特征中选择了{selected_count}个，舍弃了{dropped_count}个"
             )
-            print(f"✓ 舍弃了 {dropped_count} 个冗余/低重要性特征")
-
-            # 显示选中特征的统计信息
-            selected_indices = [feature_to_idx[f] for f in selected]
-            selected_importance = self.relevance_[selected_indices]
-            print(
-                f"✓ 重要性范围: 最大={selected_importance.max():.4f}, "
-                f"最小={selected_importance.min():.4f}, "
-                f"平均={selected_importance.mean():.4f}"
-            )
-
-            # 只显示前5个和后5个特征
-            if selected_count <= 10:
-                # 如果特征数不多，全部显示
-                print(f"\n【选中特征】(共{selected_count}个):")
-                for idx, feat in enumerate(selected, 1):
-                    feat_idx = feature_to_idx[feat]
-                    print(f"  {idx}. {feat} (重要性: {self.relevance_[feat_idx]:.4f})")
-            else:
-                # 只显示前5和后5
-                print(f"\n【选中特征】(共{selected_count}个，显示前5和后5):")
-                for idx in range(5):
-                    feat = selected[idx]
-                    feat_idx = feature_to_idx[feat]
-                    print(f"  {idx+1}. {feat} (重要性: {self.relevance_[feat_idx]:.4f})")
-                print(f"  ... 中间 {selected_count - 10} 个特征 ...")
-                for idx in range(selected_count - 5, selected_count):
-                    feat = selected[idx]
-                    feat_idx = feature_to_idx[feat]
-                    print(f"  {idx+1}. {feat} (重要性: {self.relevance_[feat_idx]:.4f})")
-
-            # 显示迭代选择的部分详情（如果有记录）
-            if selection_details:
-                if len(selection_details) <= 5:
-                    print(f"\n【迭代选择详情】(共{len(selection_details)}个):")
-                    for detail in selection_details:
-                        print(
-                            f"  第{detail['rank']}个: {detail['feature']} "
-                            f"(重要性={detail['relevance']:.4f}, "
-                            f"冗余度={detail['redundance']:.4f}, "
-                            f"MRMR={detail['mrmr']:.4f})"
-                        )
-                else:
-                    print(f"\n【迭代选择详情】(共{len(selection_details)}个，显示前3和后2):")
-                    for i in range(3):
-                        detail = selection_details[i]
-                        print(
-                            f"  第{detail['rank']}个: {detail['feature']} "
-                            f"(重要性={detail['relevance']:.4f}, "
-                            f"冗余度={detail['redundance']:.4f}, "
-                            f"MRMR={detail['mrmr']:.4f})"
-                        )
-                    print(f"  ... 中间 {len(selection_details) - 5} 个特征 ...")
-                    for i in range(len(selection_details) - 2, len(selection_details)):
-                        detail = selection_details[i]
-                        print(
-                            f"  第{detail['rank']}个: {detail['feature']} "
-                            f"(重要性={detail['relevance']:.4f}, "
-                            f"冗余度={detail['redundance']:.4f}, "
-                            f"MRMR={detail['mrmr']:.4f})"
-                        )
-
-            print("=" * 80 + "\n")
 
         return self
 
