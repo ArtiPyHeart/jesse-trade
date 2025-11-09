@@ -1,4 +1,5 @@
 import copy
+import gc
 import os
 from typing import List, Optional, Union
 
@@ -220,7 +221,18 @@ class RFCQSelector:
         cv_model.fit(X_values, y_values)
 
         # 获取特征重要性
-        relevance = cv_model.best_estimator_.feature_importances_
+        relevance = cv_model.best_estimator_.feature_importances_.copy()
+
+        # 🔧 显式清理 GridSearchCV 的内部资源
+        # 先删除最佳估计器（包含训练数据引用）
+        del cv_model.best_estimator_
+        # 删除 CV 结果（可能包含大量中间数据）
+        if hasattr(cv_model, 'cv_results_'):
+            del cv_model.cv_results_
+        # 删除整个 GridSearchCV 对象
+        del cv_model
+        # 强制垃圾回收
+        gc.collect()
 
         return relevance
 
