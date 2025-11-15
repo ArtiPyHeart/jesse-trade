@@ -1,5 +1,7 @@
+import gc
 import json
 import logging
+import multiprocessing
 import os
 import time
 from datetime import datetime
@@ -39,9 +41,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 MODEL_SAVE_DIR = Path("strategies/BinanceBtcDemoBarV2/models")
 
 # 固定训练集切分点，从而固定训练集，节约特征生成和筛选的时间。测试集主要用于回测
-TRAIN_TEST_SPLIT_DATE = "2025-04-30"
-CANDLE_START = "2022-07-01"
-CANDLE_END = "2025-10-25"
+TRAIN_TEST_SPLIT_DATE = "2025-05-31"
+CANDLE_START = "2022-08-01"
+CANDLE_END = "2025-11-01"
 RESULTS_FILE = "model_search_results.csv"
 
 
@@ -182,6 +184,38 @@ logger.info("初始化完成")
 
 # 初始化追踪器
 tracker = ModelSearchTracker()
+
+
+def cleanup_multiprocessing_resources():
+    """
+    强制清理 multiprocessing 资源，防止累积泄漏
+
+    这个函数解决的问题：
+    - LightGBM + GridSearchCV 创建的 worker 进程池
+    - 进程间通信的 semaphore 和 shared memory
+    - 这些资源在任务结束后可能不会自动释放
+    """
+    # 1. 强制 Python 垃圾回收
+    gc.collect()
+
+    # 2. 清理 multiprocessing 的全局资源
+    try:
+        # 获取当前进程的所有子进程
+        current_process = multiprocessing.current_process()
+
+        # 如果存在活跃的子进程，等待它们结束
+        for child in multiprocessing.active_children():
+            child.join(timeout=0.1)  # 短暂等待
+            if child.is_alive():
+                child.terminate()  # 强制终止僵尸进程
+
+        # 3. 再次垃圾回收，清理终止进程的资源
+        gc.collect()
+
+    except Exception as e:
+        logger.warning(f"清理 multiprocessing 资源时出现警告（可忽略）: {e}")
+
+    logger.debug("✓ Multiprocessing 资源清理完成")
 
 
 def evaluate_classifier(
@@ -393,6 +427,9 @@ if __name__ == "__main__":
                 f"  - 预计剩余时间: {(len(pending_tasks) - task_idx) * duration / 60:.1f} 分钟"
             )
             logger.info("=" * 40)
+
+            # 🔧 强制清理资源，防止多进程资源泄漏累积
+            cleanup_multiprocessing_resources()
 
         except KeyboardInterrupt:
             logger.warning("\n" + "!" * 60)

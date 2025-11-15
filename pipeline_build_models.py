@@ -18,9 +18,9 @@ MODEL_DIR = Path("./strategies/BinanceBtcDemoBarV2/models")
 # 已训练的SSM模型路径
 MODEL_DEEP_SSM_PATH = MODEL_DIR / "deep_ssm"
 MODEL_LG_SSM_PATH = MODEL_DIR / "lg_ssm"
-TRAIN_TEST_SPLIT_DATE = "2025-04-30"
-CANDLE_START = "2022-07-01"
-CANDLE_END = "2025-10-20"
+TRAIN_TEST_SPLIT_DATE = "2025-05-31"
+CANDLE_START = "2022-08-01"
+CANDLE_END = "2025-11-05"
 
 df_params = pd.read_csv(Path(__file__).parent / "model_search_results.csv")
 df_params["best_params"] = df_params["best_params"].apply(json.loads)
@@ -121,7 +121,7 @@ def build_model(lag: int, pred_next: int, is_regression: bool = False, seed: int
 
 if __name__ == "__main__":
     # 全局统一设置random seed，确保可重复性
-    GLOBAL_SEED = 42
+    GLOBAL_SEED = 233
     random.seed(GLOBAL_SEED)
     np.random.seed(GLOBAL_SEED)
     print(f"=" * 60)
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     print(f"=" * 60 + "\n")
 
     # classifiers
-    for lag in range(4, 7):
+    for lag in range(4, 8):
         for pred_next in range(1, 4):
             print(f"building classifier for {lag = } and {pred_next = }")
             build_model(lag, pred_next, is_regression=False, seed=GLOBAL_SEED)

@@ -384,7 +384,14 @@ class BacktestAnalyzer:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10), height_ratios=[3, 1])
 
         # ========== 上图：权益曲线对比 ==========
-        ax1.plot(dates, equity_values, label="Strategy", linewidth=2, color="#2E86DE", zorder=1)
+        ax1.plot(
+            dates,
+            equity_values,
+            label="Strategy",
+            linewidth=2,
+            color="#2E86DE",
+            zorder=1,
+        )
         ax1.plot(
             dates,
             benchmark_values,
@@ -412,8 +419,7 @@ class BacktestAnalyzer:
                 trade_time = pd.to_datetime(trade.timestamp, unit="ms")
                 # 找到最接近的权益值
                 equity_at_trade = timestamp_to_equity.get(
-                    trade.timestamp,
-                    None  # 如果找不到精确匹配，使用 None
+                    trade.timestamp, None  # 如果找不到精确匹配，使用 None
                 )
 
                 # 如果找不到精确匹配，插值估算
@@ -446,22 +452,46 @@ class BacktestAnalyzer:
             if open_long_trades:
                 times, equities = zip(*open_long_trades)
                 ax1.scatter(
-                    times, equities, marker="^", s=marker_size, c="#00D2FF",
-                    alpha=marker_alpha, label="开多", zorder=3, edgecolors="white", linewidths=edge_width
+                    times,
+                    equities,
+                    marker="^",
+                    s=marker_size,
+                    c="#00D2FF",
+                    alpha=marker_alpha,
+                    label="开多",
+                    zorder=3,
+                    edgecolors="white",
+                    linewidths=edge_width,
                 )
 
             if open_short_trades:
                 times, equities = zip(*open_short_trades)
                 ax1.scatter(
-                    times, equities, marker="v", s=marker_size, c="#FF6B6B",
-                    alpha=marker_alpha, label="开空", zorder=3, edgecolors="white", linewidths=edge_width
+                    times,
+                    equities,
+                    marker="v",
+                    s=marker_size,
+                    c="#FF6B6B",
+                    alpha=marker_alpha,
+                    label="开空",
+                    zorder=3,
+                    edgecolors="white",
+                    linewidths=edge_width,
                 )
 
             if stop_loss_trades:
                 times, equities = zip(*stop_loss_trades)
                 ax1.scatter(
-                    times, equities, marker="X", s=marker_size*1.3, c="#FD79A8",
-                    alpha=marker_alpha, label="止损", zorder=3, edgecolors="white", linewidths=edge_width
+                    times,
+                    equities,
+                    marker="X",
+                    s=marker_size * 1.3,
+                    c="#FD79A8",
+                    alpha=marker_alpha,
+                    label="止损",
+                    zorder=3,
+                    edgecolors="white",
+                    linewidths=edge_width,
                 )
 
         # 设置标题和标签
@@ -713,6 +743,15 @@ def generate_all_fusion_bars_with_split(
     """
     一次性生成所有 fusion bars，并计算 warmup 分界点
 
+    核心逻辑：
+    1. 记录 warmup_candles 的最后一个时间戳
+    2. 将 warmup_candles 和 trading_candles stack 后一次性生成所有 fusion bars
+    3. 在 fusion bars 中找到最后一个时间戳 <= warmup 最后时间戳的 bar
+
+    为什么不能分两次生成：
+    - DemoBar 是有状态的，两次生成会导致完全不同的 fusion bars
+    - warmup 单独生成的最后 bar 时间戳，可能在 all 生成时根本不存在
+
     Args:
         warmup_candles: warmup K线数据
         trading_candles: trading K线数据
@@ -726,51 +765,66 @@ def generate_all_fusion_bars_with_split(
     print("Phase 1: 生成 Fusion Bars")
     print("=" * 60)
 
-    # 1. 先用 warmup_candles 单独生成 fusion bars（用于确定分界点）
-    print("计算 warmup 分界点...")
-    bar_warmup = DemoBar(max_bars=max_bars)
-    bar_warmup.update_with_candles(warmup_candles)
-    warmup_fusion_bars = bar_warmup.get_fusion_bars()
+    # 1. 记录 warmup 的最后一个 candle 时间戳
+    warmup_last_candle_ts = warmup_candles[-1, 0]
+    print(f"Warmup candles 数量: {len(warmup_candles)}")
+    print(f"Warmup 最后 candle 时间戳: {warmup_last_candle_ts}")
 
-    if len(warmup_fusion_bars) == 0:
-        raise ValueError("Warmup failed: no fusion bars generated from warmup_candles")
-
-    warmup_last_timestamp = warmup_fusion_bars[-1, 0]
-    print(f"Warmup 生成了 {len(warmup_fusion_bars)} 个 fusion bars")
-    print(f"Warmup 最后时间戳: {warmup_last_timestamp}")
-
-    # 2. 用所有 candles 生成完整的 fusion bars
+    # 2. 一次性生成所有 fusion bars（避免两次生成导致状态不一致）
     print("\n生成所有 fusion bars...")
     all_candles = np.vstack([warmup_candles, trading_candles])
     bar_all = DemoBar(max_bars=max_bars)
     bar_all.update_with_candles(all_candles)
     fusion_bars = bar_all.get_fusion_bars()
 
+    if len(fusion_bars) == 0:
+        raise ValueError("Failed to generate any fusion bars from all_candles")
+
     print(f"总共生成 {len(fusion_bars)} 个 fusion bars")
 
-    # 3. 通过时间戳找到 warmup 在所有 fusion bars 中的分界点
-    warmup_fusion_bars_len = None
-    for i, bar in enumerate(fusion_bars):
-        if bar[0] == warmup_last_timestamp:
-            warmup_fusion_bars_len = i + 1
-            break
+    # 3. 找到最后一个时间戳 <= warmup_last_candle_ts 的 fusion bar
+    # 使用 searchsorted 找到第一个 > warmup_last_candle_ts 的位置
+    fusion_timestamps = fusion_bars[:, 0]
+    warmup_fusion_bars_len = np.searchsorted(
+        fusion_timestamps, warmup_last_candle_ts, side="right"
+    )
 
-    # 如果没找到精确匹配（理论上不应该发生），使用最接近的
-    if warmup_fusion_bars_len is None:
-        print("⚠️  警告: 未找到精确的时间戳匹配，使用近似值")
-        for i, bar in enumerate(fusion_bars):
-            if bar[0] > warmup_last_timestamp:
-                warmup_fusion_bars_len = i
-                break
+    # Fail Fast: 确保找到了合理的分界点
+    if warmup_fusion_bars_len == 0:
+        raise ValueError(
+            f"Failed to find warmup boundary: all fusion bars are after "
+            f"warmup_last_candle_ts {warmup_last_candle_ts}. "
+            f"First fusion bar timestamp: {fusion_timestamps[0]}"
+        )
 
-        # 如果还是没找到，说明所有 fusion bars 都在 warmup 范围内
-        if warmup_fusion_bars_len is None:
-            warmup_fusion_bars_len = len(fusion_bars)
+    if warmup_fusion_bars_len >= len(fusion_bars):
+        raise ValueError(
+            f"Failed to find warmup boundary: all fusion bars are before or at "
+            f"warmup_last_candle_ts {warmup_last_candle_ts}. "
+            f"Last fusion bar timestamp: {fusion_timestamps[-1]}"
+        )
+
+    # 打印分界点信息
+    warmup_last_bar_ts = fusion_timestamps[warmup_fusion_bars_len - 1]
+    trading_first_bar_ts = fusion_timestamps[warmup_fusion_bars_len]
+
+    print(f"\nWarmup 分界点:")
+    print(f"  - Warmup 最后 candle 时间戳: {warmup_last_candle_ts}")
+    print(f"  - Warmup 最后 fusion bar 时间戳: {warmup_last_bar_ts}")
+    print(f"  - Trading 第一个 fusion bar 时间戳: {trading_first_bar_ts}")
+
+    # 计算时间差距（用于检查是否合理）
+    time_diff = warmup_last_candle_ts - warmup_last_bar_ts
+    if time_diff > 0:
+        print(f"  - 时间差距: {time_diff}ms (warmup 最后 candle 晚于最后 fusion bar)")
+    else:
+        print(f"  - 时间差距: {-time_diff}ms (warmup 最后 fusion bar 晚于最后 candle)")
 
     print(
-        f"Warmup 分界点: {warmup_fusion_bars_len} (占 {warmup_fusion_bars_len/len(fusion_bars)*100:.1f}%)"
+        f"\nWarmup 分界点: {warmup_fusion_bars_len} bars "
+        f"(占 {warmup_fusion_bars_len/len(fusion_bars)*100:.1f}%)"
     )
-    print(f"Trading fusion bars: {len(fusion_bars) - warmup_fusion_bars_len}")
+    print(f"Trading bars: {len(fusion_bars) - warmup_fusion_bars_len} bars")
     print("=" * 60 + "\n")
 
     return fusion_bars, warmup_fusion_bars_len
@@ -1033,7 +1087,7 @@ def run_vectorized_backtest(
 
     # ========== Phase 1: 生成 Fusion Bars ==========
     fusion_bars, warmup_fusion_bars_len = generate_all_fusion_bars_with_split(
-        warmup_candles, trading_candles, max_bars=3500
+        warmup_candles, trading_candles, max_bars=-1
     )
 
     # ========== Phase 2: 向量化特征计算 ==========
@@ -1172,8 +1226,8 @@ if __name__ == "__main__":
     TEST_FUSION_BARS = 1000
 
     MODELS = [
-        "c_L5_N1",
         "c_L6_N1",
+        "r_L5_N2",
     ]
 
     STRATEGY = "BinanceBtcDemoBarV2"
@@ -1191,9 +1245,9 @@ if __name__ == "__main__":
         "Binance Perpetual Futures",
         "BTC-USDT",
         "1m",
-        helpers.date_to_timestamp("2025-02-01"),
-        helpers.date_to_timestamp("2025-10-25"),
-        warmup_candles_num=150000,
+        helpers.date_to_timestamp("2025-06-01"),
+        helpers.date_to_timestamp("2025-11-13"),
+        warmup_candles_num=50000,
         caching=False,
         is_for_jesse=False,
     )
