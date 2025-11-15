@@ -32,8 +32,8 @@ POSITION_SIZE_RATIO = 0.95
 
 # 模型与特征设置
 MODELS = [
-    "c_L4_N2",
-    "c_L5_N1",
+    "c_L6_N1",
+    "r_L5_N2",
 ]
 
 path_features = Path(__file__).parent / "models" / "feature_info.json"
