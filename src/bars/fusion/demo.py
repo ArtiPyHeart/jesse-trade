@@ -11,7 +11,7 @@ class DemoBar(FusionBarContainerBase):
     def __init__(
         self,
         max_bars=-1,
-        threshold=1.399,
+        threshold=2.095,
     ):
         super().__init__(max_bars, threshold)
 

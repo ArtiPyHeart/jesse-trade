@@ -43,7 +43,7 @@ MODEL_SAVE_DIR = Path("strategies/BinanceBtcDemoBarV2/models")
 # 固定训练集切分点，从而固定训练集，节约特征生成和筛选的时间。测试集主要用于回测
 TRAIN_TEST_SPLIT_DATE = "2025-05-31"
 CANDLE_START = "2022-08-01"
-CANDLE_END = "2025-11-01"
+CANDLE_END = "2025-11-15"
 RESULTS_FILE = "model_search_results.csv"
 
 
@@ -337,7 +337,7 @@ def evaluate_regressor(
 if __name__ == "__main__":
     # 参数配置
     log_return_lags = list(range(4, 8))
-    pred_next_steps = [1, 2, 3]
+    pred_next_steps = [1, 2, 3, 4]
 
     # 获取待完成的任务
     logger.info("\n" + "=" * 60)
