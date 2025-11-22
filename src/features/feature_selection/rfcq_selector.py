@@ -180,7 +180,8 @@ class RFCQSelector:
                 num_leaves=31,  # 默认值，可被GridSearchCV覆盖
                 subsample=0.632,  # RF bootstrap采样率
                 subsample_freq=1,  # 每棵树都采样
-                colsample_bytree=1.0,  # 使用所有特征
+                colsample_bytree=0.7,  # 特征子采样: 加速训练并增加树的多样性(标准RF做法)
+                importance_type='gain',  # 使用增益而非分裂次数作为重要性指标
                 class_weight="balanced",
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
@@ -196,7 +197,8 @@ class RFCQSelector:
                 num_leaves=31,  # 默认值，可被GridSearchCV覆盖
                 subsample=0.632,  # RF bootstrap采样率
                 subsample_freq=1,  # 每棵树都采样
-                colsample_bytree=1.0,  # 使用所有特征
+                colsample_bytree=0.7,  # 特征子采样: 加速训练并增加树的多样性(标准RF做法)
+                importance_type='gain',  # 使用增益而非分裂次数作为重要性指标
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,  # 禁用LightGBM内部日志
