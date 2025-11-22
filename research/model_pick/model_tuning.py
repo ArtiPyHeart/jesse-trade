@@ -1,11 +1,11 @@
+import lightgbm as lgb
 import numpy as np
 import optuna
 import pandas as pd
 from jesse.helpers import date_to_timestamp
 from optuna.integration import LightGBMPruningCallback
-from sklearn.metrics import f1_score, r2_score
+from sklearn.metrics import f1_score
 from sklearn.model_selection import KFold, StratifiedKFold
-import lightgbm as lgb
 
 from src.utils.drop_na import drop_na_and_align_x_and_y
 from .feature_select import FeatureSelector
@@ -47,7 +47,7 @@ class ModelTuning:
         x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
 
         # 固定max_bin参数，避免在Dataset创建后修改导致错误
-        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 127})
+        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 255})
         cv_folds = list(
             StratifiedKFold(n_splits=5, shuffle=True, random_state=42).split(x, y)
         )
@@ -64,32 +64,34 @@ class ModelTuning:
                 ),
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
                 "boosting": boosting_type,
-                "num_leaves": trial.suggest_int("num_leaves", 31, 255),  # 减少搜索范围
-                "max_depth": trial.suggest_int("max_depth", 30, 500),  # 减少搜索范围
-                "min_gain_to_split": trial.suggest_float("min_gain_to_split", 1e-8, 1),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 500),
-                "lambda_l1": trial.suggest_float("lambda_l1", 1e-4, 100),
-                "lambda_l2": trial.suggest_float("lambda_l2", 1e-4, 100),
-                # M4 Pro性能优化参数
-                "feature_pre_filter": False,  # 允许动态修改min_data_in_leaf
-                "histogram_pool_size": 512,  # 限制histogram缓存
-                "enable_bundle": True,  # 启用特征绑定以减少特征数
-                "min_data_in_bin": 3,  # 每个bin最少数据点
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.02, 0.1, log=True
+                ),
+                "num_leaves": trial.suggest_int("num_leaves", 31, 512),
+                "max_depth": trial.suggest_int("max_depth", 10, 50),
+                "min_gain_to_split": trial.suggest_float(
+                    "min_gain_to_split", 1e-8, 1, log=True
+                ),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 200),
+                "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 10.0, log=True),
+                "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
+                "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 1.0),
+                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.4, 1.0),
+                "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
+                # 移除过于激进的性能优化参数，优先保证模型质量
+                "feature_pre_filter": False,
             }
             # 如果使用 dart，添加 dart 特有参数
             if boosting_type == "dart":
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
+                params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
-            num_boost_round = trial.suggest_int(
-                "num_boost_round", 100, 1000
-            )  # 减少最大迭代数
+            num_boost_round = trial.suggest_int("num_boost_round", 300, 2000)
             # 注意：使用feval时，LightGBMPruningCallback需要metric名称而非"metric-mean"格式
             # 实际callback接收的是('valid', 'f1', value, is_higher_better, std)格式
             pruning_cb = LightGBMPruningCallback(trial, METRIC)
             callbacks = [
-                lgb.early_stopping(
-                    stopping_rounds=75, verbose=False
-                ),  # 更早停止以节省时间
+                lgb.early_stopping(stopping_rounds=150, verbose=False),
                 pruning_cb,
             ]
             model_res = lgb.cv(
@@ -117,8 +119,8 @@ class ModelTuning:
         # 使用 show_progress_bar 显示进度条
         # n_jobs=1 在M4 Pro上避免过度并行导致的性能下降
         study.optimize(
-            objective, n_trials=350, n_jobs=1, show_progress_bar=True
-        )  # 减少试验次数
+            objective, n_trials=500, n_jobs=1, show_progress_bar=True
+        )  # 增加试验次数
 
         params = {
             "objective": "binary",
@@ -140,7 +142,7 @@ class ModelTuning:
         # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
         x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
         # 固定max_bin参数，避免在Dataset创建后修改导致错误
-        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 127})
+        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 255})
         cv_folds = list(KFold(n_splits=5, shuffle=True, random_state=42).split(x))
 
         # 预计算训练集标签的方差，用于计算R²
@@ -167,40 +169,39 @@ class ModelTuning:
                 "verbose": -1,
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
                 "boosting": boosting_type,
-                "num_leaves": trial.suggest_int("num_leaves", 31, 255),  # 减少搜索范围
-                "max_depth": trial.suggest_int("max_depth", 30, 500),  # 减少搜索范围
-                "min_gain_to_split": trial.suggest_float("min_gain_to_split", 1e-8, 1),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 500),
-                "lambda_l1": trial.suggest_float("lambda_l1", 1e-4, 100),
-                "lambda_l2": trial.suggest_float("lambda_l2", 1e-4, 100),
+                "num_leaves": trial.suggest_int("num_leaves", 31, 512),
+                "max_depth": trial.suggest_int("max_depth", 10, 50),
+                "min_gain_to_split": trial.suggest_float(
+                    "min_gain_to_split", 1e-8, 1, log=True
+                ),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 200),
+                "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 10.0, log=True),
+                "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
                 # 添加 regression 特有的参数
                 "min_sum_hessian_in_leaf": trial.suggest_float(
-                    "min_sum_hessian_in_leaf", 1e-3, 10
+                    "min_sum_hessian_in_leaf", 1e-3, 10, log=True
                 ),
                 "learning_rate": trial.suggest_float(
-                    "learning_rate", 0.01, 0.3, log=True
+                    "learning_rate", 0.02, 0.1, log=True
                 ),
-                # M4 Pro性能优化参数
-                "feature_pre_filter": False,  # 允许动态修改min_data_in_leaf
-                "histogram_pool_size": 512,  # 限制histogram缓存
-                "enable_bundle": True,  # 启用特征绑定以减少特征数
-                "min_data_in_bin": 3,  # 每个bin最少数据点
+                "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 1.0),
+                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.4, 1.0),
+                "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
+                # 移除过于激进的性能优化参数
+                "feature_pre_filter": False,
             }
 
             # 如果使用 dart，添加 dart 特有参数
             if boosting_type == "dart":
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
+                params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
-            num_boost_round = trial.suggest_int(
-                "num_boost_round", 100, 1000
-            )  # 减少最大迭代数
+            num_boost_round = trial.suggest_int("num_boost_round", 300, 2000)
 
             # 使用LightGBMPruningCallback监控R²指标
             pruning_cb = LightGBMPruningCallback(trial, "r2")
             callbacks = [
-                lgb.early_stopping(
-                    stopping_rounds=75, verbose=False
-                ),  # 更早停止以节省时间
+                lgb.early_stopping(stopping_rounds=150, verbose=False),
                 pruning_cb,
             ]
             model_res = lgb.cv(
@@ -229,8 +230,8 @@ class ModelTuning:
         # 使用 show_progress_bar 显示进度条
         # n_jobs=1 在M4 Pro上避免过度并行导致的性能下降
         study.optimize(
-            objective, n_trials=350, n_jobs=1, show_progress_bar=True
-        )  # 减少试验次数
+            objective, n_trials=500, n_jobs=1, show_progress_bar=True
+        )  # 增加试验次数
 
         params = {
             "objective": "regression",
