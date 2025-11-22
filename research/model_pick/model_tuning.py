@@ -106,7 +106,10 @@ class ModelTuning:
             direction="maximize",
             pruner=optuna.pruners.HyperbandPruner(),
             sampler=optuna.samplers.TPESampler(
-                n_startup_trials=100, multivariate=True, constant_liar=True
+                n_startup_trials=100,
+                multivariate=True,
+                constant_liar=True,
+                warn_independent_sampling=False,
             ),
         )
         # 设置 Optuna 日志级别为警告，隐藏详细日志
@@ -215,7 +218,10 @@ class ModelTuning:
             direction="maximize",  # R²需要最大化
             pruner=optuna.pruners.HyperbandPruner(),
             sampler=optuna.samplers.TPESampler(
-                n_startup_trials=100, multivariate=True, constant_liar=True
+                n_startup_trials=100,
+                multivariate=True,
+                constant_liar=True,
+                warn_independent_sampling=False,
             ),
         )
         # 设置 Optuna 日志级别为警告，隐藏详细日志
