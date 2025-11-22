@@ -145,7 +145,6 @@ class GMMLabelerV2:
             covariance_type=covariance_type,
             n_iter=200,
             tol=1e-3,
-            means_weight=0.5,  # 这一点在 hmmlearn 新版中可能不生效或有不同含义，保留原样
             verbose=verbose,
             init_params="",  # 禁用自动初始化
             random_state=42,
