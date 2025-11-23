@@ -86,7 +86,7 @@ class ModelTuning:
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
                 params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
-            num_boost_round = trial.suggest_int("num_boost_round", 300, 2000)
+            num_boost_round = trial.suggest_int("num_boost_round", 300, 1500)
             # 注意：使用feval时，LightGBMPruningCallback需要metric名称而非"metric-mean"格式
             # 实际callback接收的是('valid', 'f1', value, is_higher_better, std)格式
             pruning_cb = LightGBMPruningCallback(trial, METRIC)
@@ -196,7 +196,7 @@ class ModelTuning:
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
                 params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
-            num_boost_round = trial.suggest_int("num_boost_round", 300, 2000)
+            num_boost_round = trial.suggest_int("num_boost_round", 300, 1500)
 
             # 使用LightGBMPruningCallback监控R²指标
             pruning_cb = LightGBMPruningCallback(trial, "r2")
