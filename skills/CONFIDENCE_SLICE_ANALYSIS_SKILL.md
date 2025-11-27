@@ -23,6 +23,12 @@
 | c (分类) | 0.0 | 1.0 | 0.5 |
 | r (回归) | -1.0 | 1.0 | 0.0 |
 
+**⚠️ 回归模型边界 Round 机制**：
+- 绘图时存在 round 机制：小于 LOWER_BOUND 的值会被归入 LOWER_BOUND 切片，大于 UPPER_BOUND 的值会被归入 UPPER_BOUND 切片
+- 因此回归模型最边缘的两个切片（-1.0 和 1.0 附近）实际上包含了超出边界的所有值
+- **配置过滤器时**：若要设定最边缘切片的过滤器，应使用更大的范围值（如 `-10` 作为下界，`10` 作为上界），以确保覆盖所有被 round 到边界的值
+- 分类模型无此问题，因为预测概率值始终在 [0, 1] 范围内
+
 **示例**：
 - `temp/c_L3_N1` → model_type="c", lag=3, pred_next=1, threshold=0.5
 - `temp/r_L7_N3` → model_type="r", lag=7, pred_next=3, threshold=0
