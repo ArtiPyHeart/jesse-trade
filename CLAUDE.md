@@ -73,6 +73,7 @@ pip install -r requirements-dev.txt  # 开发依赖
 `skills/`目录包含针对特定任务的专业工作流程和标准：
 - **触发条件**：当用户提及相关任务时，主动读取对应SKILL文档
 - **现有SKILL**：
+  - `MODEL_SCREENING_SKILL.md`：模型快速筛选与质量评估（置信度切片分析的前置步骤）
   - `CONFIDENCE_SLICE_ANALYSIS_SKILL.md`：置信度切片分析与过滤器配置
   - `RUST_INDICATORS_SKILL.md`：Rust高性能指标开发、集成与维护
 - **使用原则**：严格遵循SKILL中定义的决策准则、输出格式和沟通方式
