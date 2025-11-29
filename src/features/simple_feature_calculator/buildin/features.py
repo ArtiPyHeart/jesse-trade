@@ -68,6 +68,9 @@ from . import _entropy_features  # 这会自动注册所有熵特征  # noqa
 # 分数阶差分特征
 from . import _np_fracdiff_features  # noqa
 
+# WorldQuant 101 Alphas
+from . import _wq_alpha  # noqa
+
 
 @feature(
     name="bar_duration",

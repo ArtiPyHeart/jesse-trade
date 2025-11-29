@@ -1,0 +1,70 @@
+"""
+Alpha #14: Returns Delta with Open-Volume Correlation
+
+Formula: ((-1 * rank(delta(returns, 3))) * correlation(open, volume, 10))
+Note: rank() is ignored for single asset
+
+Type: Correlation-based
+Description: Combines return momentum with open-volume correlation.
+"""
+
+import numpy as np
+from jesse.helpers import get_candle_source
+
+try:
+    from ._operators import ts_delta, ts_corr, get_returns
+except ImportError:
+    from _operators import ts_delta, ts_corr, get_returns
+
+
+def alpha_014(
+    candles: np.ndarray,
+    sequential: bool = False,
+) -> np.ndarray:
+    """
+    Alpha #14: Returns Delta with Open-Volume Correlation.
+
+    Formula: (-1 * delta(returns, 3)) * correlation(open, volume, 10)
+
+    Args:
+        candles: Jesse candles [timestamp, open, close, high, low, volume]
+        sequential: True returns full array, False returns latest value
+
+    Returns:
+        Alpha values array
+    """
+    open_ = get_candle_source(candles, "open")
+    close = get_candle_source(candles, "close")
+    volume = get_candle_source(candles, "volume")
+
+    returns = get_returns(close)
+    delta_returns = ts_delta(returns, 3)
+    corr_open_vol = ts_corr(open_, volume, 10)
+
+    result = (-1.0 * delta_returns) * corr_open_vol
+
+    return result if sequential else result[-1:]
+
+
+if __name__ == "__main__":
+    from jesse import helpers, research
+
+    print("Testing Alpha #14...")
+    _, candles = research.get_candles(
+        "Binance Perpetual Futures", "BTC-USDT", "1m",
+        helpers.date_to_timestamp("2024-01-01"),
+        helpers.date_to_timestamp("2024-01-07"),
+        warmup_candles_num=0, caching=True, is_for_jesse=False,
+    )
+    print(f"  Loaded {len(candles)} candles")
+
+    seq_result = alpha_014(candles, sequential=True)
+    single_result = alpha_014(candles, sequential=False)
+    assert len(seq_result) == len(candles)
+    if not (np.isnan(seq_result[-1]) and np.isnan(single_result[0])):
+        assert abs(seq_result[-1] - single_result[0]) < 1e-10
+    print("  Sequential consistency: OK")
+
+    valid = seq_result[~np.isnan(seq_result)]
+    print(f"  Value range: [{valid.min():.6f}, {valid.max():.6f}]")
+    print("\nAlpha #14 all tests passed!")
