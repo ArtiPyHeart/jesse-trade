@@ -71,10 +71,12 @@ class TrendAnalyzer:
         log_returns = np.log(series[1:] / series[:-1])
 
         # 检查对数收益率是否有足够的数据点
-        if len(log_returns) <= max_lag:
+        # 使用 < 而非 <=，因为 len == max_lag 时仍可计算一个窗口
+        if len(log_returns) < max_lag:
             return np.nan
 
         lags = range(min_lag, max_lag + 1)
+        valid_lags = []  # 记录有效的 lag，避免与 rs_values 长度不匹配
         rs_values = []
 
         for lag in lags:
@@ -85,13 +87,14 @@ class TrendAnalyzer:
                 deviations = segment - segment.mean()
                 cumulative = np.cumsum(deviations)
                 range_ = cumulative.max() - cumulative.min()
-                std_ = segment.std()
+                std_ = segment.std(ddof=1)  # 使用样本标准差 (N-1)
                 if std_ != 0:  # 避免除以0
                     rs.append(range_ / std_)
 
             # 如果没有有效的R/S值，跳过这个滞后
             if not rs:
                 continue
+            valid_lags.append(lag)  # 同步记录有效的 lag
             rs_values.append(np.mean(rs))
 
         # 检查是否有足够的R/S值进行回归
@@ -102,7 +105,7 @@ class TrendAnalyzer:
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                slope, _, _, _, _ = linregress(np.log(list(lags)), np.log(rs_values))
+                slope, _, _, _, _ = linregress(np.log(valid_lags), np.log(rs_values))
                 return slope
         except Exception:
             return np.nan
