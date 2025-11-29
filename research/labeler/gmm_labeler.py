@@ -38,7 +38,7 @@ def gmm_labeler_find_best_params(
                 covariance_type="diag",
                 n_iter=1000,
                 # weights_prior=2,
-                means_weight=0.5,
+                # means_weight=0.5,
                 random_state=trial.suggest_int("random_state", 0, 1000),
             )
             gmm.fit(X)

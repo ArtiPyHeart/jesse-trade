@@ -215,9 +215,8 @@ class FastBacktester:
         fee = self.position.qty * price * self.fee_rate
         pnl = self.position.unrealized_pnl(price) - fee
 
-        # 更新余额
-        self.balance += pnl + fee  # pnl已经减去了fee，所以这里加回fee再减
-        self.balance -= fee
+        # 更新余额：加上净盈亏（已扣手续费）
+        self.balance += pnl
 
         # 记录交易
         action = f"{reason}_{self.position.side}"
@@ -1143,10 +1142,20 @@ def run_vectorized_backtest(
                 )
                 backtester.open_short(timestamp, current_price, stop_loss_price)
         else:
+            # 持多仓遇到空信号：平仓后立即反手开空
             if backtester.position.is_long and signal == "short":
                 backtester.close_position(timestamp, current_price, reason="close")
+                stop_loss_price = current_price * (
+                    1 + STOP_LOSS_RATIO_NO_LEVERAGE / leverage
+                )
+                backtester.open_short(timestamp, current_price, stop_loss_price)
+            # 持空仓遇到多信号：平仓后立即反手开多
             elif backtester.position.is_short and signal == "long":
                 backtester.close_position(timestamp, current_price, reason="close")
+                stop_loss_price = current_price * (
+                    1 - STOP_LOSS_RATIO_NO_LEVERAGE / leverage
+                )
+                backtester.open_long(timestamp, current_price, stop_loss_price)
 
         # 如果发生了交易，记录权益点
         if len(backtester.trades) > trades_count_before:
@@ -1226,8 +1235,8 @@ if __name__ == "__main__":
     TEST_FUSION_BARS = 1000
 
     MODELS = [
-        "c_L6_N1",
-        "r_L5_N2",
+        "c_L7_N1",
+        "c_L7_N2",
     ]
 
     STRATEGY = "BinanceBtcDemoBarV2"
@@ -1246,7 +1255,7 @@ if __name__ == "__main__":
         "BTC-USDT",
         "1m",
         helpers.date_to_timestamp("2025-06-01"),
-        helpers.date_to_timestamp("2025-11-13"),
+        helpers.date_to_timestamp("2025-11-25"),
         warmup_candles_num=50000,
         caching=False,
         is_for_jesse=False,
