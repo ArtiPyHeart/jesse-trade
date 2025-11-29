@@ -49,15 +49,39 @@ def alpha_084(
     # Delta of close
     delta_close = ts_delta(close, 5)
 
-    # Signed power (element-wise)
+    # Signed power (element-wise) with numerical stability
+    # Problem: power(small_base, negative_exponent) -> very large values
+    # Solution: clip the exponent range and result range
     result = np.empty_like(close, dtype=np.float64)
     for i in range(len(close)):
         if np.isnan(rank_dev[i]) or np.isnan(delta_close[i]):
             result[i] = np.nan
-        elif rank_dev[i] >= 0:
-            result[i] = np.power(rank_dev[i], delta_close[i]) if rank_dev[i] > 0 or delta_close[i] >= 0 else 0.0
         else:
-            result[i] = -np.power(np.abs(rank_dev[i]), delta_close[i]) if np.abs(rank_dev[i]) > 0 else 0.0
+            base = rank_dev[i]
+            exp = delta_close[i]
+
+            # Clip exponent to prevent extreme values
+            exp = np.clip(exp, -2.0, 2.0)
+
+            if base >= 0:
+                if base > 0:
+                    val = np.power(base, exp)
+                elif exp >= 0:
+                    val = 0.0
+                else:
+                    val = np.nan  # 0^negative is undefined
+            else:
+                abs_base = np.abs(base)
+                if abs_base > 0:
+                    val = -np.power(abs_base, exp)
+                else:
+                    val = np.nan
+
+            # Clip final result to reasonable range
+            if np.isfinite(val):
+                result[i] = np.clip(val, -100.0, 100.0)
+            else:
+                result[i] = np.nan
 
     return result if sequential else result[-1:]
 
