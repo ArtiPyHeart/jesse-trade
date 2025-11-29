@@ -6,14 +6,25 @@ from src.bars.fusion.base import FusionBarContainerBase
 class DemoBar(FusionBarContainerBase):
     """
     abs(close - close_lag1) * (high - low) / close
+
+    Parameters:
+    -----------
+    clip_r : float
+        小于此阈值的波动将被压缩为0，用于过滤噪声。默认为0（不过滤）。
+    max_bars : int
+        最大bar数量，-1表示不限制。
+    threshold : float
+        累积阈值，达到此值时生成新bar。
     """
 
     def __init__(
         self,
-        max_bars=-1,
-        threshold=2.095,
+        clip_r: float = 0.012,
+        max_bars: int = -1,
+        threshold: float = 1.399,
     ):
         super().__init__(max_bars, threshold)
+        self.clip_r = clip_r
 
     @property
     def max_lookback(self) -> int:
@@ -28,6 +39,9 @@ class DemoBar(FusionBarContainerBase):
             * (high_arr[1:] - low_arr[1:])
             / close_arr[1:]
         )
+        # 根据 clip_r 过滤：小于 clip_r 的值设为 0
+        if self.clip_r > 0:
+            res[res < self.clip_r] = 0
         return res
 
 

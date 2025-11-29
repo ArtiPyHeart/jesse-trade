@@ -26,7 +26,7 @@ class DeapBarV1(FusionBarContainerBase):
 
     def __init__(
         self,
-        max_bars=50000,
+        max_bars=-1,
     ):
         super().__init__(max_bars, 0.3044867289147951)
         self.VOL_1 = 51
