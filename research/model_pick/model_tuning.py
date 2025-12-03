@@ -119,7 +119,7 @@ class ModelTuning:
         # 使用 show_progress_bar 显示进度条
         # n_jobs=1 在M4 Pro上避免过度并行导致的性能下降
         study.optimize(
-            objective, n_trials=500, n_jobs=1, show_progress_bar=True
+            objective, n_trials=300, n_jobs=1, show_progress_bar=True
         )  # 增加试验次数
 
         params = {
@@ -230,7 +230,7 @@ class ModelTuning:
         # 使用 show_progress_bar 显示进度条
         # n_jobs=1 在M4 Pro上避免过度并行导致的性能下降
         study.optimize(
-            objective, n_trials=500, n_jobs=1, show_progress_bar=True
+            objective, n_trials=300, n_jobs=1, show_progress_bar=True
         )  # 增加试验次数
 
         params = {
