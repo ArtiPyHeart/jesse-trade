@@ -68,6 +68,11 @@ pip install -r requirements-dev.txt  # 开发依赖
   - 异常捕获仅用于明确可恢复的场景（如网络重试），不用于掩盖逻辑错误
 - 简单测试用`if __name__ == "__main__"`，复杂测试放`tests/`
 - EasyLanguage角度→Python弧度：用`src/utils/math_tools.py`
+- **代码质量检查**：添加或修改 Python 代码后，使用 ruff 进行检查和格式化
+  ```bash
+  ruff check <file_or_dir>    # 代码检查（lint）
+  ruff format <file_or_dir>   # 代码格式化
+  ```
 
 ## SKILL文档使用
 `skills/`目录包含针对特定任务的专业工作流程和标准：
@@ -79,6 +84,17 @@ pip install -r requirements-dev.txt  # 开发依赖
 - **使用原则**：严格遵循SKILL中定义的决策准则、输出格式和沟通方式
 
 ## 开发工具
+
+### 代码检索（Auggie MCP）
+
+**优先使用 `mcp__auggie-mcp__codebase-retrieval` 进行代码检索**，而非普通的 Grep/Glob 工具：
+
+```python
+# 使用 auggie mcp 进行语义化代码检索
+mcp__auggie-mcp__codebase-retrieval(
+    information_request="描述你要查找的代码功能或模式"
+)
+```
 
 ### 调用 Codex 获取技术指导
 
@@ -110,7 +126,9 @@ cd /Users/yangqiuyu/Github/jesse-trade && codex exec "What is the time complexit
 ```
 
 ## 关键提醒
-- 开发时使用mcp context7 查看最新文档，如果mcp调用失败，停下来提示用户先配置
+- **MCP 服务依赖**：所有 MCP 工具调用（auggie、context7、chrome-devtools、mcp-shell-server 等）如果发现服务不存在或连接失败，**必须立即停止当前任务并提示用户配置对应的 MCP 服务**，不要尝试使用替代方案绕过
+- 开发时使用 mcp context7 查看最新文档
+- 代码检索优先使用 auggie mcp（`mcp__auggie-mcp__codebase-retrieval`），而非 Grep/Glob
 - 如果WebFetch直接获取网页失败，可使用chrome devtools mcp打开网页并阅读内容（**优先使用 headless 模式**以提高效率，仅需可视化调试时使用常规模式）
 - **遇到复杂算法/架构问题**：使用 codex exec 获取专业建议，避免盲目尝试
 - 生产代码仅从`src/`导入
