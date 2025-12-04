@@ -193,27 +193,42 @@ def cleanup_multiprocessing_resources():
     这个函数解决的问题：
     - LightGBM + GridSearchCV 创建的 worker 进程池
     - 进程间通信的 semaphore 和 shared memory
+    - Optuna 和 LightGBM 的内部缓存
     - 这些资源在任务结束后可能不会自动释放
     """
-    # 1. 强制 Python 垃圾回收
-    gc.collect()
+    import ctypes
+
+    # 1. 多轮强制 Python 垃圾回收（处理循环引用）
+    for _ in range(3):
+        gc.collect()
 
     # 2. 清理 multiprocessing 的全局资源
     try:
-        # 获取当前进程的所有子进程
-        current_process = multiprocessing.current_process()
-
         # 如果存在活跃的子进程，等待它们结束
         for child in multiprocessing.active_children():
-            child.join(timeout=0.1)  # 短暂等待
+            child.join(timeout=1.0)  # 增加超时时间
             if child.is_alive():
                 child.terminate()  # 强制终止僵尸进程
+                child.join(timeout=1.0)  # 等待终止完成
 
         # 3. 再次垃圾回收，清理终止进程的资源
         gc.collect()
 
     except Exception as e:
         logger.warning(f"清理 multiprocessing 资源时出现警告（可忽略）: {e}")
+
+    # 4. 尝试释放 C 库内存（macOS/Linux）
+    try:
+        if hasattr(ctypes, "CDLL"):
+            # macOS
+            libc = ctypes.CDLL("libc.dylib")
+            if hasattr(libc, "malloc_trim"):
+                libc.malloc_trim(0)
+    except Exception:
+        pass  # 忽略平台相关的错误
+
+    # 5. 最终垃圾回收
+    gc.collect()
 
     logger.debug("✓ Multiprocessing 资源清理完成")
 
@@ -429,6 +444,8 @@ if __name__ == "__main__":
             logger.info("=" * 40)
 
             # 🔧 强制清理资源，防止多进程资源泄漏累积
+            # 清理 feature_selector 的缓存（每个任务的训练数据可能不同）
+            feature_selector.clear_cache()
             cleanup_multiprocessing_resources()
 
         except KeyboardInterrupt:

@@ -1,3 +1,5 @@
+import gc
+
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -90,7 +92,13 @@ def gmm_labeler_find_best_params(
             print("Warning: All GMM trials failed, using default random_state=42")
         return {"random_state": 42}
 
-    return study.best_params
+    best_params = study.best_params
+
+    # 🔧 显式清理 Optuna study，防止内存泄漏
+    del study
+    gc.collect()
+
+    return best_params
 
 
 class GMMLabeler:

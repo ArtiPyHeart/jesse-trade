@@ -1,3 +1,5 @@
+import gc
+
 import pandas as pd
 from pathlib import Path
 
@@ -18,6 +20,9 @@ lg_ssm_config = LGSSMConfig(
 class FeatureSelector:
     def __init__(self, model_save_dir: Path = None, load_existing: bool = False):
         self.model_save_dir = model_save_dir
+        # 🔧 添加缓存，避免重复计算大型 DataFrame
+        self._cached_all_features = None
+        self._cached_train_x_id = None  # 用于检测输入是否变化
 
         if load_existing and model_save_dir:
             # 尝试加载已有模型
@@ -77,10 +82,22 @@ class FeatureSelector:
         return df_lg_ssm
 
     def get_all_features(self, train_x):
+        # 🔧 使用缓存避免重复计算大型 DataFrame
+        current_id = id(train_x)
+        if (
+            self._cached_all_features is not None
+            and self._cached_train_x_id == current_id
+        ):
+            return self._cached_all_features
+
         self.fit(train_x)
         df_deep_ssm = self.get_deep_ssm_features(train_x)
         lg_ssm_features = self.get_lg_ssm_features(train_x)
         df = pd.concat([df_deep_ssm, lg_ssm_features, train_x], axis=1)
+
+        # 缓存结果
+        self._cached_all_features = df
+        self._cached_train_x_id = current_id
         return df
 
     def get_all_features_no_fit(self, train_x):
@@ -99,3 +116,9 @@ class FeatureSelector:
         )
         feature_names = res[res > 0].index.tolist()
         return feature_names
+
+    def clear_cache(self):
+        """🔧 清理缓存的特征数据，释放内存"""
+        self._cached_all_features = None
+        self._cached_train_x_id = None
+        gc.collect()

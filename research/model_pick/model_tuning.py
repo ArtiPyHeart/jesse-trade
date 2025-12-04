@@ -1,3 +1,5 @@
+import gc
+
 import lightgbm as lgb
 import numpy as np
 import optuna
@@ -46,8 +48,8 @@ class ModelTuning:
         # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
         x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
 
-        # 固定max_bin参数，避免在Dataset创建后修改导致错误
-        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 255})
+        # 固定max_bin参数，使用 free_raw_data=True 释放原始数据避免内存泄漏
+        dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
         cv_folds = list(
             StratifiedKFold(n_splits=5, shuffle=True, random_state=42).split(x, y)
         )
@@ -128,8 +130,14 @@ class ModelTuning:
             "verbose": -1,
             **study.best_params,
         }
+        best_value = study.best_value
 
-        return params, study.best_value
+        # 🔧 显式清理 Optuna study 和 Dataset，防止内存泄漏
+        del study
+        del dtrain
+        gc.collect()
+
+        return params, best_value
 
     def tuning_regressor(
         self, selector: FeatureSelector, feature_names: list[str]
@@ -141,8 +149,8 @@ class ModelTuning:
 
         # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
         x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
-        # 固定max_bin参数，避免在Dataset创建后修改导致错误
-        dtrain = lgb.Dataset(x, y, free_raw_data=False, params={"max_bin": 255})
+        # 固定max_bin参数，使用 free_raw_data=True 释放原始数据避免内存泄漏
+        dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
         cv_folds = list(KFold(n_splits=5, shuffle=True, random_state=42).split(x))
 
         # 预计算训练集标签的方差，用于计算R²
@@ -239,5 +247,11 @@ class ModelTuning:
             "verbose": -1,
             **study.best_params,
         }
+        best_value = study.best_value
 
-        return params, study.best_value  # 返回R²值
+        # 🔧 显式清理 Optuna study 和 Dataset，防止内存泄漏
+        del study
+        del dtrain
+        gc.collect()
+
+        return params, best_value  # 返回R²值
