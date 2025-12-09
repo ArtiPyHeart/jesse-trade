@@ -19,7 +19,7 @@ class DemoBar(FusionBarContainerBase):
 
     def __init__(
         self,
-        clip_r: float = 0.012,
+        clip_r: float = 0.004,
         max_bars: int = -1,
         threshold: float = 1.399,
     ):
