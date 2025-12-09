@@ -234,19 +234,39 @@ class FastBacktester:
         # 清空仓位
         self.position = Position()
 
-    def check_stop_loss(self, timestamp: int, current_price: float) -> bool:
-        """检查止损，如果触发则平仓"""
+    def check_stop_loss(
+        self, timestamp: int, high: float, low: float, close: float
+    ) -> bool:
+        """
+        检查止损，如果触发则平仓
+
+        Args:
+            timestamp: 当前时间戳
+            high: 当前 bar 最高价
+            low: 当前 bar 最低价
+            close: 当前 bar 收盘价（用于未触发止损时的备用）
+
+        Returns:
+            是否触发止损
+
+        止损逻辑：
+        - 多头仓位：检查最低价是否触及止损价，以止损价平仓
+        - 空头仓位：检查最高价是否触及止损价，以止损价平仓
+        """
         if self.position.is_flat:
             return False
 
-        triggered = False
-        if self.position.is_long and current_price <= self.position.stop_loss_price:
-            triggered = True
-        elif self.position.is_short and current_price >= self.position.stop_loss_price:
-            triggered = True
-
-        if triggered:
-            self.close_position(timestamp, current_price, reason="stop_loss")
+        if self.position.is_long and low <= self.position.stop_loss_price:
+            # 多头止损：以止损价平仓（假设能以止损价成交）
+            self.close_position(
+                timestamp, self.position.stop_loss_price, reason="stop_loss"
+            )
+            return True
+        elif self.position.is_short and high >= self.position.stop_loss_price:
+            # 空头止损：以止损价平仓
+            self.close_position(
+                timestamp, self.position.stop_loss_price, reason="stop_loss"
+            )
             return True
 
         return False
@@ -287,12 +307,27 @@ class BacktestAnalyzer:
         drawdown = (equity_values - peak) / peak
         max_drawdown = np.min(drawdown)
 
-        # 收益率序列（日收益率近似）
+        # 收益率序列
         returns = np.diff(equity_values) / equity_values[:-1]
+
+        # 计算年化因子（基于实际采样间隔）
+        # equity_curve 中的时间戳是毫秒
+        timestamps = np.array([e.timestamp for e in equity_curve])
+        if len(timestamps) > 1:
+            # 计算平均时间间隔（毫秒）
+            avg_interval_ms = np.mean(np.diff(timestamps))
+            # 一年的毫秒数 = 365 * 24 * 60 * 60 * 1000
+            ms_per_year = 365 * 24 * 60 * 60 * 1000
+            # 一年内的采样次数
+            samples_per_year = ms_per_year / avg_interval_ms
+            annualization_factor = np.sqrt(samples_per_year)
+        else:
+            # 默认使用日采样
+            annualization_factor = np.sqrt(365)
 
         # 夏普比率（年化）
         if len(returns) > 0 and np.std(returns) > 0:
-            sharpe = np.mean(returns) / np.std(returns) * np.sqrt(365)
+            sharpe = np.mean(returns) / np.std(returns) * annualization_factor
         else:
             sharpe = 0.0
 
@@ -325,18 +360,18 @@ class BacktestAnalyzer:
             "starting_balance": starting_balance,
             "final_equity": float(final_equity),
             "total_return": float(total_return),
-            "total_return_pct": f"{total_return*100:.2f}%",
+            "total_return_pct": f"{total_return * 100:.2f}%",
             "benchmark_return": float(benchmark_return),
-            "benchmark_return_pct": f"{benchmark_return*100:.2f}%",
+            "benchmark_return_pct": f"{benchmark_return * 100:.2f}%",
             "max_drawdown": float(max_drawdown),
-            "max_drawdown_pct": f"{max_drawdown*100:.2f}%",
+            "max_drawdown_pct": f"{max_drawdown * 100:.2f}%",
             "sharpe_ratio": float(sharpe),
             "calmar_ratio": float(calmar),
             "total_trades": total_trades,
             "winning_trades": len(winning_trades),
             "losing_trades": len(losing_trades),
             "win_rate": float(win_rate),
-            "win_rate_pct": f"{win_rate*100:.2f}%",
+            "win_rate_pct": f"{win_rate * 100:.2f}%",
             "avg_win": float(avg_win),
             "avg_loss": float(avg_loss),
             "profit_factor": float(profit_factor),
@@ -418,7 +453,8 @@ class BacktestAnalyzer:
                 trade_time = pd.to_datetime(trade.timestamp, unit="ms")
                 # 找到最接近的权益值
                 equity_at_trade = timestamp_to_equity.get(
-                    trade.timestamp, None  # 如果找不到精确匹配，使用 None
+                    trade.timestamp,
+                    None,  # 如果找不到精确匹配，使用 None
                 )
 
                 # 如果找不到精确匹配，插值估算
@@ -678,10 +714,12 @@ class BacktestAnalyzer:
                 print(f"配对交易报告已保存到 {output_dir / 'paired_trades.csv'}")
 
                 # 打印摘要统计
-                print(f"\n配对交易摘要:")
+                print("\n配对交易摘要:")
                 print(f"  总交易次数: {len(paired_df)}")
-                print(f"  多头交易: {len(paired_df[paired_df['direction']=='long'])}")
-                print(f"  空头交易: {len(paired_df[paired_df['direction']=='short'])}")
+                print(f"  多头交易: {len(paired_df[paired_df['direction'] == 'long'])}")
+                print(
+                    f"  空头交易: {len(paired_df[paired_df['direction'] == 'short'])}"
+                )
                 print(
                     f"  平均持仓时长: {paired_df['holding_duration'].mean():.1f} 分钟"
                 )
@@ -695,9 +733,11 @@ class BacktestAnalyzer:
 
                 # 按平仓原因统计
                 close_reason_counts = paired_df["close_reason"].value_counts()
-                print(f"  平仓原因统计:")
+                print("  平仓原因统计:")
                 for reason, count in close_reason_counts.items():
-                    print(f"    - {reason}: {count} ({count/len(paired_df)*100:.1f}%)")
+                    print(
+                        f"    - {reason}: {count} ({count / len(paired_df) * 100:.1f}%)"
+                    )
 
         # 保存权益曲线
         if equity_curve:
@@ -807,7 +847,7 @@ def generate_all_fusion_bars_with_split(
     warmup_last_bar_ts = fusion_timestamps[warmup_fusion_bars_len - 1]
     trading_first_bar_ts = fusion_timestamps[warmup_fusion_bars_len]
 
-    print(f"\nWarmup 分界点:")
+    print("\nWarmup 分界点:")
     print(f"  - Warmup 最后 candle 时间戳: {warmup_last_candle_ts}")
     print(f"  - Warmup 最后 fusion bar 时间戳: {warmup_last_bar_ts}")
     print(f"  - Trading 第一个 fusion bar 时间戳: {trading_first_bar_ts}")
@@ -821,7 +861,7 @@ def generate_all_fusion_bars_with_split(
 
     print(
         f"\nWarmup 分界点: {warmup_fusion_bars_len} bars "
-        f"(占 {warmup_fusion_bars_len/len(fusion_bars)*100:.1f}%)"
+        f"(占 {warmup_fusion_bars_len / len(fusion_bars) * 100:.1f}%)"
     )
     print(f"Trading bars: {len(fusion_bars) - warmup_fusion_bars_len} bars")
     print("=" * 60 + "\n")
@@ -886,14 +926,17 @@ def compute_features_vectorized(
     fracdiff_time = time.perf_counter() - start_time
     print(f"fracdiff 特征计算完成，耗时: {fracdiff_time:.2f}秒")
 
-    # 4. SSM Warmup（逐行 inference）
+    # 4. SSM 处理（全程使用 inference，确保状态一致性）
+    # 注意：不能使用 transform()，因为它会重置状态到初始值，
+    # 导致 warmup 阶段更新的状态被忽略
     print("\n" + "-" * 60)
-    print("SSM Warmup 阶段（逐行 inference）")
+    print("SSM 处理阶段（全程逐行 inference）")
     print("-" * 60)
 
     deep_ssm = SSMContainer("deep_ssm")
     lg_ssm = SSMContainer("lg_ssm")
 
+    # Warmup 阶段：只更新状态，不保存输出
     start_time = time.perf_counter()
     for i in tqdm(range(warmup_fusion_bars_len), desc="SSM Warmup", ncols=100):
         deep_ssm.inference(df_fracdiff.iloc[[i]])
@@ -901,42 +944,48 @@ def compute_features_vectorized(
     warmup_time = time.perf_counter() - start_time
     print(f"SSM Warmup 完成，耗时: {warmup_time:.2f}秒")
 
-    # 5. SSM Transform（批量处理 trading 部分）
+    # Trading 阶段：逐行 inference 并保存输出
     print("\n" + "-" * 60)
-    print("SSM Transform 阶段（批量处理）")
+    print("SSM Trading 阶段（逐行 inference）")
     print("-" * 60)
 
-    df_fracdiff_trading = df_fracdiff.iloc[warmup_fusion_bars_len:]
+    deep_ssm_results = []
+    lg_ssm_results = []
 
     start_time = time.perf_counter()
-    print("DeepSSM transform...")
-    df_deep_ssm = deep_ssm.transform(df_fracdiff_trading)
-    deep_ssm_time = time.perf_counter() - start_time
-    print(f"DeepSSM transform 完成，耗时: {deep_ssm_time:.2f}秒")
+    for i in tqdm(
+        range(warmup_fusion_bars_len, len(df_fracdiff)), desc="SSM Trading", ncols=100
+    ):
+        deep_ssm_results.append(deep_ssm.inference(df_fracdiff.iloc[[i]]))
+        lg_ssm_results.append(lg_ssm.inference(df_fracdiff.iloc[[i]]))
+    ssm_trading_time = time.perf_counter() - start_time
+    print(f"SSM Trading 完成，耗时: {ssm_trading_time:.2f}秒")
 
-    start_time = time.perf_counter()
-    print("LGSSM transform...")
-    df_lg_ssm = lg_ssm.transform(df_fracdiff_trading)
-    lg_ssm_time = time.perf_counter() - start_time
-    print(f"LGSSM transform 完成，耗时: {lg_ssm_time:.2f}秒")
+    # 合并 SSM 结果
+    df_deep_ssm = pd.concat(deep_ssm_results, axis=0).reset_index(drop=True)
+    df_lg_ssm = pd.concat(lg_ssm_results, axis=0).reset_index(drop=True)
 
     # 6. 合并所有特征
+    # 注意：必须统一索引，否则 concat 按索引对齐会导致行数翻倍
+    # - df_deep_ssm 和 df_lg_ssm 已经 reset_index，索引从 0 开始
+    # - df_raw_features.iloc[...] 保留原始索引，需要 reset_index
     print("\n合并所有特征...")
+    df_raw_trading = df_raw_features.iloc[warmup_fusion_bars_len:].reset_index(
+        drop=True
+    )
     df_features_full = pd.concat(
-        [df_deep_ssm, df_lg_ssm, df_raw_features.iloc[warmup_fusion_bars_len:]],
+        [df_deep_ssm, df_lg_ssm, df_raw_trading],
         axis=1,
     )
 
-    print(f"\n特征计算完成:")
+    print("\n特征计算完成:")
     print(f"  - 特征维度: {df_features_full.shape}")
     print(f"  - 原始特征耗时: {raw_feat_time:.2f}s")
     print(f"  - fracdiff耗时: {fracdiff_time:.2f}s")
     print(f"  - SSM Warmup耗时: {warmup_time:.2f}s")
-    print(f"  - DeepSSM transform耗时: {deep_ssm_time:.2f}s")
-    print(f"  - LGSSM transform耗时: {lg_ssm_time:.2f}s")
-    print(
-        f"  - 总耗时: {raw_feat_time + fracdiff_time + warmup_time + deep_ssm_time + lg_ssm_time:.2f}s"
-    )
+    print(f"  - SSM Trading耗时: {ssm_trading_time:.2f}s")
+    total_time = raw_feat_time + fracdiff_time + warmup_time + ssm_trading_time
+    print(f"  - 总耗时: {total_time:.2f}s")
     print("=" * 60 + "\n")
 
     return df_features_full
@@ -994,9 +1043,32 @@ def predict_all_models(
     return predictions
 
 
+def _parse_model_n_value(model_name: str) -> int:
+    """
+    从模型名称中解析 N 值（预测未来第几个时间点）
+
+    Args:
+        model_name: 模型名称，如 "c_L7_N1", "c_L7_N2"
+
+    Returns:
+        N 值，如 1, 2, 3
+    """
+    parts = model_name.split("_")
+    assert len(parts) == 3, f"Invalid model name format: {model_name}"
+    assert parts[2].startswith("N"), f"Invalid pred_next format: {parts[2]}"
+    return int(parts[2][1:])
+
+
 def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> list[str]:
     """
-    汇总投票结果
+    汇总投票结果（考虑不同 N 值模型的预测对齐）
+
+    核心逻辑：
+    - N1 模型在时刻 t 预测的是 t+1 的方向
+    - N2 模型在时刻 t 预测的是 t+2 的方向
+    - 要在时刻 t 做交易决策，需要使用：
+      - N1 模型在 t-1 时刻的预测（预测目标是 t）
+      - N2 模型在 t-2 时刻的预测（预测目标是 t）
 
     Args:
         predictions: {model_name: [pred1, pred2, ...]}
@@ -1006,14 +1078,41 @@ def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> lis
         signals: ["long", "short", "flat", ...]
     """
     print("\n" + "=" * 60)
-    print("Phase 4: 汇总投票结果")
+    print("Phase 4: 汇总投票结果（含预测对齐）")
     print("=" * 60)
+
+    # 1. 解析每个模型的 N 值
+    model_n_values = {m: _parse_model_n_value(m) for m in models}
+    max_n = max(model_n_values.values())
+    min_n = min(model_n_values.values())
+
+    print(f"模型 N 值: {model_n_values}")
+    print(f"最大 N 值: {max_n}, 最小 N 值: {min_n}")
 
     n_samples = len(predictions[models[0]])
     signals = []
 
-    for i in range(n_samples):
-        votes = [predictions[m][i] for m in models]
+    # 2. 前 max_n 个时间点没有足够的历史预测，设为 flat
+    #    因为要在时刻 t 做决策，需要 N_max 模型在 t - N_max 时刻的预测
+    #    当 t < max_n 时，t - max_n < 0，索引无效
+    #    例如：max_n=2 时，时刻 0 需要索引 -2，时刻 1 需要索引 -1，都无效
+    #    只有从时刻 2 开始（索引 0）才有效
+    warmup_count = max_n
+    signals.extend(["flat"] * warmup_count)
+
+    print(f"预测对齐 warmup: 前 {warmup_count} 个时间点设为 flat")
+
+    # 3. 从 max_n 开始进行对齐投票
+    for i in range(warmup_count, n_samples):
+        votes = []
+        for m in models:
+            n = model_n_values[m]
+            # 对齐逻辑：
+            # - N1 模型预测 t+1，要得到对时刻 i 的预测，需要用 i-1 时刻的预测
+            # - N2 模型预测 t+2，要得到对时刻 i 的预测，需要用 i-2 时刻的预测
+            # - 通用公式：pred_idx = i - n
+            pred_idx = i - n
+            votes.append(predictions[m][pred_idx])
 
         if all(v == 1 for v in votes):
             signals.append("long")
@@ -1022,23 +1121,24 @@ def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> lis
         else:
             signals.append("flat")
 
-    # 统计信号分布
+    # 4. 统计信号分布
     signal_counts = {
         "long": signals.count("long"),
         "short": signals.count("short"),
         "flat": signals.count("flat"),
     }
 
-    print(f"信号统计:")
+    print("\n信号统计:")
     print(
-        f"  - Long: {signal_counts['long']} ({signal_counts['long']/n_samples*100:.1f}%)"
+        f"  - Long: {signal_counts['long']} ({signal_counts['long'] / n_samples * 100:.1f}%)"
     )
     print(
-        f"  - Short: {signal_counts['short']} ({signal_counts['short']/n_samples*100:.1f}%)"
+        f"  - Short: {signal_counts['short']} ({signal_counts['short'] / n_samples * 100:.1f}%)"
     )
     print(
-        f"  - Flat: {signal_counts['flat']} ({signal_counts['flat']/n_samples*100:.1f}%)"
+        f"  - Flat: {signal_counts['flat']} ({signal_counts['flat'] / n_samples * 100:.1f}%)"
     )
+    print(f"  - 其中 warmup flat: {warmup_count}")
     print("=" * 60 + "\n")
 
     return signals
@@ -1075,7 +1175,7 @@ def run_vectorized_backtest(
     print("向量化快速回测引擎启动")
     print("=" * 60)
     print(f"初始资金: ${starting_balance:,.2f}")
-    print(f"手续费率: {fee_rate*100:.2f}%")
+    print(f"手续费率: {fee_rate * 100:.2f}%")
     print(f"杠杆倍数: {leverage}x")
     print(f"模型列表: {models}")
     print(f"Warmup K线数: {len(warmup_candles):,}")
@@ -1113,57 +1213,88 @@ def run_vectorized_backtest(
     for i in pbar:
         fusion_bar = trading_fusion_bars[i]
         timestamp = int(fusion_bar[0])
-        current_price = float(fusion_bar[2])  # close price
+        # K线格式: [timestamp, open, close, high, low, volume]
+        open_price = float(fusion_bar[1])
+        close_price = float(fusion_bar[2])
+        high_price = float(fusion_bar[3])
+        low_price = float(fusion_bar[4])
         signal = signals[i]
+
+        # 入场价格使用开盘价（更保守，避免使用未来信息）
+        # 信号是在前一根 bar 结束时产生的，所以在当前 bar 开盘时入场
+        entry_price = open_price
 
         # 记录交易前的交易数量（用于判断是否发生了交易）
         trades_count_before = len(backtester.trades)
 
-        # 初始化 Buy & Hold 基准
+        # 初始化 Buy & Hold 基准（使用开盘价）
         if i == 0:
-            backtester.init_benchmark(current_price)
+            backtester.init_benchmark(entry_price)
             # 记录初始权益点
-            backtester.record_equity(timestamp, current_price)
+            backtester.record_equity(timestamp, close_price)
 
-        # 检查止损
+        # 检查止损（使用 high/low 检查，以止损价平仓）
+        # 记录是否触发止损，用于阻止同 bar 重新入场（避免 look-ahead bias）
+        stop_loss_triggered = False
         if not backtester.position.is_flat:
-            backtester.check_stop_loss(timestamp, current_price)
+            stop_loss_triggered = backtester.check_stop_loss(
+                timestamp, high_price, low_price, close_price
+            )
 
-        # 执行交易逻辑
-        if backtester.position.is_flat:
+        # 如果本 bar 触发了止损，跳过入场逻辑（避免使用已过去的开盘价重新入场）
+        if stop_loss_triggered:
+            pass  # 本 bar 不执行任何入场操作
+        # 执行交易逻辑（使用开盘价入场）
+        elif backtester.position.is_flat:
             if signal == "long":
-                stop_loss_price = current_price * (
+                stop_loss_price = entry_price * (
                     1 - STOP_LOSS_RATIO_NO_LEVERAGE / leverage
                 )
-                backtester.open_long(timestamp, current_price, stop_loss_price)
+                backtester.open_long(timestamp, entry_price, stop_loss_price)
+                # 入场后立即检查本 bar 是否触发止损（处理跳空情况）
+                backtester.check_stop_loss(
+                    timestamp, high_price, low_price, close_price
+                )
             elif signal == "short":
-                stop_loss_price = current_price * (
+                stop_loss_price = entry_price * (
                     1 + STOP_LOSS_RATIO_NO_LEVERAGE / leverage
                 )
-                backtester.open_short(timestamp, current_price, stop_loss_price)
+                backtester.open_short(timestamp, entry_price, stop_loss_price)
+                # 入场后立即检查本 bar 是否触发止损（处理跳空情况）
+                backtester.check_stop_loss(
+                    timestamp, high_price, low_price, close_price
+                )
         else:
             # 持多仓遇到空信号：平仓后立即反手开空
             if backtester.position.is_long and signal == "short":
-                backtester.close_position(timestamp, current_price, reason="close")
-                stop_loss_price = current_price * (
+                backtester.close_position(timestamp, entry_price, reason="close")
+                stop_loss_price = entry_price * (
                     1 + STOP_LOSS_RATIO_NO_LEVERAGE / leverage
                 )
-                backtester.open_short(timestamp, current_price, stop_loss_price)
+                backtester.open_short(timestamp, entry_price, stop_loss_price)
+                # 入场后立即检查本 bar 是否触发止损
+                backtester.check_stop_loss(
+                    timestamp, high_price, low_price, close_price
+                )
             # 持空仓遇到多信号：平仓后立即反手开多
             elif backtester.position.is_short and signal == "long":
-                backtester.close_position(timestamp, current_price, reason="close")
-                stop_loss_price = current_price * (
+                backtester.close_position(timestamp, entry_price, reason="close")
+                stop_loss_price = entry_price * (
                     1 - STOP_LOSS_RATIO_NO_LEVERAGE / leverage
                 )
-                backtester.open_long(timestamp, current_price, stop_loss_price)
+                backtester.open_long(timestamp, entry_price, stop_loss_price)
+                # 入场后立即检查本 bar 是否触发止损
+                backtester.check_stop_loss(
+                    timestamp, high_price, low_price, close_price
+                )
 
-        # 如果发生了交易，记录权益点
+        # 如果发生了交易，记录权益点（使用收盘价计算权益）
         if len(backtester.trades) > trades_count_before:
-            backtester.record_equity(timestamp, current_price)
+            backtester.record_equity(timestamp, close_price)
 
         # 更新进度条显示（每10次更新）
         if i % 10 == 0 or i == len(trading_fusion_bars) - 1:
-            current_equity = backtester.equity(current_price)
+            current_equity = backtester.equity(close_price)
             return_pct = (current_equity - starting_balance) / starting_balance * 100
             position_status = backtester.position.side.upper()
 
@@ -1178,16 +1309,16 @@ def run_vectorized_backtest(
 
         # 额外每100根记录一次权益（保持曲线平滑）
         if i % 100 == 0:
-            backtester.record_equity(timestamp, current_price)
+            backtester.record_equity(timestamp, close_price)
 
-    # 最后记录一次权益
+    # 如果还有未平仓位，强制平仓（必须在记录最终权益之前）
     final_timestamp = int(trading_fusion_bars[-1, 0])
     final_price = trading_fusion_bars[-1, 2]
-    backtester.record_equity(final_timestamp, final_price)
-
-    # 如果还有未平仓位，强制平仓
     if not backtester.position.is_flat:
         backtester.close_position(final_timestamp, final_price, reason="force_close")
+
+    # 强制平仓后再记录最终权益（确保手续费和最后价格变动被计入）
+    backtester.record_equity(final_timestamp, final_price)
 
     print("\n交易模拟完成")
     print("=" * 60 + "\n")
@@ -1235,8 +1366,8 @@ if __name__ == "__main__":
     TEST_FUSION_BARS = 1000
 
     MODELS = [
-        "c_L7_N1",
-        "c_L7_N2",
+        "c_L5_N1",
+        "c_L5_N2",
     ]
 
     STRATEGY = "BinanceBtcDemoBarV2"
