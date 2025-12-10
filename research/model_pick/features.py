@@ -1,3 +1,5 @@
+import gc
+
 import numpy as np
 import pandas as pd
 
@@ -109,6 +111,7 @@ class FeatureLoader:
         self.feature_calculator_seq.load(candles, sequential=True)
 
         self._features = {}
+        self._df_features = None  # 缓存 DataFrame，避免重复创建
         self._candles_index = candles[:, 0].astype(int)
 
     @property
@@ -117,18 +120,43 @@ class FeatureLoader:
             self._features = self.feature_calculator_seq.get(ALL_FEATS)
         return self._features
 
+    def _ensure_df_features(self) -> pd.DataFrame:
+        """懒加载 DataFrame，避免重复从字典创建"""
+        if self._df_features is None:
+            # 使用 copy=False 避免额外内存分配
+            self._df_features = pd.DataFrame(self.features, copy=False)
+            self._df_features.index = self._candles_index
+        return self._df_features
+
     def get_feature_label_bundle(
         self, label: np.ndarray, pred_next: int
     ) -> tuple[pd.DataFrame, np.ndarray]:
-        df_features = pd.DataFrame.from_dict(self.features)
-        df_features.index = self._candles_index
-        len_gap = len(df_features) - len(label) - pred_next
-        df_features = df_features.iloc[len_gap:-pred_next]
-        assert len(df_features) == len(label)
+        # 使用缓存的 DataFrame
+        df = self._ensure_df_features()
 
-        max_na_len = df_features.isna().sum().max()
-        df_features = df_features.iloc[max_na_len:]
-        label = label[max_na_len:]
-        assert len(df_features) == len(label)
+        len_gap = len(df) - len(label) - pred_next
+        end_idx = len(df) - pred_next
 
-        return df_features, label
+        # 用 numpy 快速计算 NA 数量，避免创建临时布尔 DataFrame
+        # 只计算需要切片范围内的 NA
+        na_counts = np.isnan(df.values[len_gap:end_idx]).sum(axis=0)
+        max_na_len = int(na_counts.max()) if na_counts.size > 0 else 0
+
+        # 单次切片，减少内存分配
+        start_idx = len_gap + max_na_len
+        df_result = df.iloc[start_idx:end_idx].copy()
+        label_result = label[max_na_len:]
+
+        assert len(df_result) == len(label_result), (
+            f"Length mismatch: df={len(df_result)}, label={len(label_result)}"
+        )
+
+        return df_result, label_result
+
+    def clear_features(self):
+        """释放特征内存，用于任务间清理"""
+        self._features = {}
+        self._df_features = None
+        if hasattr(self.feature_calculator_seq, "clear_cache"):
+            self.feature_calculator_seq.clear_cache()
+        gc.collect()

@@ -444,7 +444,8 @@ if __name__ == "__main__":
             logger.info("=" * 40)
 
             # 🔧 强制清理资源，防止多进程资源泄漏累积
-            # 清理 feature_selector 的缓存（每个任务的训练数据可能不同）
+            # 清理 feature_selector 的缓存（每个任务的 train_x 切片不同）
+            # 注意：不清理 feature_loader，全量特征需要保留供后续任务使用
             feature_selector.clear_cache()
             cleanup_multiprocessing_resources()
 
