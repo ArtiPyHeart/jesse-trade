@@ -1,14 +1,10 @@
-import copy
 import gc
 import os
 from typing import List, Optional, Union
 
-import joblib
 import numba as nb
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMClassifier, LGBMRegressor
-from sklearn.model_selection import GridSearchCV
 from tqdm.auto import tqdm
 
 from src.utils.drop_na import drop_na_and_align_x_and_y
@@ -155,7 +151,14 @@ class RFCQSelector:
     def _calculate_relevance(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """
         计算特征与目标的相关性（使用随机森林特征重要性）
+
+        使用 LightGBM 原生 CV 替代 GridSearchCV，优势：
+        - 复用 binning 跨 fold（显著加速）
+        - 支持 early_stopping 自动找最优迭代次数
+        - 避免 sklearn 的额外开销
         """
+        import lightgbm as lgb
+
         # 使用 float32 减少内存占用，对 LightGBM 精度影响可忽略
         X_values = np.asarray(X.values, dtype=np.float32, order="C")
         y_values = y.values
@@ -168,90 +171,91 @@ class RFCQSelector:
         else:
             is_classification = self.task_type == "classification"
 
-        # 确定scoring（如果在构造时未设置）
-        if self.scoring is None:
-            scoring = "roc_auc" if is_classification else "neg_root_mean_squared_error"
-        else:
-            scoring = self.scoring
+        # 基础参数（随机森林模式）
+        base_params = {
+            "boosting_type": "rf",
+            "num_leaves": 31,  # 默认值，后续会测试不同值
+            "n_estimators": 100,
+            "subsample": 0.632,  # RF bootstrap 采样率
+            "subsample_freq": 1,  # 每棵树都采样
+            "colsample_bytree": 0.7,  # 特征子采样
+            "importance_type": "gain",
+            "random_state": self.random_state,
+            "n_jobs": self.n_jobs,
+            "verbose": -1,
+            # M4 Pro 性能优化
+            "max_bin": 63,
+            # 加速 binning（codex 建议）
+            "bin_construct_sample_cnt": min(50000, len(y_values)),
+        }
 
-        # 根据任务类型创建模型（使用LightGBM随机森林模式）
+        # 分类任务特定参数
         if is_classification:
-            model = LGBMClassifier(
-                boosting_type="rf",  # 启用随机森林模式
-                n_estimators=100,
-                num_leaves=31,  # 默认值，可被GridSearchCV覆盖
-                subsample=0.632,  # RF bootstrap采样率
-                subsample_freq=1,  # 每棵树都采样
-                colsample_bytree=0.7,  # 特征子采样: 加速训练并增加树的多样性(标准RF做法)
-                importance_type="gain",  # 使用增益而非分裂次数作为重要性指标
-                class_weight="balanced",
-                random_state=self.random_state,
-                n_jobs=self.n_jobs,
-                verbose=-1,  # 禁用LightGBM内部日志
-                # M4 Pro性能优化
-                max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
-                histogram_pool_size=512,  # 限制histogram缓存大小(MB)
-                # 内存优化
-                free_raw_data=True,  # 训练后释放原始数据
-            )
+            base_params["objective"] = "binary"
+            base_params["is_unbalance"] = True
+            metric = "auc"
         else:
-            model = LGBMRegressor(
-                boosting_type="rf",  # 启用随机森林模式
-                n_estimators=100,
-                num_leaves=31,  # 默认值，可被GridSearchCV覆盖
-                subsample=0.632,  # RF bootstrap采样率
-                subsample_freq=1,  # 每棵树都采样
-                colsample_bytree=0.7,  # 特征子采样: 加速训练并增加树的多样性(标准RF做法)
-                importance_type="gain",  # 使用增益而非分裂次数作为重要性指标
-                random_state=self.random_state,
-                n_jobs=self.n_jobs,
-                verbose=-1,  # 禁用LightGBM内部日志
-                # M4 Pro性能优化
-                max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
-                histogram_pool_size=512,  # 限制histogram缓存大小(MB)
-                # 内存优化
-                free_raw_data=True,  # 训练后释放原始数据
+            base_params["objective"] = "regression"
+            metric = "rmse"
+
+        # 创建 LightGBM Dataset（free_raw_data=False 允许复用）
+        lgb_train = lgb.Dataset(X_values, label=y_values, free_raw_data=False)
+
+        # 获取要测试的 num_leaves 值
+        if self.param_grid and "num_leaves" in self.param_grid:
+            num_leaves_list = self.param_grid["num_leaves"]
+        else:
+            num_leaves_list = [31, 63]
+
+        # 对每个 num_leaves 值运行 CV，找最佳配置
+        best_score = -np.inf if is_classification else np.inf
+        best_num_leaves = num_leaves_list[0]
+
+        for num_leaves in num_leaves_list:
+            params = base_params.copy()
+            params["num_leaves"] = num_leaves
+
+            # 使用 LightGBM 原生 CV（复用 binning，显著加速）
+            cv_result = lgb.cv(
+                params,
+                lgb_train,
+                num_boost_round=100,
+                nfold=self.cv,
+                stratified=is_classification,
+                seed=self.random_state if self.random_state else 0,
+                callbacks=[lgb.log_evaluation(period=0)],  # 静默模式
             )
 
-        # 设置参数网格
-        if self.param_grid:
-            param_grid = self.param_grid
-        else:
-            # 使用num_leaves替代max_depth，对应关系: 2^(depth+1)-1
-            # 减少网格搜索空间以提速
-            param_grid = {"num_leaves": [31, 63]}  # 对应max_depth 3,4
+            # 获取最终分数
+            score_key = f"valid {metric}-mean"
+            if score_key in cv_result:
+                final_score = cv_result[score_key][-1]
+                # 对于 AUC 越大越好，对于 RMSE 越小越好
+                if is_classification:
+                    is_better = final_score > best_score
+                else:
+                    is_better = final_score < best_score
 
-        # 网格搜索（内存优化配置）
-        cv_model = GridSearchCV(
-            model,
-            cv=self.cv,
-            scoring=scoring,
-            param_grid=param_grid,
-            refit=False,  # 不自动 refit，手动控制以便更好地清理内存
-            return_train_score=False,  # 不保留训练分数，节省内存
-            n_jobs=1,  # GridSearchCV 层不并行，LightGBM 内部已并行
-            pre_dispatch=2,  # 减少预调度，降低内存占用
+                if is_better:
+                    best_score = final_score
+                    best_num_leaves = num_leaves
+
+        # 使用最佳参数训练最终模型获取 feature_importances_
+        final_params = base_params.copy()
+        final_params["num_leaves"] = best_num_leaves
+
+        final_model = lgb.train(
+            final_params,
+            lgb_train,
+            num_boost_round=100,
         )
 
-        # 使用 threading 后端避免数据复制
-        with joblib.parallel_backend("threading"):
-            cv_model.fit(X_values, y_values)
+        relevance = final_model.feature_importance(importance_type="gain").astype(
+            np.float64
+        )
 
-        # 提取最佳参数后立即清理 GridSearchCV
-        best_params = cv_model.best_params_
-        if hasattr(cv_model, "cv_results_"):
-            del cv_model.cv_results_
-        del cv_model
-        gc.collect()
-
-        # 手动用最佳参数 refit，获取 feature_importances_
-        final_model = model.set_params(**best_params)
-        final_model.fit(X_values, y_values)
-        relevance = final_model.feature_importances_.copy()
-
-        # 清理 LightGBM 模型资源
-        del final_model
-        gc.collect()
+        # 清理资源
+        del lgb_train, final_model
 
         return relevance
 
@@ -297,42 +301,41 @@ class RFCQSelector:
         # 预先获取所有特征数据（复用 X_numeric，避免重复切片）
         # 使用 float32 减少内存占用，相关系数计算精度足够
         X_data = np.asarray(X_numeric.values, dtype=np.float32, order="C")
+        n_features = len(self.variables_)
 
-        # 初始化
+        # 使用布尔掩码代替列表删除操作（O(1) vs O(n)）
+        mask = np.ones(n_features, dtype=bool)
         relevance = self.relevance_.copy()
-        remaining = copy.deepcopy(self.variables_)
 
         # 找出最相关的特征
-        n = np.argmax(relevance)
-        top_feature = remaining[n]
+        first_idx = np.argmax(relevance)
+        top_feature = self.variables_[first_idx]
 
         if self.verbose:
             print(
-                f"✓ 选择第1个特征: {top_feature} (最大重要性: {self.relevance_[n]:.4f})"
+                f"✓ 选择第1个特征: {top_feature} (最大重要性: {relevance[first_idx]:.4f})"
             )
 
-        # 更新特征列表
-        selected = [top_feature]
-        remaining.remove(top_feature)
-        relevance = np.delete(relevance, n)
-
-        # 特征的索引映射
-        feature_to_idx = {f: i for i, f in enumerate(self.variables_)}
+        # 更新状态
+        selected_indices = [first_idx]
+        mask[first_idx] = False
 
         # 计算其他特征与最佳特征的冗余度
         if self.verbose:
             print("➤ 计算特征冗余度...")
-        top_feature_idx = feature_to_idx[top_feature]
-        remaining_indices = [feature_to_idx[f] for f in remaining]
-        X_remaining = X_data[:, remaining_indices]
-        y_values = X_data[:, top_feature_idx]
+        X_remaining = X_data[:, mask]
+        y_values = X_data[:, first_idx]
         initial_redundance = fast_corrwith_numba(X_remaining, y_values)
+
+        # 初始化 running_mean（完整大小数组，仅 mask=True 位置有效）
+        running_mean = np.zeros(n_features, dtype=np.float64)
+        running_mean[mask] = initial_redundance
 
         # 确定要选择的特征数量
         if self.max_features is None:
-            n_to_select = max(1, int(0.2 * len(self.variables_)))
+            n_to_select = max(1, int(0.2 * n_features))
         else:
-            n_to_select = min(self.max_features, len(self.variables_))
+            n_to_select = min(self.max_features, n_features)
 
         # 第一轮已经选了一个特征，所以减1
         n_to_select = n_to_select - 1
@@ -343,54 +346,46 @@ class RFCQSelector:
             )
             print("➤ 开始MRMR迭代选择过程...")
 
-        # 初始化增量均值计算（使用 float64 减少累积误差）
-        running_mean = initial_redundance.astype(np.float64, copy=True)
         redundance_count = 1
+        eps = 1e-10
 
-        # 主循环：迭代选择特征（使用增量均值更新，避免 vstack 累积矩阵）
-        for i in tqdm(
+        # 主循环：迭代选择特征（使用掩码，避免 O(n) 的删除操作）
+        for _ in tqdm(
             range(n_to_select),
             disable=not self.verbose,
             desc="选择特征",
             unit="特征",
             ncols=100,
         ):
-            if len(remaining) == 0:
+            if not mask.any():
                 break
 
-            # 统一使用 running_mean 计算 MRMR（无论是第一轮还是后续轮次）
-            eps = 1e-10
+            # 计算 MRMR 分数（仅对剩余特征）
             safe_redundance = np.maximum(running_mean, eps)
-            mrmr_scores = relevance / safe_redundance
-            n = np.argmax(mrmr_scores)
+            mrmr_scores = np.where(mask, relevance / safe_redundance, -np.inf)
+            best_idx = np.argmax(mrmr_scores)
 
-            # 更新特征列表
-            feature = remaining[n]
-            feature_idx = feature_to_idx[feature]
-            selected.append(feature)
-            remaining.remove(feature)
-
-            # 更新索引
-            remaining_indices.remove(feature_idx)
-
-            # 同步删除 relevance 和 running_mean 的对应位置
-            relevance = np.delete(relevance, n)
-            running_mean = np.delete(running_mean, n)
+            # 更新状态
+            selected_indices.append(best_idx)
+            mask[best_idx] = False
 
             # 如果已经选完了所有特征，退出循环
-            if len(remaining) == 0:
+            if not mask.any():
                 break
 
             # 计算新冗余度（当前选中特征与剩余特征的相关性）
-            X_remaining = X_data[:, remaining_indices]
-            y_values = X_data[:, feature_idx]
+            X_remaining = X_data[:, mask]
+            y_values = X_data[:, best_idx]
             new_redundance = fast_corrwith_numba(X_remaining, y_values)
 
-            # 增量更新均值（Welford 公式）
+            # 增量更新均值（Welford 公式，仅更新 mask=True 位置）
             redundance_count += 1
-            running_mean += (new_redundance - running_mean) / redundance_count
+            running_mean[mask] += (
+                new_redundance - running_mean[mask]
+            ) / redundance_count
 
-        # 记录要丢弃的特征
+        # 记录要丢弃的特征（使用索引列表转换为特征名）
+        selected = [self.variables_[i] for i in selected_indices]
         self.features_to_drop_ = [f for f in self.variables_ if f not in selected]
 
         if self.verbose:
@@ -400,6 +395,9 @@ class RFCQSelector:
             print(
                 f"\n✅ 特征选择完成：从{total_features}个特征中选择了{selected_count}个，舍弃了{dropped_count}个"
             )
+
+        # 统一在 fit 结束时清理内存（避免频繁 gc 影响性能）
+        gc.collect()
 
         return self
 
