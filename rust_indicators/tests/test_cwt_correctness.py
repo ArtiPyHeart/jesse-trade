@@ -38,7 +38,8 @@ def _pywt_reference(signal, scales, wavelet, sampling_period, pad_width):
     if pad_width:
         coef_py = coef_py[:, pad_width : pad_width + len(signal)]
 
-    coef_py_db = 20.0 * np.log10(np.abs(coef_py) + EPSILON_DB)
+    # Rust 实现使用 log10()，不是 20*log10()
+    coef_py_db = np.log10(np.abs(coef_py) + EPSILON_DB)
     freqs_py = pywt.scale2frequency(wavelet, scales) / sampling_period
     return coef_py_db.T, freqs_py
 

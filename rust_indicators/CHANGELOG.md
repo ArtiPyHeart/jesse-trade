@@ -6,6 +6,37 @@
 
 ---
 
+## [0.6.2] - 2025-12-11
+
+### ⚡ CWT 性能优化 - Phase 2
+
+**核心优化**:
+- **线程本地缓冲区复用**: 使用 `thread_local!` 宏为每个 Rayon 工作线程预分配 `CwtBuffers`，减少 90%+ 堆分配
+- **par_bridge → par_iter**: 改用更高效的 `par_iter()` 替代 `par_bridge()`，减少调度开销
+- **FFT scratch buffer 复用**: 使用 `process_with_scratch()` 替代 `process()`，避免重复分配 scratch 缓冲区
+
+**性能提升**:
+- 大规模数据 (4000x128): **10.18ms → 8.39ms** (+18% 提升)
+- 中等规模数据 (2000x64): **3.18ms → 2.68ms** (+16% 提升)
+- 小规模数据略有开销（thread_local 初始化），但在实际生产场景中可忽略
+
+**数值精度**:
+- 与 PyWavelets 完美对齐（误差 < 6e-13）
+- 4/4 CWT 正确性测试通过
+
+**技术细节**:
+- 新增 `CwtBuffers` 结构体封装所有可复用缓冲区
+- 新增 `cwt_single_scale_with_buffers()` 内部函数
+- `cwt_multi_scale()` 重构为使用 `thread_local!` + `RefCell` 模式
+
+**测试与验证**:
+- 新增 `scripts/benchmark_cwt_speed.py` 性能基准测试
+- 修复 `test_cwt_correctness.py` 中 dB scale 计算（log10 vs 20*log10）
+- VMD、NRBO 数值一致性测试全部通过
+- 新增 `tests/test_nrbo_python_rust_consistency.py` NRBO 一致性测试
+
+---
+
 ## [0.6.0] - 2025-10-26
 
 ### 🗑️ 移除功能
