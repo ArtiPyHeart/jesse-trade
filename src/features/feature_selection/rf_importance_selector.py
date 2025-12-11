@@ -127,45 +127,46 @@ class RFImportanceSelector:
             scoring = self.scoring
 
         # 根据任务类型创建模型（使用 LightGBM 随机森林模式）
+        # 参数优化方向：最高精度（参考 https://lightgbm.readthedocs.io/en/latest/Parameters-Tuning.html）
         if is_classification:
             model = LGBMClassifier(
                 boosting_type="rf",
-                n_estimators=100,
-                num_leaves=31,
-                subsample=0.632,
+                n_estimators=200,  # 更多树提高稳定性
+                num_leaves=31,  # 由 GridSearchCV 调优
+                subsample=0.632,  # RF bootstrap 采样率（官方推荐）
                 subsample_freq=1,
-                colsample_bytree=0.7,
+                colsample_bytree=0.8,  # 特征子采样
                 importance_type="gain",
                 class_weight="balanced",
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,
-                max_bin=63,
-                histogram_pool_size=512,
+                max_bin=255,  # 默认值，更高精度
+                min_data_in_leaf=20,  # 防止过拟合
                 free_raw_data=True,
             )
         else:
             model = LGBMRegressor(
                 boosting_type="rf",
-                n_estimators=100,
-                num_leaves=31,
-                subsample=0.632,
+                n_estimators=200,  # 更多树提高稳定性
+                num_leaves=31,  # 由 GridSearchCV 调优
+                subsample=0.632,  # RF bootstrap 采样率（官方推荐）
                 subsample_freq=1,
-                colsample_bytree=0.7,
+                colsample_bytree=0.8,  # 特征子采样
                 importance_type="gain",
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,
-                max_bin=63,
-                histogram_pool_size=512,
+                max_bin=255,  # 默认值，更高精度
+                min_data_in_leaf=20,  # 防止过拟合
                 free_raw_data=True,
             )
 
-        # 设置参数网格
+        # 设置参数网格（扩展搜索空间以获得更高精度）
         if self.param_grid:
             param_grid = self.param_grid
         else:
-            param_grid = {"num_leaves": [31, 63]}
+            param_grid = {"num_leaves": [31, 63, 127, 255]}
 
         # 网格搜索
         cv_model = GridSearchCV(
