@@ -168,13 +168,13 @@ class RFImportanceSelector:
         else:
             param_grid = {"num_leaves": [31, 63, 127, 255]}
 
-        # 网格搜索
+        # 网格搜索（refit=True 自动用最佳参数在全量数据上训练）
         cv_model = GridSearchCV(
             model,
             cv=self.cv,
             scoring=scoring,
             param_grid=param_grid,
-            refit=False,
+            refit=True,
             return_train_score=False,
             n_jobs=1,
             pre_dispatch=2,
@@ -183,20 +183,11 @@ class RFImportanceSelector:
         with joblib.parallel_backend("threading"):
             cv_model.fit(X_values, y_values)
 
-        # 提取最佳参数后清理 GridSearchCV
-        best_params = cv_model.best_params_
-        if hasattr(cv_model, "cv_results_"):
-            del cv_model.cv_results_
+        # 直接从 best_estimator_ 获取特征重要性
+        relevance = cv_model.best_estimator_.feature_importances_.copy()
+
+        # 清理资源
         del cv_model
-        gc.collect()
-
-        # 手动用最佳参数 refit
-        final_model = model.set_params(**best_params)
-        final_model.fit(X_values, y_values)
-        relevance = final_model.feature_importances_.copy()
-
-        # 清理模型资源
-        del final_model
         gc.collect()
 
         return relevance
