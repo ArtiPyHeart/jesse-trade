@@ -193,11 +193,9 @@ class RFCQSelector:
         if is_classification:
             base_params["objective"] = "binary"
             base_params["is_unbalance"] = True
-            base_params["metric"] = "auc"
             metric = "auc"
         else:
             base_params["objective"] = "regression"
-            base_params["metric"] = "rmse"  # 显式设置，否则默认是 l2
             metric = "rmse"
 
         # 创建 LightGBM Dataset（free_raw_data=False 允许复用）
@@ -210,18 +208,14 @@ class RFCQSelector:
             num_leaves_list = [31, 63]
 
         # 对每个 num_leaves 值运行 CV，找最佳配置
-        # 使用 return_cvbooster=True 复用 CV 模型，省去额外的 lgb.train
         best_score = -np.inf if is_classification else np.inf
-        best_cvbooster = None
-        first_cvbooster = None  # 保存第一个有效的 cvbooster 作为兜底
+        best_num_leaves = num_leaves_list[0]
 
         for num_leaves in num_leaves_list:
             params = base_params.copy()
             params["num_leaves"] = num_leaves
 
             # 使用 LightGBM 原生 CV（复用 binning，显著加速）
-            # - early_stopping: 提前终止无效迭代
-            # - return_cvbooster: 返回训练好的模型，避免重复训练
             cv_result = lgb.cv(
                 params,
                 lgb_train,
@@ -229,20 +223,12 @@ class RFCQSelector:
                 nfold=self.cv,
                 stratified=is_classification,
                 seed=self.random_state if self.random_state else 0,
-                callbacks=[
-                    lgb.early_stopping(stopping_rounds=20, verbose=False),
-                    lgb.log_evaluation(period=0),
-                ],
-                return_cvbooster=True,
+                callbacks=[lgb.log_evaluation(period=0)],  # 静默模式
             )
 
-            # 获取最终分数（early stopping 后的最佳迭代）
+            # 获取最终分数
             score_key = f"valid {metric}-mean"
             if score_key in cv_result:
-                # 保存第一个有效的 cvbooster 作为兜底
-                if first_cvbooster is None:
-                    first_cvbooster = cv_result["cvbooster"]
-
                 final_score = cv_result[score_key][-1]
                 # 对于 AUC 越大越好，对于 RMSE 越小越好
                 if is_classification:
@@ -252,25 +238,24 @@ class RFCQSelector:
 
                 if is_better:
                     best_score = final_score
-                    best_cvbooster = cv_result["cvbooster"]
+                    best_num_leaves = num_leaves
 
-        # 确保有可用的 cvbooster
-        if best_cvbooster is None:
-            best_cvbooster = first_cvbooster
+        # 使用最佳参数训练最终模型获取 feature_importances_
+        final_params = base_params.copy()
+        final_params["num_leaves"] = best_num_leaves
 
-        # 从 CV 模型聚合 feature_importance（省去额外的 lgb.train）
-        # 取各 fold 模型的平均重要性，比单模型更稳定
-        importances = np.mean(
-            [
-                booster.feature_importance(importance_type="gain")
-                for booster in best_cvbooster.boosters
-            ],
-            axis=0,
+        final_model = lgb.train(
+            final_params,
+            lgb_train,
+            num_boost_round=100,
         )
-        relevance = importances.astype(np.float64)
+
+        relevance = final_model.feature_importance(importance_type="gain").astype(
+            np.float64
+        )
 
         # 清理资源
-        del lgb_train, best_cvbooster
+        del lgb_train, final_model
 
         return relevance
 
