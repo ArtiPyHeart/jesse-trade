@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pyrs-indicators"
-version = "0.6.2"
+version = "0.6.3"
 description = "High-performance Rust-powered technical indicators with Python interface"
 requires-python = ">=3.8"
 classifiers = [

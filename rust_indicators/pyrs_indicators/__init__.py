@@ -43,7 +43,7 @@ from . import ind_trend
 # 导入工具
 from ._core import HAS_RUST
 
-__version__ = "0.6.2"
+__version__ = "0.6.3"
 __all__ = [
     # 子包
     "ind_wavelets",

@@ -6,23 +6,11 @@ use ndarray::{s, Array1, Array2};
 use num_complex::Complex64;
 use rayon::prelude::*;
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::wavelets::{cmor_wavelet, integrate_wavelet, CmorWavelet};
 use super::utils::next_fast_len;
-
-/// Thread-local reusable buffers for CWT computation
-/// Avoids repeated heap allocations in parallel workers
-#[derive(Default)]
-struct CwtBuffers {
-    signal_padded: Vec<Complex<f64>>,
-    psi_padded: Vec<Complex<f64>>,
-    j_indices: Vec<usize>,
-    scratch_fwd: Vec<Complex<f64>>,
-    scratch_inv: Vec<Complex<f64>>,
-}
 
 /// CWT computation method
 #[derive(Debug, Clone, Copy)]
@@ -45,7 +33,7 @@ pub struct CwtOutput {
 /// FFT plan cache for reusing FFT plans across scales
 pub type FftPlanCache = Arc<HashMap<usize, (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>)>>;
 
-/// Compute CWT for a single scale with buffer reuse
+/// Compute CWT for a single scale
 ///
 /// Corresponds to one iteration of the scale loop in pywt._cwt.cwt()
 ///
@@ -56,7 +44,6 @@ pub type FftPlanCache = Arc<HashMap<usize, (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>
 /// * `x` - Wavelet domain points
 /// * `method` - Computation method (FFT or Conv)
 /// * `fft_cache` - Pre-computed FFT plans (optional, for performance)
-/// * `buffers` - Reusable buffers to avoid heap allocations (optional)
 ///
 /// # Algorithm
 /// 1. Scale the wavelet: sample int_psi at scaled positions and reverse
@@ -66,112 +53,115 @@ pub type FftPlanCache = Arc<HashMap<usize, (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>
 ///
 /// # References
 /// - pywt/_cwt.py lines 147-196
-fn cwt_single_scale_with_buffers(
+pub fn cwt_single_scale(
     signal: &Array1<f64>,
     scale: f64,
     int_psi: &Array1<Complex64>,
     x: &Array1<f64>,
     method: CwtMethod,
     fft_cache: Option<&FftPlanCache>,
-    buffers: &mut CwtBuffers,
 ) -> Array1<Complex64> {
     let n = signal.len();
 
     // Step 1: Scale the wavelet (pywt lines 148-153)
     let step = x[1] - x[0];
     let x_range = x[x.len() - 1] - x[0];
+    // Python: np.arange(scale * x_range + 1) generates [0, 1, ..., floor(scale * x_range)]
+    // which is floor(scale * x_range) + 1 elements
     let num_samples = (scale * x_range + 1.0) as usize + 1;
 
-    // Reuse j_indices buffer
-    buffers.j_indices.clear();
+    // Generate scaled indices: j = arange(...) / (scale * step)
+    // Optimization: pre-compute inverse to avoid repeated division
     let inv_scale_step = 1.0 / (scale * step);
+    let mut j_indices: Vec<usize> = Vec::with_capacity(num_samples);
     for i in 0..num_samples {
         let j = ((i as f64) * inv_scale_step) as usize;
         if j < int_psi.len() {
-            buffers.j_indices.push(j);
+            j_indices.push(j);
         }
     }
 
-    let psi_len = buffers.j_indices.len();
+    // Sample int_psi at scaled indices and reverse
+    let int_psi_scale: Array1<Complex64> = j_indices
+        .iter()
+        .rev()
+        .map(|&idx| int_psi[idx])
+        .collect();
+
+    let psi_len = int_psi_scale.len();
 
     // Step 2: Convolution (pywt lines 166-180)
     let conv = match method {
         CwtMethod::Fft => {
+            // FFT-based convolution
             let conv_len = n + psi_len - 1;
             let fft_size = next_fast_len(conv_len);
 
-            // Reuse signal_padded buffer
-            buffers.signal_padded.clear();
-            buffers.signal_padded.reserve(fft_size);
-            for &x in signal.iter() {
-                buffers.signal_padded.push(Complex::new(x, 0.0));
-            }
-            buffers.signal_padded.resize(fft_size, Complex::new(0.0, 0.0));
+            // Convert signal to complex and pad
+            let mut signal_padded: Vec<Complex<f64>> = signal
+                .iter()
+                .map(|&x| Complex::new(x, 0.0))
+                .collect();
+            signal_padded.resize(fft_size, Complex::new(0.0, 0.0));
 
-            // Reuse psi_padded buffer (sample int_psi at scaled indices, reversed)
-            buffers.psi_padded.clear();
-            buffers.psi_padded.reserve(fft_size);
-            for &idx in buffers.j_indices.iter().rev() {
-                let c = int_psi[idx];
-                buffers.psi_padded.push(Complex::new(c.re, c.im));
-            }
-            buffers.psi_padded.resize(fft_size, Complex::new(0.0, 0.0));
+            // Pad wavelet
+            let mut psi_padded: Vec<Complex<f64>> = int_psi_scale
+                .iter()
+                .map(|&c| Complex::new(c.re, c.im))
+                .collect();
+            psi_padded.resize(fft_size, Complex::new(0.0, 0.0));
 
             // Get FFT plans (from cache or create new)
             let (fft, ifft) = if let Some(cache) = fft_cache {
+                // Use cached plans
                 if let Some((fft_plan, ifft_plan)) = cache.get(&fft_size) {
                     (Arc::clone(fft_plan), Arc::clone(ifft_plan))
                 } else {
+                    // Fallback: create on-demand if size not in cache
                     let mut planner = FftPlanner::new();
-                    (planner.plan_fft_forward(fft_size), planner.plan_fft_inverse(fft_size))
+                    let fft_plan = planner.plan_fft_forward(fft_size);
+                    let ifft_plan = planner.plan_fft_inverse(fft_size);
+                    (fft_plan, ifft_plan)
                 }
             } else {
+                // No cache provided, create plans on-demand
                 let mut planner = FftPlanner::new();
-                (planner.plan_fft_forward(fft_size), planner.plan_fft_inverse(fft_size))
+                let fft_plan = planner.plan_fft_forward(fft_size);
+                let ifft_plan = planner.plan_fft_inverse(fft_size);
+                (fft_plan, ifft_plan)
             };
 
-            // Ensure scratch buffers are large enough
-            let scratch_fwd_len = fft.get_inplace_scratch_len();
-            let scratch_inv_len = ifft.get_inplace_scratch_len();
-            if buffers.scratch_fwd.len() < scratch_fwd_len {
-                buffers.scratch_fwd.resize(scratch_fwd_len, Complex::new(0.0, 0.0));
-            }
-            if buffers.scratch_inv.len() < scratch_inv_len {
-                buffers.scratch_inv.resize(scratch_inv_len, Complex::new(0.0, 0.0));
-            }
+            // FFT
+            fft.process(&mut signal_padded);
+            fft.process(&mut psi_padded);
 
-            // FFT with scratch buffers
-            fft.process_with_scratch(&mut buffers.signal_padded, &mut buffers.scratch_fwd);
-            fft.process_with_scratch(&mut buffers.psi_padded, &mut buffers.scratch_fwd);
+            // Multiply in frequency domain
+            let mut product: Vec<Complex<f64>> = signal_padded
+                .iter()
+                .zip(psi_padded.iter())
+                .map(|(&s, &p)| s * p)
+                .collect();
 
-            // Multiply in frequency domain (in-place in signal_padded)
-            for (s, p) in buffers.signal_padded.iter_mut().zip(buffers.psi_padded.iter()) {
-                *s = *s * *p;
-            }
-
-            // IFFT with scratch buffer
-            ifft.process_with_scratch(&mut buffers.signal_padded, &mut buffers.scratch_inv);
+            // IFFT
+            ifft.process(&mut product);
 
             // Normalize and extract relevant portion
             let norm = 1.0 / (fft_size as f64);
-            buffers.signal_padded
+            product
                 .iter()
                 .take(conv_len)
                 .map(|&c| Complex64::new(c.re * norm, c.im * norm))
                 .collect()
         }
         CwtMethod::Conv => {
-            // Direct convolution - build int_psi_scale from j_indices
-            let int_psi_scale: Array1<Complex64> = buffers.j_indices
-                .iter()
-                .rev()
-                .map(|&idx| int_psi[idx])
-                .collect();
+            // Direct convolution (simpler but slower)
             convolve_direct(signal, &int_psi_scale)
         }
     };
 
     // Step 3: Differentiate and scale (pywt line 182)
+    // coef = -sqrt(scale) * diff(conv)
+    // Optimization: use ndarray slice operations for vectorization
     let scale_factor = -(scale.sqrt());
     let coef = (&conv.slice(s![1..]) - &conv.slice(s![..-1])) * scale_factor;
 
@@ -184,21 +174,6 @@ fn cwt_single_scale_with_buffers(
     } else {
         coef
     }
-}
-
-/// Compute CWT for a single scale (public API without buffer reuse)
-///
-/// This is kept for backward compatibility and non-parallel use cases.
-pub fn cwt_single_scale(
-    signal: &Array1<f64>,
-    scale: f64,
-    int_psi: &Array1<Complex64>,
-    x: &Array1<f64>,
-    method: CwtMethod,
-    fft_cache: Option<&FftPlanCache>,
-) -> Array1<Complex64> {
-    let mut buffers = CwtBuffers::default();
-    cwt_single_scale_with_buffers(signal, scale, int_psi, x, method, fft_cache, &mut buffers)
 }
 
 /// Direct convolution (for reference, slower than FFT)
@@ -305,29 +280,17 @@ pub fn cwt_multi_scale(
     };
 
     // Parallel computation across scales (preserving order)
-    // Optimization: use par_iter() with thread-local buffers to reduce allocations
-    let scales_vec: Vec<f64> = scales.iter().cloned().collect();
-
-    // Use thread_local! macro for buffer reuse across iterations within same thread
-    thread_local! {
-        static BUFFERS: RefCell<CwtBuffers> = RefCell::new(CwtBuffers::default());
-    }
-
-    let rows: Vec<(usize, Array1<Complex64>)> = scales_vec
-        .par_iter()
+    let rows: Vec<(usize, Array1<Complex64>)> = scales
+        .iter()
         .enumerate()
+        .par_bridge()
         .map(|(i, &scale)| {
             if verbose && i % 10 == 0 && n_scales > 20 {
+                // Progress indication for large jobs (dev mode only)
                 eprintln!("Computing CWT: scale {}/{}", i + 1, n_scales);
             }
-            // Get thread-local buffers
-            BUFFERS.with(|buffers_cell| {
-                let mut buffers = buffers_cell.borrow_mut();
-                let row = cwt_single_scale_with_buffers(
-                    signal, scale, &int_psi, &x, method, fft_cache.as_ref(), &mut buffers
-                );
-                (i, row)
-            })
+            let row = cwt_single_scale(signal, scale, &int_psi, &x, method, fft_cache.as_ref());
+            (i, row)  // Return index with result to preserve order
         })
         .collect();
 

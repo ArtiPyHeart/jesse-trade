@@ -1,6 +1,6 @@
 [package]
 name = "rust-indicators"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 authors = ["Jesse Trade Contributors"]
 description = "High-performance Rust indicators for Jesse Trade (VMD, NRBO, CWT, FTI)"
