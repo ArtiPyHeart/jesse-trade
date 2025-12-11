@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from src.features.feature_selection.rfcq_selector import RFCQSelector
+from src.features.feature_selection.rf_importance_selector import RFImportanceSelector
 from src.models.deep_ssm import DeepSSMConfig, DeepSSM
 from src.models.lgssm import LGSSMConfig, LGSSM
 from .features import ALL_FEATS
@@ -46,7 +46,7 @@ class FeatureSelector:
 
     @property
     def selector(self):
-        return RFCQSelector(verbose=True)
+        return RFImportanceSelector(verbose=True)
 
     def _compute_data_hash(self, df: pd.DataFrame) -> str:
         """基于内容的快速哈希，用于可靠的缓存检测"""

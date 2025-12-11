@@ -3,10 +3,12 @@ import gc
 import os
 from typing import List, Optional, Union
 
-import lightgbm as lgb
+import joblib
 import numba as nb
 import numpy as np
 import pandas as pd
+from lightgbm import LGBMClassifier, LGBMRegressor
+from sklearn.model_selection import GridSearchCV
 from tqdm.auto import tqdm
 
 from src.utils.drop_na import drop_na_and_align_x_and_y
@@ -153,112 +155,102 @@ class RFCQSelector:
     def _calculate_relevance(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """
         计算特征与目标的相关性（使用随机森林特征重要性）
-
-        使用 LightGBM 原生 CV 替代 GridSearchCV，优势：
-        - 复用 binning 跨 fold（显著加速）
-        - 支持 early_stopping 自动找最优迭代次数
-        - 避免 sklearn 的额外开销
         """
-        # 使用 float32 减少内存占用
+        # 使用 float32 减少内存占用，对 LightGBM 精度影响可忽略
         X_values = np.asarray(X.values, dtype=np.float32, order="C")
         y_values = y.values
 
         # 自动检测任务类型
         if self.task_type == "auto":
             unique_values = len(np.unique(y_values))
+            # 如果唯一值数量小于5或者比样本数的1%还少，视为分类任务
             is_classification = unique_values < min(5, len(y_values) * 0.01)
         else:
             is_classification = self.task_type == "classification"
 
-        # 基础参数（随机森林模式）
-        base_params = {
-            "boosting_type": "rf",
-            "num_leaves": 31,
-            "subsample": 0.632,
-            "subsample_freq": 1,
-            "colsample_bytree": 0.7,
-            "random_state": self.random_state,
-            "n_jobs": self.n_jobs,
-            "verbose": -1,
-            "max_bin": 63,
-            "bin_construct_sample_cnt": min(50000, len(y_values)),
-        }
+        # 确定scoring（如果在构造时未设置）
+        if self.scoring is None:
+            scoring = "roc_auc" if is_classification else "neg_root_mean_squared_error"
+        else:
+            scoring = self.scoring
 
-        # 分类/回归特定参数
+        # 根据任务类型创建模型（使用LightGBM随机森林模式）
         if is_classification:
-            base_params["objective"] = "binary"
-            base_params["is_unbalance"] = True
-            base_params["metric"] = "auc"
-            metric = "auc"
+            model = LGBMClassifier(
+                boosting_type="rf",  # 启用随机森林模式
+                n_estimators=100,
+                num_leaves=31,  # 默认值，可被GridSearchCV覆盖
+                subsample=0.632,  # RF bootstrap采样率
+                subsample_freq=1,  # 每棵树都采样
+                colsample_bytree=0.7,  # 特征子采样: 加速训练并增加树的多样性(标准RF做法)
+                importance_type="gain",  # 使用增益而非分裂次数作为重要性指标
+                class_weight="balanced",
+                random_state=self.random_state,
+                n_jobs=self.n_jobs,
+                verbose=-1,  # 禁用LightGBM内部日志
+                # M4 Pro性能优化
+                max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
+                histogram_pool_size=512,  # 限制histogram缓存大小(MB)
+                # 内存优化
+                free_raw_data=True,  # 训练后释放原始数据
+            )
         else:
-            base_params["objective"] = "regression"
-            base_params["metric"] = "rmse"
-            metric = "rmse"
-
-        # 创建 LightGBM Dataset
-        lgb_train = lgb.Dataset(X_values, label=y_values, free_raw_data=False)
-
-        # 获取要测试的 num_leaves 值
-        if self.param_grid and "num_leaves" in self.param_grid:
-            num_leaves_list = self.param_grid["num_leaves"]
-        else:
-            num_leaves_list = [31, 63]
-
-        # 对每个 num_leaves 值运行 CV
-        best_score = -np.inf if is_classification else np.inf
-        best_cvbooster = None
-        first_cvbooster = None
-
-        for num_leaves in num_leaves_list:
-            params = base_params.copy()
-            params["num_leaves"] = num_leaves
-
-            cv_result = lgb.cv(
-                params,
-                lgb_train,
-                num_boost_round=100,
-                nfold=self.cv,
-                stratified=is_classification,
-                seed=self.random_state if self.random_state else 0,
-                callbacks=[
-                    lgb.early_stopping(stopping_rounds=20, verbose=False),
-                    lgb.log_evaluation(period=0),
-                ],
-                return_cvbooster=True,
+            model = LGBMRegressor(
+                boosting_type="rf",  # 启用随机森林模式
+                n_estimators=100,
+                num_leaves=31,  # 默认值，可被GridSearchCV覆盖
+                subsample=0.632,  # RF bootstrap采样率
+                subsample_freq=1,  # 每棵树都采样
+                colsample_bytree=0.7,  # 特征子采样: 加速训练并增加树的多样性(标准RF做法)
+                importance_type="gain",  # 使用增益而非分裂次数作为重要性指标
+                random_state=self.random_state,
+                n_jobs=self.n_jobs,
+                verbose=-1,  # 禁用LightGBM内部日志
+                # M4 Pro性能优化
+                max_bin=63,  # 减少bin数量，在Apple Silicon上显著提速
+                histogram_pool_size=512,  # 限制histogram缓存大小(MB)
+                # 内存优化
+                free_raw_data=True,  # 训练后释放原始数据
             )
 
-            score_key = f"valid {metric}-mean"
-            if score_key in cv_result:
-                if first_cvbooster is None:
-                    first_cvbooster = cv_result["cvbooster"]
+        # 设置参数网格
+        if self.param_grid:
+            param_grid = self.param_grid
+        else:
+            # 使用num_leaves替代max_depth，对应关系: 2^(depth+1)-1
+            # 减少网格搜索空间以提速
+            param_grid = {"num_leaves": [31, 63]}  # 对应max_depth 3,4
 
-                final_score = cv_result[score_key][-1]
-                is_better = (
-                    (final_score > best_score)
-                    if is_classification
-                    else (final_score < best_score)
-                )
-
-                if is_better:
-                    best_score = final_score
-                    best_cvbooster = cv_result["cvbooster"]
-
-        # 确保有可用的 cvbooster
-        if best_cvbooster is None:
-            best_cvbooster = first_cvbooster
-
-        # 从 CV 模型聚合 feature_importance
-        importances = np.mean(
-            [
-                booster.feature_importance(importance_type="gain")
-                for booster in best_cvbooster.boosters
-            ],
-            axis=0,
+        # 网格搜索（内存优化配置）
+        cv_model = GridSearchCV(
+            model,
+            cv=self.cv,
+            scoring=scoring,
+            param_grid=param_grid,
+            refit=False,  # 不自动 refit，手动控制以便更好地清理内存
+            return_train_score=False,  # 不保留训练分数，节省内存
+            n_jobs=1,  # GridSearchCV 层不并行，LightGBM 内部已并行
+            pre_dispatch=2,  # 减少预调度，降低内存占用
         )
-        relevance = importances.astype(np.float64)
 
-        # 清理资源
-        del lgb_train, best_cvbooster
+        # 使用 threading 后端避免数据复制
+        with joblib.parallel_backend("threading"):
+            cv_model.fit(X_values, y_values)
+
+        # 提取最佳参数后立即清理 GridSearchCV
+        best_params = cv_model.best_params_
+        if hasattr(cv_model, "cv_results_"):
+            del cv_model.cv_results_
+        del cv_model
+        gc.collect()
+
+        # 手动用最佳参数 refit，获取 feature_importances_
+        final_model = model.set_params(**best_params)
+        final_model.fit(X_values, y_values)
+        relevance = final_model.feature_importances_.copy()
+
+        # 清理 LightGBM 模型资源
+        del final_model
         gc.collect()
 
         return relevance
