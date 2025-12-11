@@ -468,6 +468,6 @@ class SimpleFeatureCalculator:
             f"Memory: {memory_str}"
         )
 
-        # 清除当前行并打印
-        sys.stdout.write(f"\r{progress:<80}")
+        # 清除当前行并打印（\033[K 清除从光标到行尾的所有内容）
+        sys.stdout.write(f"\r{progress}\033[K")
         sys.stdout.flush()
