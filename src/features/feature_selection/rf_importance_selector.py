@@ -127,46 +127,48 @@ class RFImportanceSelector:
             scoring = self.scoring
 
         # 根据任务类型创建模型（使用 LightGBM 随机森林模式）
-        # 参数优化方向：最高精度（参考 https://lightgbm.readthedocs.io/en/latest/Parameters-Tuning.html）
+        # 参数平衡：在精度和速度之间取得折中
         if is_classification:
             model = LGBMClassifier(
                 boosting_type="rf",
-                n_estimators=200,  # 更多树提高稳定性
+                n_estimators=150,  # 适度减少树数量（200→150）
                 num_leaves=31,  # 由 GridSearchCV 调优
                 subsample=0.632,  # RF bootstrap 采样率（官方推荐）
                 subsample_freq=1,
-                colsample_bytree=0.8,  # 特征子采样
+                colsample_bytree=0.75,  # 特征子采样（0.8→0.75）
                 importance_type="gain",
                 class_weight="balanced",
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,
-                max_bin=255,  # 默认值，更高精度
+                max_bin=127,  # 折中值（255→127），显著提速
                 min_data_in_leaf=20,  # 防止过拟合
+                histogram_pool_size=512,  # 限制 histogram 缓存大小
                 free_raw_data=True,
             )
         else:
             model = LGBMRegressor(
                 boosting_type="rf",
-                n_estimators=200,  # 更多树提高稳定性
+                n_estimators=150,  # 适度减少树数量（200→150）
                 num_leaves=31,  # 由 GridSearchCV 调优
                 subsample=0.632,  # RF bootstrap 采样率（官方推荐）
                 subsample_freq=1,
-                colsample_bytree=0.8,  # 特征子采样
+                colsample_bytree=0.75,  # 特征子采样（0.8→0.75）
                 importance_type="gain",
                 random_state=self.random_state,
                 n_jobs=self.n_jobs,
                 verbose=-1,
-                max_bin=255,  # 默认值，更高精度
+                max_bin=127,  # 折中值（255→127），显著提速
                 min_data_in_leaf=20,  # 防止过拟合
+                histogram_pool_size=512,  # 限制 histogram 缓存大小
                 free_raw_data=True,
             )
 
-        # 设置参数网格（扩展搜索空间以获得更高精度）
+        # 设置参数网格（适度缩减搜索空间）
         if self.param_grid:
             param_grid = self.param_grid
         else:
-            param_grid = {"num_leaves": [31, 63, 127, 255]}
+            param_grid = {"num_leaves": [31, 63, 127]}
 
         # 网格搜索（refit=True 自动用最佳参数在全量数据上训练）
         cv_model = GridSearchCV(
