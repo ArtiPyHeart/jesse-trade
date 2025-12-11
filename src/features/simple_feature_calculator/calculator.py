@@ -7,6 +7,8 @@
 3. 严格的输出验证
 """
 
+import sys
+import time
 from typing import Dict, List, Union, Optional, Tuple
 
 import numpy as np
@@ -24,16 +26,19 @@ class SimpleFeatureCalculator:
         self,
         registry: Optional[SimpleFeatureRegistry] = None,
         load_buildin: bool = True,
+        verbose: bool = False,
     ):
         """
         初始化计算器
 
         Args:
             registry: 特征注册中心，如果不提供则使用全局注册中心
+            verbose: 是否显示计算进度和内存占用
         """
         self.registry = registry or get_global_registry()
         self.validator = FeatureOutputValidator()
         self.transform_chain = TransformChain()
+        self.verbose = verbose
 
         # 状态变量
         self.candles: Optional[np.ndarray] = None
@@ -79,8 +84,19 @@ class SimpleFeatureCalculator:
             raise RuntimeError("Please call load() first to load candles data")
 
         result = {}
-        for feature_name in features:
+        total = len(features)
+
+        for i, feature_name in enumerate(features, 1):
+            start_time = time.perf_counter()
             result[feature_name] = self._compute_feature(feature_name)
+            elapsed = time.perf_counter() - start_time
+
+            if self.verbose:
+                self._print_progress(feature_name, i, total, elapsed)
+
+        # 计算完成后换行（避免后续输出覆盖进度条）
+        if self.verbose:
+            print()
 
         return result
 
@@ -415,3 +431,43 @@ class SimpleFeatureCalculator:
     def clear_cache(self) -> None:
         """清空缓存"""
         self.cache.clear()
+
+    def _get_cache_memory_bytes(self) -> int:
+        """计算缓存中所有特征数组的总内存占用（字节）"""
+        total = 0
+        for value in self.cache.values():
+            if isinstance(value, np.ndarray):
+                total += value.nbytes
+            elif isinstance(value, list):
+                # raw_result 是列表
+                for arr in value:
+                    if isinstance(arr, np.ndarray):
+                        total += arr.nbytes
+        return total
+
+    def _format_memory_size(self, bytes_size: int) -> str:
+        """将字节数格式化为人类可读的形式"""
+        for unit in ["B", "KB", "MB", "GB"]:
+            if bytes_size < 1024:
+                return f"{bytes_size:.2f} {unit}"
+            bytes_size /= 1024
+        return f"{bytes_size:.2f} TB"
+
+    def _print_progress(
+        self,
+        feature_name: str,
+        current: int,
+        total: int,
+        elapsed_time: float,
+    ) -> None:
+        """打印进度信息（同一行刷新）"""
+        memory = self._get_cache_memory_bytes()
+        memory_str = self._format_memory_size(memory)
+        progress = (
+            f"[{current}/{total}] {feature_name}: {elapsed_time:.3f}s | "
+            f"Memory: {memory_str}"
+        )
+
+        # 清除当前行并打印
+        sys.stdout.write(f"\r{progress:<80}")
+        sys.stdout.flush()

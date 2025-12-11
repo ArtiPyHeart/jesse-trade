@@ -107,7 +107,7 @@ ALL_FEATS = feats + phent_feats + lag_feats
 
 class FeatureLoader:
     def __init__(self, candles: np.ndarray):
-        self.feature_calculator_seq = SimpleFeatureCalculator()
+        self.feature_calculator_seq = SimpleFeatureCalculator(verbose=True)
         self.feature_calculator_seq.load(candles, sequential=True)
 
         self._features = {}
@@ -147,9 +147,9 @@ class FeatureLoader:
         df_result = df.iloc[start_idx:end_idx].copy()
         label_result = label[max_na_len:]
 
-        assert len(df_result) == len(label_result), (
-            f"Length mismatch: df={len(df_result)}, label={len(label_result)}"
-        )
+        assert len(df_result) == len(
+            label_result
+        ), f"Length mismatch: df={len(df_result)}, label={len(label_result)}"
 
         return df_result, label_result
 
