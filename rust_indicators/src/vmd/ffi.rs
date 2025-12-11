@@ -57,6 +57,54 @@ pub fn vmd_py<'py>(
     Ok((u_py, u_hat_py, omega_py))
 }
 
+/// VMD 批量处理 Python 接口（Rayon 并行）
+///
+/// 一次调用处理多个信号窗口，使用多线程并行加速。
+///
+/// # Arguments
+/// * `signals` - 输入信号列表 (list of numpy arrays)
+/// * `alpha` - 数据保真度约束参数 (default: 2000)
+/// * `tau` - 对偶上升时间步长 (default: 0.0)
+/// * `k` - 模态数量 (default: 5)
+/// * `dc` - 第一个模态是否固定在 DC (default: False)
+/// * `init` - omega 初始化方式 (default: 1)
+/// * `tol` - 收敛容差 (default: 1e-7)
+///
+/// # Returns
+/// List of u arrays: 每个窗口的分解模态 (K, N)
+#[pyfunction]
+#[pyo3(signature = (signals, alpha=2000.0, tau=0.0, k=5, dc=false, init=1, tol=1e-7))]
+pub fn vmd_batch_py<'py>(
+    py: Python<'py>,
+    signals: Vec<PyReadonlyArray1<f64>>,
+    alpha: f64,
+    tau: f64,
+    k: usize,
+    dc: bool,
+    init: usize,
+    tol: f64,
+) -> PyResult<Vec<Bound<'py, PyArray2<f64>>>> {
+    // 转换所有输入信号
+    let signals_owned: Vec<Array1<f64>> = signals
+        .iter()
+        .map(|s| Array1::from_iter(s.as_array().iter().copied()))
+        .collect();
+
+    // 释放 GIL 并行处理 (PyO3 0.27+: allow_threads renamed to detach)
+    let results = py.detach(|| {
+        core::vmd_batch(&signals_owned, alpha, tau, k, dc, init, tol)
+    });
+
+    // 转换结果
+    results
+        .into_iter()
+        .map(|r| {
+            r.map(|u| u.into_pyarray(py))
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("VMD error: {}", e)))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

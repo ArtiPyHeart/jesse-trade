@@ -2,15 +2,60 @@
 //!
 //! FFT/IFFT 辅助函数和数组操作
 
+use lazy_static::lazy_static;
 use ndarray::{Array1, ArrayView1};
 use num_complex::Complex64;
 use rustfft::{Fft, FftPlanner};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// FFT Plan Cache type
 /// Arc allows zero-cost sharing across threads
 pub type FftPlanCache = Arc<HashMap<usize, (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>)>>;
+
+// ============================================================
+// 全局 FFT Plan 缓存（跨调用复用，避免重复规划）
+// ============================================================
+
+lazy_static! {
+    /// 全局 FFT Plan 缓存
+    /// - Key: FFT 大小
+    /// - Value: (forward_plan, inverse_plan)
+    static ref GLOBAL_FFT_CACHE: RwLock<HashMap<usize, (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>)>>
+        = RwLock::new(HashMap::new());
+}
+
+/// 获取或创建指定大小的 FFT Plan（全局缓存）
+///
+/// 使用读写锁实现高效并发：
+/// - 缓存命中时仅需读锁（多读者并发）
+/// - 缓存未命中时升级为写锁创建
+pub fn get_global_fft_plan(size: usize) -> (Arc<dyn Fft<f64>>, Arc<dyn Fft<f64>>) {
+    // 先尝试读锁（快速路径）
+    {
+        let cache = GLOBAL_FFT_CACHE.read().unwrap();
+        if let Some(plans) = cache.get(&size) {
+            return (Arc::clone(&plans.0), Arc::clone(&plans.1));
+        }
+    }
+
+    // 缓存未命中，获取写锁创建
+    let mut cache = GLOBAL_FFT_CACHE.write().unwrap();
+
+    // 双重检查（另一个线程可能已经创建）
+    if let Some(plans) = cache.get(&size) {
+        return (Arc::clone(&plans.0), Arc::clone(&plans.1));
+    }
+
+    // 创建新的 FFT Plan
+    let mut planner = FftPlanner::new();
+    let forward = planner.plan_fft_forward(size);
+    let inverse = planner.plan_fft_inverse(size);
+    let plans = (forward, inverse);
+
+    cache.insert(size, (Arc::clone(&plans.0), Arc::clone(&plans.1)));
+    plans
+}
 
 /// FFT Shift (对应 numpy.fft.fftshift)
 ///
@@ -66,23 +111,21 @@ pub fn ifftshift<T: Clone>(arr: &ArrayView1<T>) -> Array1<T> {
 ///
 /// # Arguments
 /// * `input` - Input array
-/// * `fft_cache` - Optional FFT plan cache for performance
+/// * `fft_cache` - Optional FFT plan cache for performance (falls back to global cache)
 pub fn fft(input: &Array1<Complex64>, fft_cache: Option<&FftPlanCache>) -> Array1<Complex64> {
     let n = input.len();
 
-    // Get FFT plan (from cache or create new)
+    // Get FFT plan (from local cache → global cache)
     let fft_plan = if let Some(cache) = fft_cache {
         if let Some((fft_plan, _)) = cache.get(&n) {
             Arc::clone(fft_plan)
         } else {
-            // Fallback: create on-demand if size not in cache
-            let mut planner = FftPlanner::new();
-            planner.plan_fft_forward(n)
+            // Fallback to global cache
+            get_global_fft_plan(n).0
         }
     } else {
-        // No cache provided, create plan on-demand
-        let mut planner = FftPlanner::new();
-        planner.plan_fft_forward(n)
+        // Use global cache
+        get_global_fft_plan(n).0
     };
 
     let mut buffer = input.to_vec();
@@ -95,23 +138,21 @@ pub fn fft(input: &Array1<Complex64>, fft_cache: Option<&FftPlanCache>) -> Array
 ///
 /// # Arguments
 /// * `input` - Input array
-/// * `fft_cache` - Optional FFT plan cache for performance
+/// * `fft_cache` - Optional FFT plan cache for performance (falls back to global cache)
 pub fn ifft(input: &Array1<Complex64>, fft_cache: Option<&FftPlanCache>) -> Array1<Complex64> {
     let n = input.len();
 
-    // Get IFFT plan (from cache or create new)
+    // Get IFFT plan (from local cache → global cache)
     let ifft_plan = if let Some(cache) = fft_cache {
         if let Some((_, ifft_plan)) = cache.get(&n) {
             Arc::clone(ifft_plan)
         } else {
-            // Fallback: create on-demand if size not in cache
-            let mut planner = FftPlanner::new();
-            planner.plan_fft_inverse(n)
+            // Fallback to global cache
+            get_global_fft_plan(n).1
         }
     } else {
-        // No cache provided, create plan on-demand
-        let mut planner = FftPlanner::new();
-        planner.plan_fft_inverse(n)
+        // Use global cache
+        get_global_fft_plan(n).1
     };
 
     let mut buffer = input.to_vec();

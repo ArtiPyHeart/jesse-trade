@@ -5,3 +5,4 @@ mod ffi;
 
 pub use core::*;
 pub use ffi::nrbo_py;
+pub use ffi::nrbo_batch_py;

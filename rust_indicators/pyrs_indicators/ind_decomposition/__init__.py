@@ -3,6 +3,6 @@
 提供基于 Rust 的高性能信号分解算法。
 """
 
-from .vmd import vmd
+from .vmd import vmd, vmd_batch
 
-__all__ = ["vmd"]
+__all__ = ["vmd", "vmd_batch"]

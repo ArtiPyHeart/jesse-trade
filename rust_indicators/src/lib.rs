@@ -15,9 +15,11 @@ use pyo3::prelude::*;
 fn _rust_indicators(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // 注册 VMD 函数
     m.add_function(wrap_pyfunction!(vmd::vmd_py, m)?)?;
+    m.add_function(wrap_pyfunction!(vmd::vmd_batch_py, m)?)?;
 
     // 注册 NRBO 函数
     m.add_function(wrap_pyfunction!(nrbo::nrbo_py, m)?)?;
+    m.add_function(wrap_pyfunction!(nrbo::nrbo_batch_py, m)?)?;
 
     // 注册 CWT 函数
     m.add_function(wrap_pyfunction!(cwt::cwt_py, m)?)?;

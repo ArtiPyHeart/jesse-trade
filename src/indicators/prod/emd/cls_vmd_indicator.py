@@ -1,8 +1,8 @@
 import numpy as np
 from jesse.helpers import get_candle_source
 
-from pyrs_indicators.ind_decomposition import vmd
-from pyrs_indicators._core import _rust_nrbo  # NRBO 内部使用
+from pyrs_indicators.ind_decomposition import vmd, vmd_batch
+from pyrs_indicators._core import _rust_nrbo, _rust_nrbo_batch  # NRBO 内部使用
 
 from src.indicators.prod._indicator_base._cls_ind import IndicatorBase
 
@@ -16,19 +16,23 @@ TOL = 1e-7  ### 收敛容忍度
 
 def _calc_vmd_nrbo(src: np.ndarray):
     """
-    Calculate VMD + NRBO using Rust implementation.
+    Calculate VMD + NRBO using Rust implementation (single window).
 
     Rust version provides 50-100x speedup over Python/Numba implementation
     while maintaining numerical alignment (error < 1e-10).
     """
-    # 使用新的 Python 接口
-    u, u_hat, omega = vmd(
-        src, alpha=ALPHA, tau=TAU, K=K, DC=bool(DC), init=INIT, tol=TOL, return_full=True
-    )
+    u = vmd(src, alpha=ALPHA, tau=TAU, K=K, DC=bool(DC), init=INIT, tol=TOL)
     u = u[2:]  # Skip first 2 modes
-    u_nrbo = np.zeros_like(u)
-    for i in range(u.shape[0]):
-        u_nrbo[i] = _rust_nrbo(u[i], max_iter=10, tol=1e-6)
+    # 使用批量 NRBO API（Rayon 并行）
+    u_nrbo = _rust_nrbo_batch(u, max_iter=10, tol=1e-6)
+    return u_nrbo.T
+
+
+def _apply_nrbo(u: np.ndarray) -> np.ndarray:
+    """Apply NRBO to VMD modes (skip first 2 modes) using batch API."""
+    u = u[2:]  # Skip first 2 modes
+    # 使用批量 NRBO API（Rayon 并行）
+    u_nrbo = _rust_nrbo_batch(u, max_iter=10, tol=1e-6)
     return u_nrbo.T
 
 
@@ -51,11 +55,18 @@ class VMD_NRBO(IndicatorBase):
         self.raw_result.append(single_res)
 
     def _sequential_process(self):
-        src_with_window = [
+        # Collect all windows
+        windows = [
             self.src[idx - self.window : idx]
             for idx in range(self.window, len(self.src) + 1)
         ]
-        # Rust implementation is fast enough without parallel processing
-        res = [_calc_vmd_nrbo(i) for i in src_with_window]
+
+        # Batch VMD processing (Rayon parallel, ~4x speedup)
+        vmd_results = vmd_batch(
+            windows, alpha=ALPHA, tau=TAU, K=K, DC=bool(DC), init=INIT, tol=TOL
+        )
+
+        # Apply NRBO to each result
+        res = [_apply_nrbo(u) for u in vmd_results]
 
         self.raw_result.extend(res)

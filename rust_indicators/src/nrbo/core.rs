@@ -147,6 +147,34 @@ pub fn nrbo(imf: &Array1<f64>, max_iter: usize, tol: f64) -> Array1<f64> {
     imf_copy
 }
 
+// ============================================================
+// 批量处理 API（Rayon 并行）
+// ============================================================
+
+use rayon::prelude::*;
+
+/// NRBO 批量处理（Rayon 并行）
+///
+/// 一次调用处理多个 IMF，使用多线程并行加速。
+/// 相比 Python 循环调用单个 nrbo()，显著减少 Python→Rust 调用开销。
+///
+/// # Arguments
+/// * `imfs` - 输入 IMF 数组列表（通常是 VMD 分解后的各模态）
+/// * `max_iter` - 最大迭代次数 (default: 10)
+/// * `tol` - 收敛容差 (default: 1e-6)
+///
+/// # Returns
+/// 每个 IMF 的优化结果
+pub fn nrbo_batch(
+    imfs: &[Array1<f64>],
+    max_iter: usize,
+    tol: f64,
+) -> Vec<Array1<f64>> {
+    imfs.par_iter()
+        .map(|imf| nrbo(imf, max_iter, tol))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

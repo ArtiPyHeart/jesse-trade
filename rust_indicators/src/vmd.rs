@@ -6,3 +6,4 @@ mod utils;
 
 pub use core::*;
 pub use ffi::vmd_py;
+pub use ffi::vmd_batch_py;

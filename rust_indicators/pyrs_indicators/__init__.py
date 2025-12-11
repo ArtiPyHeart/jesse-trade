@@ -30,7 +30,7 @@
 
 版本信息
 --------
-Version: 0.6.0
+Version: 0.6.1
 Dependencies: PyO3 0.27.1, numpy 0.27.0
 Python Support: 3.8+
 """
@@ -43,7 +43,7 @@ from . import ind_trend
 # 导入工具
 from ._core import HAS_RUST
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 __all__ = [
     # 子包
     "ind_wavelets",
