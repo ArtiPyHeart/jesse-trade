@@ -507,17 +507,31 @@ class DeepSSM:
         return self
 
     def transform(
-        self, X: Union[np.ndarray, pd.DataFrame, torch.Tensor], use_kalman: bool = True
-    ) -> np.ndarray:
+        self,
+        X: Union[np.ndarray, pd.DataFrame, torch.Tensor],
+        use_kalman: bool = True,
+        return_final_state: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, Dict]]:
         """
         Transform data to extract latent features.
 
         Args:
             X: Input data [n_samples, n_features] or [n_timesteps, n_features]
             use_kalman: Whether to use Kalman filtering for state estimation
+            return_final_state: Whether to return the final internal state
+                               (useful for syncing with real-time processor)
+                               Only works when use_kalman=True
 
         Returns:
-            Latent features [n_timesteps, state_dim]
+            If return_final_state=False:
+                Latent features [n_timesteps, state_dim]
+            If return_final_state=True:
+                Tuple of (states, final_state_dict) where final_state_dict contains:
+                - ekf_z: Final EKF state
+                - ekf_P: Final EKF covariance
+                - lstm_hidden: Final LSTM hidden state
+                - lstm_cell: Final LSTM cell state
+                - step_count: Number of steps processed
         """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
@@ -540,23 +554,40 @@ class DeepSSM:
             X_tensor = X_tensor.unsqueeze(0)
 
         if use_kalman:
-            return self._kalman_filter(X_tensor)
+            return self._kalman_filter(X_tensor, return_final_state=return_final_state)
         else:
             self.model.eval()
             with torch.no_grad():
                 output = self.model(X_tensor, return_all_states=True)
                 states = output["states"][0].cpu().numpy()
+            if return_final_state:
+                # Non-Kalman mode doesn't have state to sync
+                return states, None
             return states
 
-    def _kalman_filter(self, observations: torch.Tensor) -> np.ndarray:
+    def _kalman_filter(
+        self,
+        observations: torch.Tensor,
+        return_final_state: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, Dict]]:
         """
         Apply Extended Kalman Filter for state estimation.
 
         Args:
             observations: Observations tensor [1, time, obs_dim]
+            return_final_state: Whether to return the final internal state
+                               (useful for syncing with real-time processor)
 
         Returns:
-            Filtered states [time, state_dim]
+            If return_final_state=False:
+                Filtered states [time, state_dim]
+            If return_final_state=True:
+                Tuple of (states, final_state_dict) where final_state_dict contains:
+                - ekf_z: Final EKF state
+                - ekf_P: Final EKF covariance
+                - lstm_hidden: Final LSTM hidden state
+                - lstm_cell: Final LSTM cell state
+                - step_count: Number of steps processed
         """
         seq_len = observations.shape[1]
 
@@ -612,10 +643,12 @@ class DeepSSM:
 
                     H = compute_jacobian_numerical(obs_func, z_pred)
 
+                    # 观测输入维度应为 [1, obs_dim]，与 process_single 保持一致
+                    obs_input = observations[:, t, :]  # [1, obs_dim]
                     z, _ = ekf.update(
                         z_pred,
                         P_pred,
-                        observations[:, t, :].unsqueeze(0),
+                        obs_input,
                         obs_mean,
                         obs_cov,
                         H,
@@ -646,7 +679,19 @@ class DeepSSM:
                     fixed_states.append(s)
                 states = fixed_states
 
-        return np.array(states)
+        states_array = np.array(states)
+
+        if return_final_state:
+            final_state_dict = {
+                "ekf_z": ekf.z.clone(),
+                "ekf_P": ekf.P.clone(),
+                "lstm_hidden": lstm_hidden.clone(),
+                "lstm_cell": lstm_cell.clone(),
+                "step_count": seq_len,
+            }
+            return states_array, final_state_dict
+
+        return states_array
 
     def fit_transform(
         self,
@@ -868,8 +913,12 @@ class DeepSSMRealTime:
             if self.step_count == 0:
                 z = self.ekf.z
             else:
+                # 维度处理：与 _kalman_filter 保持一致
+                lstm_out_proc = lstm_out.squeeze(0) if lstm_out.dim() > 1 else lstm_out
+                ekf_z_proc = self.ekf.z.squeeze(0) if self.ekf.z.dim() > 1 else self.ekf.z
+
                 trans_mean, trans_log_var = self.model.get_transition_dist(
-                    lstm_out, self.ekf.z
+                    lstm_out_proc, ekf_z_proc
                 )
                 trans_cov = torch.diag(torch.exp(trans_log_var.squeeze(0)))
 
@@ -908,6 +957,36 @@ class DeepSSMRealTime:
         self.lstm_cell = torch.zeros_like(self.lstm_hidden)
 
         self.step_count = 0
+
+    def sync_state(self, final_state_dict: Dict) -> None:
+        """
+        Synchronize internal state from batch transform results.
+
+        This method allows syncing the real-time processor state with the
+        final state from a batch transform() call, ensuring continuity
+        between batch and streaming processing.
+
+        Args:
+            final_state_dict: Dictionary containing final state from transform():
+                - ekf_z: Final EKF state tensor
+                - ekf_P: Final EKF covariance tensor
+                - lstm_hidden: Final LSTM hidden state tensor
+                - lstm_cell: Final LSTM cell state tensor
+                - step_count: Number of steps processed
+        """
+        if final_state_dict is None:
+            raise ValueError("final_state_dict cannot be None")
+
+        # Sync EKF state
+        self.ekf.z = final_state_dict["ekf_z"].clone().to(self.device)
+        self.ekf.P = final_state_dict["ekf_P"].clone().to(self.device)
+
+        # Sync LSTM state
+        self.lstm_hidden = final_state_dict["lstm_hidden"].clone().to(self.device)
+        self.lstm_cell = final_state_dict["lstm_cell"].clone().to(self.device)
+
+        # Sync step count
+        self.step_count = final_state_dict["step_count"]
 
 
 if __name__ == "__main__":

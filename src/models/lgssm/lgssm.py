@@ -429,16 +429,26 @@ class LGSSM(nn.Module):
         self,
         X: Union[np.ndarray, torch.Tensor, pd.DataFrame],
         return_covariance: bool = False,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+        return_final_state: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Transform input observations to state features.
 
         Args:
             X: Input observations (T, obs_dim)
-            return_covariance: Whether to return covariance matrices
+            return_covariance: Whether to return covariance matrices for all timesteps
+            return_final_state: Whether to return the final state and covariance
+                               (useful for syncing with real-time inference)
 
         Returns:
-            states: Filtered states (T, state_dim)
-            covariances: (Optional) Filtered covariances (T, state_dim, state_dim)
+            If return_final_state=False and return_covariance=False:
+                states: Filtered states (T, state_dim)
+            If return_final_state=False and return_covariance=True:
+                states: Filtered states (T, state_dim)
+                covariances: Filtered covariances (T, state_dim, state_dim)
+            If return_final_state=True:
+                states: Filtered states (T, state_dim)
+                final_state: Final state (state_dim,)
+                final_covariance: Final covariance (state_dim, state_dim)
         """
         # Convert to tensor
         if isinstance(X, pd.DataFrame):
@@ -454,6 +464,12 @@ class LGSSM(nn.Module):
 
         # Convert to numpy
         states_np = states.cpu().numpy()
+
+        if return_final_state:
+            # Return states and the final state/covariance for state synchronization
+            final_state = states_np[-1].copy()
+            final_covariance = covariances[-1].cpu().numpy().copy()
+            return states_np, final_state, final_covariance
 
         if return_covariance:
             covariances_np = covariances.cpu().numpy()
@@ -634,6 +650,9 @@ class LGSSM(nn.Module):
 
         # Load history
         model.history = metadata.get("history", {"loss": [], "val_loss": []})
+
+        # Mark model as fitted
+        model._is_fitted = True
 
         model.eval()
         print(f"Model loaded from {path}.safetensors and {path}.json")

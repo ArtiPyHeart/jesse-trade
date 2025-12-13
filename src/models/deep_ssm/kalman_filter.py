@@ -163,10 +163,19 @@ class ExtendedKalmanFilter:
 
         try:
             K = P_pred @ H.T @ torch.linalg.inv(S)
-        except:
+        except (RuntimeError, torch.linalg.LinAlgError):
             K = P_pred @ H.T @ torch.linalg.pinv(S)
 
-        self.z = z_pred + (K @ innovation.unsqueeze(-1)).squeeze(-1).unsqueeze(0)
+        # 计算更新后的状态，确保维度为 [1, state_dim]
+        z_update = z_pred + (K @ innovation.unsqueeze(-1)).squeeze(-1)
+        # 确保 z_update 维度为 [1, state_dim]
+        if z_update.dim() == 1:
+            z_update = z_update.unsqueeze(0)
+        elif z_update.dim() > 2:
+            # 如果维度过多，squeeze 到 2 维
+            while z_update.dim() > 2:
+                z_update = z_update.squeeze(0)
+        self.z = z_update
         self.P = (self.I - K @ H) @ P_pred
 
         return self.z, self.P
