@@ -143,7 +143,9 @@ def create_pipeline_with_ssm(
                 config=deepssm_config, prefix="deep_ssm"
             )
         elif ssm_type == "lg_ssm":
-            ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config, prefix="lg_ssm")
+            ssm_processors["lg_ssm"] = LGSSMAdapter(
+                config=lgssm_config, prefix="lg_ssm"
+            )
 
     return FeaturePipeline(
         config=config,
@@ -587,7 +589,9 @@ class TestWithReductionConsistency:
         result = pipeline.fit_transform(realistic_candles, verbose=False)
 
         # 降维后列数应 <= max_latent_dim
-        max_latent_dim = config_with_reduction.dimension_reducer_config["max_latent_dim"]
+        max_latent_dim = config_with_reduction.dimension_reducer_config[
+            "max_latent_dim"
+        ]
         n_output_features = len(result.columns)
 
         assert n_output_features <= max_latent_dim, (
@@ -747,9 +751,9 @@ class TestSaveLoadRealtimeInference:
 
         # 原始 pipeline: warmup + inference
         pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
-        original_inference = pipeline.inference(
-            realistic_candles[: warmup_len + 1]
-        ).iloc[0].values
+        original_inference = (
+            pipeline.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             pipeline.save(tmpdir, "e2e_inference_test")
@@ -757,9 +761,9 @@ class TestSaveLoadRealtimeInference:
 
             # 加载后: warmup + inference
             loaded.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
-            restored_inference = loaded.inference(
-                realistic_candles[: warmup_len + 1]
-            ).iloc[0].values
+            restored_inference = (
+                loaded.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
+            )
 
             np.testing.assert_allclose(
                 original_inference,
@@ -795,9 +799,9 @@ class TestSaveLoadRealtimeInference:
 
         # 原始 pipeline
         pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
-        original_inference = pipeline.inference(
-            realistic_candles[: warmup_len + 1]
-        ).iloc[0].values
+        original_inference = (
+            pipeline.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # 保存（降维器自动保存）
@@ -808,9 +812,9 @@ class TestSaveLoadRealtimeInference:
 
             # 加载后
             loaded.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
-            restored_inference = loaded.inference(
-                realistic_candles[: warmup_len + 1]
-            ).iloc[0].values
+            restored_inference = (
+                loaded.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
+            )
 
             np.testing.assert_allclose(
                 original_inference,
@@ -906,8 +910,12 @@ class TestEdgeCases:
         deep_ssm_cols = [c for c in result.columns if c.startswith("deep_ssm_")]
         lg_ssm_cols = [c for c in result.columns if c.startswith("lg_ssm_")]
 
-        assert len(deep_ssm_cols) == 3, f"Expected 3 deep_ssm columns, got {len(deep_ssm_cols)}"
-        assert len(lg_ssm_cols) == 3, f"Expected 3 lg_ssm columns, got {len(lg_ssm_cols)}"
+        assert len(deep_ssm_cols) == 3, (
+            f"Expected 3 deep_ssm columns, got {len(deep_ssm_cols)}"
+        )
+        assert len(lg_ssm_cols) == 3, (
+            f"Expected 3 lg_ssm columns, got {len(lg_ssm_cols)}"
+        )
 
         # 有效数据部分两种 SSM 特征都应有值
         first_valid, _ = get_valid_data_range(result)
@@ -916,6 +924,467 @@ class TestEdgeCases:
         for col in deep_ssm_cols + lg_ssm_cols:
             assert not valid_result[col].isna().any(), f"NaN in {col}"
             assert np.isfinite(valid_result[col].values).all(), f"Inf in {col}"
+
+
+class TestFitTransformSemantics:
+    """验证 fit_transform 与 fit + transform 语义一致性"""
+
+    def test_fit_transform_equals_fit_then_transform_no_reduction(
+        self,
+        realistic_candles,
+        config_no_reduction,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证不降维时 fit_transform(X) 与 fit(X).transform(X) 结果一致
+
+        这是 sklearn 惯例的核心语义要求。
+        """
+        seed_everything(42)
+
+        # 方法1: fit_transform
+        pipeline1 = create_pipeline_with_ssm(
+            config_no_reduction, lgssm_config, deepssm_config
+        )
+        result1 = pipeline1.fit_transform(realistic_candles, verbose=False)
+
+        # 方法2: fit + transform（使用相同的随机种子）
+        seed_everything(42)
+        pipeline2 = create_pipeline_with_ssm(
+            config_no_reduction, lgssm_config, deepssm_config
+        )
+        pipeline2.fit(realistic_candles, verbose=False)
+        result2 = pipeline2.transform(realistic_candles)
+
+        # 列名应该完全一致
+        assert list(result1.columns) == list(result2.columns), (
+            f"Column mismatch:\n"
+            f"  fit_transform: {list(result1.columns)}\n"
+            f"  fit+transform: {list(result2.columns)}"
+        )
+
+        # 行数应该完全一致
+        assert len(result1) == len(result2), (
+            f"Row count mismatch: fit_transform={len(result1)}, fit+transform={len(result2)}"
+        )
+
+        # 有效数据范围内数值应该完全一致
+        first_valid, _ = get_valid_data_range(result1)
+
+        np.testing.assert_allclose(
+            result1.iloc[first_valid:].values,
+            result2.iloc[first_valid:].values,
+            rtol=PIPELINE_RTOL,
+            atol=PIPELINE_ATOL,
+            err_msg="fit_transform vs fit+transform should produce identical results",
+        )
+
+    def test_fit_transform_equals_fit_then_transform_with_reduction(
+        self,
+        realistic_candles,
+        config_with_reduction,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证降维时 fit_transform(X) 与 fit(X).transform(X) 结果一致
+        """
+        seed_everything(42)
+
+        # 方法1: fit_transform
+        pipeline1 = create_pipeline_with_ssm(
+            config_with_reduction, lgssm_config, deepssm_config
+        )
+        result1 = pipeline1.fit_transform(realistic_candles, verbose=False)
+
+        # 方法2: fit + transform（使用相同的随机种子）
+        seed_everything(42)
+        pipeline2 = create_pipeline_with_ssm(
+            config_with_reduction, lgssm_config, deepssm_config
+        )
+        pipeline2.fit(realistic_candles, verbose=False)
+        result2 = pipeline2.transform(realistic_candles)
+
+        # 列名应该完全一致
+        assert list(result1.columns) == list(result2.columns), (
+            f"Column mismatch:\n"
+            f"  fit_transform: {list(result1.columns)}\n"
+            f"  fit+transform: {list(result2.columns)}"
+        )
+
+        # 行数应该完全一致
+        assert len(result1) == len(result2), (
+            f"Row count mismatch: fit_transform={len(result1)}, fit+transform={len(result2)}"
+        )
+
+        # 有效数据范围内数值应该完全一致
+        first_valid, _ = get_valid_data_range(result1)
+
+        np.testing.assert_allclose(
+            result1.iloc[first_valid:].values,
+            result2.iloc[first_valid:].values,
+            rtol=PIPELINE_RTOL,
+            atol=PIPELINE_ATOL,
+            err_msg="fit_transform vs fit+transform should produce identical results with reduction",
+        )
+
+    def test_fit_handles_nan_like_fit_transform(
+        self,
+        realistic_candles,
+        config_no_reduction,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证 fit 方法与 fit_transform 一样处理 NaN
+
+        两者应该在相同位置开始处理有效数据。
+        """
+        seed_everything(42)
+
+        pipeline = create_pipeline_with_ssm(
+            config_no_reduction, lgssm_config, deepssm_config
+        )
+
+        # fit_transform 应该成功并返回结果
+        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        first_valid_fit_transform, _ = get_valid_data_range(result)
+
+        # 新 pipeline: fit 也应该成功处理相同的数据
+        seed_everything(42)
+        pipeline2 = create_pipeline_with_ssm(
+            config_no_reduction, lgssm_config, deepssm_config
+        )
+
+        # fit 不应该报错（即使数据开头有 NaN）
+        pipeline2.fit(realistic_candles, verbose=False)
+
+        # transform 应该产生相同的结果
+        result2 = pipeline2.transform(realistic_candles)
+        first_valid_fit, _ = get_valid_data_range(result2)
+
+        # 两者的第一个有效行应该相同
+        assert first_valid_fit_transform == first_valid_fit, (
+            f"First valid row mismatch: "
+            f"fit_transform={first_valid_fit_transform}, fit+transform={first_valid_fit}"
+        )
+
+    def test_fit_rejects_all_nan_data(
+        self,
+        config_no_reduction,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证 fit 对全 NaN 数据报错
+
+        与 fit_transform 行为一致。
+
+        注意：使用 200 行数据，足够指标计算但 fracdiff 特征会全部是 NaN。
+        """
+        seed_everything(42)
+
+        pipeline = create_pipeline_with_ssm(
+            config_no_reduction, lgssm_config, deepssm_config
+        )
+
+        # 创建中等长度的数据（足够指标计算，但 fracdiff 特征全为 NaN）
+        # fracdiff 需要约 372+ 行才能产生有效值
+        short_candles = make_jesse_candles(n_samples=200, seed=42)
+
+        # fit 应该报错（因为所有特征行都包含 NaN）
+        with pytest.raises(ValueError, match="All rows contain NaN"):
+            pipeline.fit(short_candles, verbose=False)
+
+
+class TestSSMCopy:
+    """验证 SSM 模型复制功能"""
+
+    def test_copy_ssm_success(
+        self,
+        realistic_candles,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证成功复制 SSM 模型
+
+        复制后的 Pipeline 应该能正常 fit_transform，且 SSM 训练被跳过。
+        """
+        seed_everything(42)
+
+        # 1. 创建并训练全量 Pipeline
+        full_config = PipelineConfig(
+            feature_names=MIXED_FEATURES.copy(),
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        full_pipeline = create_pipeline_with_ssm(
+            full_config, lgssm_config, deepssm_config
+        )
+        full_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 2. 创建模型特定 Pipeline（只选择部分特征）
+        model_config = PipelineConfig(
+            feature_names=["deep_ssm_0", "lg_ssm_0", "adx_14"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        model_pipeline = FeaturePipeline(model_config)
+
+        # 3. 复制 SSM
+        model_pipeline.copy_ssm_from(full_pipeline)
+
+        # 验证 SSM 已复制且已 fit
+        assert "deep_ssm" in model_pipeline.ssm_processors
+        assert "lg_ssm" in model_pipeline.ssm_processors
+        assert model_pipeline.ssm_processors["deep_ssm"].is_fitted
+        assert model_pipeline.ssm_processors["lg_ssm"].is_fitted
+
+        # 4. fit_transform 应该跳过 SSM 训练（因为已复制）
+        model_result = model_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 验证输出格式
+        assert model_result.shape[1] == 3  # deep_ssm_0, lg_ssm_0, adx_14
+        assert set(model_result.columns) == {"deep_ssm_0", "lg_ssm_0", "adx_14"}
+
+        # 验证有效数据存在
+        first_valid, last_valid = get_valid_data_range(model_result)
+        assert first_valid < last_valid, "Should have valid data"
+
+    def test_copy_ssm_then_fit_with_reducer(
+        self,
+        realistic_candles,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证复制 SSM 后可以正常训练降维器
+
+        这是典型的使用场景：复制 SSM + 训练降维器。
+        """
+        seed_everything(42)
+
+        # 1. 训练全量 Pipeline（不降维）
+        full_config = PipelineConfig(
+            feature_names=MIXED_FEATURES.copy(),
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        full_pipeline = create_pipeline_with_ssm(
+            full_config, lgssm_config, deepssm_config
+        )
+        full_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 2. 创建带降维的模型 Pipeline
+        model_config = PipelineConfig(
+            feature_names=["deep_ssm_0", "deep_ssm_1", "lg_ssm_0", "adx_14", "natr"],
+            ssm_state_dim=5,
+            use_dimension_reducer=True,
+            dimension_reducer_config={
+                "max_latent_dim": 4,
+                "max_epochs": 5,
+                "patience": 3,
+                "seed": 42,
+            },
+        )
+        model_pipeline = FeaturePipeline(model_config)
+        model_pipeline.copy_ssm_from(full_pipeline)
+
+        # 3. fit_transform 应该只训练降维器
+        model_result = model_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 验证降维器已训练
+        assert model_pipeline.dimension_reducer is not None
+        assert model_pipeline.dimension_reducer.is_fitted
+
+        # 验证输出是降维后的特征
+        # 列名应该是 "0", "1", ... 而非原始特征名
+        assert all(col.isdigit() for col in model_result.columns)
+
+    def test_copy_ssm_input_features_mismatch(
+        self,
+        realistic_candles,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证 ssm_input_features 不匹配时报错
+        """
+        seed_everything(42)
+
+        # 1. 训练源 Pipeline
+        source_config = PipelineConfig(
+            feature_names=["deep_ssm_0"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        source_pipeline = create_pipeline_with_ssm(
+            source_config, lgssm_config, deepssm_config
+        )
+        source_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 2. 创建目标 Pipeline，使用不同的 ssm_input_features
+        target_config = PipelineConfig(
+            feature_names=["deep_ssm_0"],
+            ssm_state_dim=5,
+            ssm_input_features=["frac_o_o1_diff", "frac_o_o2_diff"],  # 不同的输入特征
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+
+        # 3. 复制应该报错
+        with pytest.raises(ValueError, match="SSM input features mismatch"):
+            target_pipeline.copy_ssm_from(source_pipeline)
+
+    def test_copy_ssm_state_dim_mismatch(
+        self,
+        realistic_candles,
+    ):
+        """
+        验证 ssm_state_dim 不匹配时报错
+        """
+        seed_everything(42)
+
+        # 1. 训练源 Pipeline（state_dim=5）
+        source_config = PipelineConfig(
+            feature_names=["lg_ssm_0", "lg_ssm_1"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        lgssm_config = LGSSMConfig(obs_dim=80, state_dim=5)
+        source_pipeline = FeaturePipeline(source_config)
+        source_pipeline._ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config)
+        source_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 2. 创建目标 Pipeline（state_dim=10）
+        target_config = PipelineConfig(
+            feature_names=["lg_ssm_0", "lg_ssm_1"],
+            ssm_state_dim=10,  # 不同的 state_dim
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+
+        # 3. 复制应该报错
+        with pytest.raises(ValueError, match="SSM state_dim mismatch"):
+            target_pipeline.copy_ssm_from(source_pipeline)
+
+    def test_copy_ssm_source_not_fitted(
+        self,
+        lgssm_config,
+        deepssm_config,
+    ):
+        """
+        验证源 Pipeline 未 fit 时报错
+        """
+        # 1. 创建未训练的源 Pipeline
+        source_config = PipelineConfig(
+            feature_names=["deep_ssm_0"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        source_pipeline = create_pipeline_with_ssm(
+            source_config, lgssm_config, deepssm_config
+        )
+        # 不调用 fit_transform
+
+        # 2. 创建目标 Pipeline
+        target_config = PipelineConfig(
+            feature_names=["deep_ssm_0"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+
+        # 3. 复制应该报错
+        with pytest.raises(RuntimeError, match="Source pipeline not fitted"):
+            target_pipeline.copy_ssm_from(source_pipeline)
+
+    def test_copy_ssm_type_not_found(
+        self,
+        realistic_candles,
+    ):
+        """
+        验证源 Pipeline 缺少所需 SSM 类型时报错
+        """
+        seed_everything(42)
+
+        # 1. 训练只有 lg_ssm 的源 Pipeline
+        source_config = PipelineConfig(
+            feature_names=["lg_ssm_0"],  # 只有 lg_ssm
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        lgssm_config = LGSSMConfig(obs_dim=80, state_dim=5)
+        source_pipeline = FeaturePipeline(source_config)
+        source_pipeline._ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config)
+        source_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 2. 创建需要 deep_ssm 的目标 Pipeline
+        target_config = PipelineConfig(
+            feature_names=["deep_ssm_0"],  # 需要 deep_ssm
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+
+        # 3. 复制应该报错
+        with pytest.raises(KeyError, match="Source pipeline lacks SSM type: deep_ssm"):
+            target_pipeline.copy_ssm_from(source_pipeline)
+
+    def test_copied_ssm_independent_state(
+        self,
+        realistic_candles,
+    ):
+        """
+        验证复制的 SSM 拥有独立的内部状态
+
+        修改目标 Pipeline 的 SSM 状态不应影响源 Pipeline。
+        """
+        seed_everything(42)
+
+        # 1. 训练源 Pipeline
+        source_config = PipelineConfig(
+            feature_names=["lg_ssm_0", "lg_ssm_1"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        lgssm_config = LGSSMConfig(obs_dim=80, state_dim=5)
+        source_pipeline = FeaturePipeline(source_config)
+        source_pipeline._ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config)
+        source_pipeline.fit_transform(realistic_candles, verbose=False)
+
+        # 记录源 SSM 的状态
+        source_ssm = source_pipeline.ssm_processors["lg_ssm"]
+        source_state_before = (
+            source_ssm._state.copy() if source_ssm._state is not None else None
+        )
+
+        # 2. 复制 SSM
+        target_config = PipelineConfig(
+            feature_names=["lg_ssm_0"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+        target_pipeline.copy_ssm_from(source_pipeline)
+
+        # 3. 使用目标 Pipeline 进行推理（会修改状态）
+        target_pipeline._is_fitted = True  # 标记为已 fit
+        target_pipeline.warmup_ssm(realistic_candles, verbose=False)
+
+        # 4. 验证源 SSM 状态未被修改
+        source_state_after = (
+            source_ssm._state.copy() if source_ssm._state is not None else None
+        )
+
+        if source_state_before is not None and source_state_after is not None:
+            np.testing.assert_array_equal(
+                source_state_before,
+                source_state_after,
+                err_msg="Source SSM state should not be modified by target pipeline",
+            )
 
 
 if __name__ == "__main__":

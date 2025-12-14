@@ -9,6 +9,7 @@ FeaturePipeline - 高阶特征流水线
 3. 实时模式 (inference): 单步实时推理
 """
 
+import copy
 import gc
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -313,48 +314,144 @@ class FeaturePipeline:
 
         return result
 
-    # ========== 训练接口 ==========
+    # ========== 公共训练辅助方法 ==========
 
-    def fit(
-        self,
-        candles: np.ndarray,
-        verbose: bool = True,
-    ) -> "FeaturePipeline":
+    def _compute_raw_features(
+        self, candles: np.ndarray, verbose: bool = False
+    ) -> pd.DataFrame:
         """
-        训练所有模块
+        计算原始特征
 
         Args:
-            candles: K 线数据，二维数组 (N, 6)，列为 [timestamp, open, close, high, low, volume]
-            verbose: 是否打印训练进度
+            candles: K 线数据
+            verbose: 是否打印进度
 
         Returns:
-            self
-
-        Raises:
-            TypeError: candles 不是 numpy 数组
-            ValueError: candles 维度或形状不符合要求
+            原始特征 DataFrame
         """
-        self._validate_candles(candles)
-
         if verbose:
-            print("FeaturePipeline: Starting training...")
-
-        # 1. 计算原始特征
-        if verbose:
-            print("  [1/3] Computing raw features...")
+            print("  Computing raw features...")
 
         self._raw_calculator.load(candles, sequential=True)
         raw_features_dict = self._raw_calculator.get(
             self.config.all_calculator_features
         )
-        raw_features_df = pd.DataFrame(raw_features_dict)
+        return pd.DataFrame(raw_features_dict)
 
-        # 2. 训练 SSM（在 SSM 输入特征上）
+    def _prepare_valid_data(
+        self, raw_features_df: pd.DataFrame, n_candles: int, verbose: bool = False
+    ) -> tuple[pd.DataFrame, int]:
+        """
+        处理 NaN：找到第一个有效行，检查中间 NaN，返回有效数据
+
+        Args:
+            raw_features_df: 原始特征 DataFrame
+            n_candles: 原始 candles 行数
+            verbose: 是否打印进度
+
+        Returns:
+            (valid_raw_features_df, first_valid_row)
+
+        Raises:
+            ValueError: 全部 NaN 或存在中间 NaN
+        """
         if verbose:
-            print("  [2/3] Training SSM models...")
+            print("  Handling NaN values...")
+
+        first_valid = self._find_first_valid_row(raw_features_df)
+
+        if verbose:
+            print(f"    First valid row: {first_valid} (of {n_candles})")
+
+        if first_valid >= n_candles:
+            raise ValueError(
+                "All rows contain NaN values, cannot proceed. "
+                "Ensure candles has enough history for feature calculation."
+            )
+
+        # 检查中间是否还有 NaN
+        self._validate_no_intermediate_nan(raw_features_df, first_valid)
+
+        # 剔除开头 NaN 行
+        valid_raw_features_df = raw_features_df.iloc[first_valid:].reset_index(
+            drop=True
+        )
+
+        return valid_raw_features_df, first_valid
+
+    def _train_ssm_models(
+        self, valid_raw_features_df: pd.DataFrame, verbose: bool = False
+    ) -> None:
+        """
+        训练 SSM 模型（仅训练，不计算特征）
+
+        Args:
+            valid_raw_features_df: 无 NaN 的原始特征 DataFrame
+            verbose: 是否打印进度
+        """
+        if verbose:
+            print("  Training SSM models...")
+
+        if not self.config.ssm_types:
+            if verbose:
+                print("    No SSM configured, skipping...")
+            return
+
+        valid_ssm_input_df = valid_raw_features_df[self.config.ssm_input_features]
+        obs_dim = len(self.config.ssm_input_features)
+
+        for ssm_type in self.config.ssm_types:
+            if ssm_type not in self._ssm_processors:
+                self._ssm_processors[ssm_type] = self._create_ssm_adapter(
+                    ssm_type, obs_dim
+                )
+
+            processor = self._ssm_processors[ssm_type]
+            if not processor.is_fitted:
+                if verbose:
+                    print(f"    Training {ssm_type}...")
+                processor.fit(valid_ssm_input_df)
+
+    def _compute_all_features_for_fit(
+        self, valid_raw_features_df: pd.DataFrame, verbose: bool = False
+    ) -> pd.DataFrame:
+        """
+        fit 专用：计算完整特征供降维器训练
+
+        Args:
+            valid_raw_features_df: 无 NaN 的原始特征 DataFrame
+            verbose: 是否打印进度
+
+        Returns:
+            包含 SSM 特征和原始特征的完整 DataFrame
+        """
+        if self.config.ssm_types:
+            valid_ssm_input_df = valid_raw_features_df[self.config.ssm_input_features]
+            ssm_features = self._compute_ssm_features_batch(valid_ssm_input_df)
+            all_features = pd.concat([ssm_features, valid_raw_features_df], axis=1)
+        else:
+            all_features = valid_raw_features_df
+
+        return all_features
+
+    def _train_and_compute_features(
+        self, valid_raw_features_df: pd.DataFrame, verbose: bool = False
+    ) -> pd.DataFrame:
+        """
+        fit_transform 专用：训练 SSM 并计算特征（单 pass 优化）
+
+        Args:
+            valid_raw_features_df: 无 NaN 的原始特征 DataFrame
+            verbose: 是否打印进度
+
+        Returns:
+            包含 SSM 特征和原始特征的完整 DataFrame
+        """
+        if verbose:
+            print("  Training SSM models...")
 
         if self.config.ssm_types:
-            ssm_input_df = raw_features_df[self.config.ssm_input_features]
+            valid_ssm_input_df = valid_raw_features_df[self.config.ssm_input_features]
             obs_dim = len(self.config.ssm_input_features)
 
             for ssm_type in self.config.ssm_types:
@@ -367,39 +464,178 @@ class FeaturePipeline:
                 if not processor.is_fitted:
                     if verbose:
                         print(f"    Training {ssm_type}...")
-                    processor.fit(ssm_input_df)
+                    processor.fit(valid_ssm_input_df)
+
+            # 立即计算 SSM 特征
+            if verbose:
+                print("  Computing SSM features...")
+            ssm_features = self._compute_ssm_features_batch(valid_ssm_input_df)
+            all_features = pd.concat([ssm_features, valid_raw_features_df], axis=1)
         else:
-            ssm_input_df = pd.DataFrame(index=raw_features_df.index)
             if verbose:
                 print("    No SSM configured, skipping...")
+            all_features = valid_raw_features_df
 
-        # 3. 可选：训练降维器
-        if self.config.use_dimension_reducer:
-            if verbose:
-                print("  [3/3] Training dimension reducer...")
+        return all_features
 
-            if self._dimension_reducer is None:
-                self._dimension_reducer = self._create_dimension_reducer()
+    def _train_dimension_reducer_fit(
+        self, all_features: pd.DataFrame, verbose: bool = False
+    ) -> None:
+        """
+        fit 专用：训练降维器
 
-            # 计算完整特征用于降维
-            all_features = self._compute_all_features_batch(
-                raw_features_df, ssm_input_df
+        Args:
+            all_features: 完整特征 DataFrame
+            verbose: 是否打印进度
+        """
+        if verbose:
+            print("  Training dimension reducer...")
+
+        if self._dimension_reducer is None:
+            self._dimension_reducer = self._create_dimension_reducer()
+
+        if not self._dimension_reducer.is_fitted:
+            self._dimension_reducer.fit(all_features)
+
+        # 清理中间结果
+        del all_features
+        gc.collect()
+
+    def _train_and_apply_reducer(
+        self, all_features: pd.DataFrame, verbose: bool = False
+    ) -> pd.DataFrame:
+        """
+        fit_transform 专用：训练并应用降维器
+
+        Args:
+            all_features: 完整特征 DataFrame
+            verbose: 是否打印进度
+
+        Returns:
+            降维后的特征 DataFrame
+        """
+        if verbose:
+            print("  Training and applying dimension reducer...")
+
+        if self._dimension_reducer is None:
+            self._dimension_reducer = self._create_dimension_reducer()
+
+        if not self._dimension_reducer.is_fitted:
+            self._dimension_reducer.fit(all_features)
+
+        return self._dimension_reducer.transform(all_features)
+
+    # ========== SSM 复制 ==========
+
+    def _validate_ssm_compatibility(
+        self,
+        source: "FeaturePipeline",
+        ssm_type: str,
+    ) -> None:
+        """
+        验证 SSM 配置兼容性
+
+        Args:
+            source: 源 Pipeline
+            ssm_type: SSM 类型
+
+        Raises:
+            RuntimeError: 源 Pipeline 未 fit
+            KeyError: 源 Pipeline 缺少所需的 SSM 类型
+            ValueError: 配置不兼容（ssm_input_features 或 ssm_state_dim 不匹配）
+        """
+        # 1. 检查源是否已 fit
+        if not source.is_fitted:
+            raise RuntimeError(
+                "Source pipeline not fitted. Call fit() or fit_transform() first."
             )
 
-            if not self._dimension_reducer.is_fitted:
-                self._dimension_reducer.fit(all_features)
+        # 2. 检查源是否有请求的 SSM
+        if ssm_type not in source.ssm_processors:
+            raise KeyError(
+                f"Source pipeline lacks SSM type: {ssm_type}. "
+                f"Available types: {list(source.ssm_processors.keys())}"
+            )
 
-            # 清理中间结果
-            del all_features
-            gc.collect()
+        # 3. 验证 ssm_input_features 一致
+        if self.config.ssm_input_features != source.config.ssm_input_features:
+            raise ValueError(
+                f"SSM input features mismatch:\n"
+                f"  self:   {len(self.config.ssm_input_features)} features\n"
+                f"  source: {len(source.config.ssm_input_features)} features\n"
+                f"Both pipelines must use identical ssm_input_features."
+            )
+
+        # 4. 验证 ssm_state_dim 一致
+        if self.config.ssm_state_dim != source.config.ssm_state_dim:
+            raise ValueError(
+                f"SSM state_dim mismatch: "
+                f"self={self.config.ssm_state_dim}, source={source.config.ssm_state_dim}. "
+                f"Both pipelines must use the same ssm_state_dim."
+            )
+
+    # ========== 训练接口 ==========
+
+    def fit(
+        self,
+        candles: np.ndarray,
+        verbose: bool = True,
+    ) -> "FeaturePipeline":
+        """
+        训练所有模块（在无 NaN 数据上）
+
+        NaN 处理策略（与 fit_transform/transform 一致）：
+        1. 剔除开头连续 NaN 行后再进行训练
+        2. 检查剩余数据是否还有 NaN，如有则报错
+
+        Args:
+            candles: K 线数据，二维数组 (N, 6)，列为 [timestamp, open, close, high, low, volume]
+            verbose: 是否打印训练进度
+
+        Returns:
+            self（支持链式调用）
+
+        Raises:
+            TypeError: candles 不是 numpy 数组
+            ValueError: candles 维度或形状不符合要求，或数据全为 NaN，或存在中间 NaN
+        """
+        self._validate_candles(candles)
+        n_candles = len(candles)
+
+        if verbose:
+            print("FeaturePipeline: Starting fit...")
+
+        # 1. 计算原始特征
+        if verbose:
+            print("  [1/4] Computing raw features...")
+        raw_features_df = self._compute_raw_features(candles)
+
+        # 2. NaN 处理（与 fit_transform/transform 一致）
+        if verbose:
+            print("  [2/4] Handling NaN values...")
+        valid_raw_features_df, _ = self._prepare_valid_data(
+            raw_features_df, n_candles, verbose
+        )
+
+        # 3. 训练 SSM
+        if verbose:
+            print("  [3/4] Training SSM models...")
+        self._train_ssm_models(valid_raw_features_df, verbose)
+
+        # 4. 可选：训练降维器
+        if self.config.use_dimension_reducer:
+            if verbose:
+                print("  [4/4] Training dimension reducer...")
+            all_features = self._compute_all_features_for_fit(valid_raw_features_df)
+            self._train_dimension_reducer_fit(all_features, verbose)
         else:
             if verbose:
-                print("  [3/3] Dimension reducer disabled, skipping...")
+                print("  [4/4] Dimension reducer disabled, skipping...")
 
         self._is_fitted = True
 
         if verbose:
-            print("FeaturePipeline: Training complete!")
+            print("FeaturePipeline: fit complete!")
 
         return self
 
@@ -409,7 +645,9 @@ class FeaturePipeline:
         verbose: bool = True,
     ) -> pd.DataFrame:
         """
-        训练并转换（优化版，避免重复计算）
+        训练并转换（优化版，单 pass 避免重复计算）
+
+        与 fit().transform() 语义相同，但性能更优。
 
         NaN 处理策略：
         1. 剔除开头连续 NaN 行后再进行训练/转换
@@ -436,90 +674,33 @@ class FeaturePipeline:
 
         # 1. 计算原始特征（只计算一次）
         if verbose:
-            print("  [1/5] Computing raw features...")
+            print("  [1/4] Computing raw features...")
+        raw_features_df = self._compute_raw_features(candles)
 
-        self._raw_calculator.load(candles, sequential=True)
-        raw_features_dict = self._raw_calculator.get(
-            self.config.all_calculator_features
-        )
-        raw_features_df = pd.DataFrame(raw_features_dict)
-
-        # 2. NaN 处理：找到第一个有效行
+        # 2. NaN 处理
         if verbose:
-            print("  [2/5] Handling NaN values...")
-
-        first_valid = self._find_first_valid_row(raw_features_df)
-
-        if verbose:
-            print(f"    First valid row: {first_valid} (of {n_candles})")
-
-        if first_valid >= n_candles:
-            raise ValueError(
-                "All rows contain NaN values, cannot proceed. "
-                "Ensure candles has enough history for feature calculation."
-            )
-
-        # 检查中间是否还有 NaN
-        self._validate_no_intermediate_nan(raw_features_df, first_valid)
-
-        # 剔除开头 NaN 行
-        valid_raw_features_df = raw_features_df.iloc[first_valid:].reset_index(
-            drop=True
+            print("  [2/4] Handling NaN values...")
+        valid_raw_features_df, _ = self._prepare_valid_data(
+            raw_features_df, n_candles, verbose
         )
 
-        # 3. 训练 SSM（使用无 NaN 的数据）
+        # 3. 训练 SSM 并立即计算 SSM 特征（优化：单 pass）
         if verbose:
-            print("  [3/5] Training SSM models...")
+            print("  [3/4] Training SSM and computing features...")
+        all_features = self._train_and_compute_features(valid_raw_features_df, verbose)
 
-        if self.config.ssm_types:
-            valid_ssm_input_df = valid_raw_features_df[self.config.ssm_input_features]
-            obs_dim = len(self.config.ssm_input_features)
-
-            for ssm_type in self.config.ssm_types:
-                if ssm_type not in self._ssm_processors:
-                    self._ssm_processors[ssm_type] = self._create_ssm_adapter(
-                        ssm_type, obs_dim
-                    )
-
-                processor = self._ssm_processors[ssm_type]
-                if not processor.is_fitted:
-                    if verbose:
-                        print(f"    Training {ssm_type}...")
-                    processor.fit(valid_ssm_input_df)
-
-            # 4. 计算 SSM 特征（使用无 NaN 的数据）
-            if verbose:
-                print("  [4/5] Computing SSM features...")
-
-            ssm_features = self._compute_ssm_features_batch(valid_ssm_input_df)
-            all_features = pd.concat([ssm_features, valid_raw_features_df], axis=1)
-        else:
-            if verbose:
-                print("    No SSM configured, skipping...")
-                print("  [4/5] Skipping SSM features (no SSM configured)...")
-            all_features = valid_raw_features_df
-
-        # 5. 可选：训练并应用降维
+        # 4. 可选：训练并应用降维
         if self.config.use_dimension_reducer:
             if verbose:
-                print("  [5/5] Training and applying dimension reducer...")
-
-            if self._dimension_reducer is None:
-                self._dimension_reducer = self._create_dimension_reducer()
-
-            if not self._dimension_reducer.is_fitted:
-                self._dimension_reducer.fit(all_features)
-
-            all_features = self._dimension_reducer.transform(all_features)
+                print("  [4/4] Training and applying dimension reducer...")
+            all_features = self._train_and_apply_reducer(all_features, verbose)
         else:
             if verbose:
-                print("  [5/5] Dimension reducer disabled, skipping...")
+                print("  [4/4] Dimension reducer disabled, skipping...")
+            # 按 feature_names 过滤
+            all_features = all_features[self.config.feature_names]
 
         self._is_fitted = True
-
-        # 按 feature_names 过滤（如未使用降维）
-        if not self.config.use_dimension_reducer:
-            all_features = all_features[self.config.feature_names]
 
         # 填充回原始行数
         result = self._pad_with_leading_nan(all_features, n_candles)
@@ -560,40 +741,21 @@ class FeaturePipeline:
         self._validate_candles(candles)
         n_candles = len(candles)
 
-        # 计算原始特征
-        self._raw_calculator.load(candles, sequential=True)
-        raw_features_dict = self._raw_calculator.get(
-            self.config.all_calculator_features
-        )
-        raw_features_df = pd.DataFrame(raw_features_dict)
+        # 1. 计算原始特征
+        raw_features_df = self._compute_raw_features(candles)
 
-        # NaN 处理：找到第一个有效行
-        first_valid = self._find_first_valid_row(raw_features_df)
+        # 2. NaN 处理
+        valid_raw_features_df, _ = self._prepare_valid_data(raw_features_df, n_candles)
 
-        if first_valid >= n_candles:
-            raise ValueError(
-                "All rows contain NaN values, cannot proceed. "
-                "Ensure candles has enough history for feature calculation."
-            )
-
-        # 检查中间是否还有 NaN
-        self._validate_no_intermediate_nan(raw_features_df, first_valid)
-
-        # 剔除开头 NaN 行
-        valid_raw_features_df = raw_features_df.iloc[first_valid:].reset_index(
-            drop=True
-        )
-
-        # 计算 SSM 特征（使用无 NaN 的数据）
+        # 3. 计算 SSM 特征（使用无 NaN 的数据）
         if self.config.ssm_types:
             valid_ssm_input_df = valid_raw_features_df[self.config.ssm_input_features]
             ssm_features = self._compute_ssm_features_batch(valid_ssm_input_df)
-            # 合并
             all_features = pd.concat([ssm_features, valid_raw_features_df], axis=1)
         else:
             all_features = valid_raw_features_df
 
-        # 可选降维
+        # 4. 可选降维
         if self.config.use_dimension_reducer and self._dimension_reducer is not None:
             all_features = self._dimension_reducer.transform(all_features)
         else:
@@ -611,6 +773,72 @@ class FeaturePipeline:
             config.feature_names 的副本
         """
         return self.config.feature_names.copy()
+
+    def copy_ssm_from(
+        self,
+        source: "FeaturePipeline",
+        ssm_types: Optional[List[str]] = None,
+    ) -> "FeaturePipeline":
+        """
+        从另一个 Pipeline 复制 SSM 模型（深拷贝）
+
+        这可以节省 SSM 的训练时间，适用于共享相同 SSM 配置的多个 Pipeline。
+        复制后，调用 fit/fit_transform 时会自动跳过已复制的 SSM 的训练。
+
+        典型使用场景：
+        1. 训练全量特征 Pipeline（包含所有 SSM 特征）
+        2. 特征筛选后，为每个模型创建特定 Pipeline
+        3. 每个模型 Pipeline 从全量 Pipeline 复制 SSM，跳过重复训练
+
+        Args:
+            source: 源 Pipeline（必须已 fit）
+            ssm_types: 要复制的 SSM 类型列表，如 ["deep_ssm", "lg_ssm"]
+                       如果为 None，复制所有 self.config.ssm_types 中需要的类型
+
+        Returns:
+            self（支持链式调用）
+
+        Raises:
+            RuntimeError: 源 Pipeline 未 fit
+            KeyError: 源 Pipeline 缺少所需的 SSM 类型
+            ValueError: 配置不兼容（ssm_input_features 或 ssm_state_dim 不匹配）
+
+        Example:
+            >>> # 1. 训练全量 Pipeline
+            >>> full_pipeline = FeaturePipeline(full_config)
+            >>> full_pipeline.fit_transform(candles)
+            >>>
+            >>> # 2. 创建模型特定 Pipeline，复制 SSM
+            >>> model_pipeline = FeaturePipeline(model_config)
+            >>> model_pipeline.copy_ssm_from(full_pipeline)
+            >>>
+            >>> # 3. fit_transform 只训练降维器（SSM 已复制，自动跳过）
+            >>> model_features = model_pipeline.fit_transform(candles)
+        """
+        # 确定要复制的 SSM 类型
+        if ssm_types is None:
+            ssm_types = self.config.ssm_types
+
+        if not ssm_types:
+            # 没有 SSM 需要复制
+            return self
+
+        # 验证并复制每个 SSM
+        for ssm_type in ssm_types:
+            # 验证配置兼容性
+            self._validate_ssm_compatibility(source, ssm_type)
+
+            # 深拷贝 SSM 适配器
+            source_ssm = source.ssm_processors[ssm_type]
+            copied_ssm = copy.deepcopy(source_ssm)
+
+            # 重置内部状态（新 Pipeline 需要从初始状态开始）
+            copied_ssm.reset_state()
+
+            # 存储到本 Pipeline
+            self._ssm_processors[ssm_type] = copied_ssm
+
+        return self
 
     # ========== 实时推理接口 ==========
 
@@ -920,15 +1148,6 @@ class FeaturePipeline:
         if ssm_features:
             return pd.concat(ssm_features, axis=1)
         return pd.DataFrame(index=ssm_input_df.index)
-
-    def _compute_all_features_batch(
-        self,
-        raw_features_df: pd.DataFrame,
-        ssm_input_df: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """计算完整特征（用于降维训练）"""
-        ssm_features = self._compute_ssm_features_batch(ssm_input_df)
-        return pd.concat([ssm_features, raw_features_df], axis=1)
 
 
 if __name__ == "__main__":
