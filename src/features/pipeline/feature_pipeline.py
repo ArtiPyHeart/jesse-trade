@@ -151,7 +151,7 @@ class FeaturePipeline:
 
     **实盘模式（预热 + 实时推理）**：
     >>> pipeline = FeaturePipeline.load("/models", "my_pipeline")
-    >>> pipeline.warmup_ssm(historical_candles, verbose=True)  # 预热 SSM 状态
+    >>> pipeline.warmup_ssm(historical_candles)  # 预热 SSM 状态
     >>> # 之后每根新 K 线
     >>> features = pipeline.inference(current_candles)
 
@@ -185,7 +185,10 @@ class FeaturePipeline:
             dimension_reducer: 降维器实例
         """
         self.config = config or PipelineConfig()
-        self._raw_calculator = raw_calculator or SimpleFeatureCalculator(verbose=False)
+        # 使用 config.verbose 初始化子模块
+        self._raw_calculator = raw_calculator or SimpleFeatureCalculator(
+            verbose=self.config.verbose
+        )
         self._ssm_processors: Dict[str, SSMProtocol] = ssm_processors or {}
         self._dimension_reducer = dimension_reducer
 
@@ -495,7 +498,8 @@ class FeaturePipeline:
             self._dimension_reducer = self._create_dimension_reducer()
 
         if not self._dimension_reducer.is_fitted:
-            self._dimension_reducer.fit(all_features)
+            # 传递 verbose 给降维器
+            self._dimension_reducer.fit(all_features, verbose=verbose)
 
         # 清理中间结果
         del all_features
@@ -521,7 +525,8 @@ class FeaturePipeline:
             self._dimension_reducer = self._create_dimension_reducer()
 
         if not self._dimension_reducer.is_fitted:
-            self._dimension_reducer.fit(all_features)
+            # 传递 verbose 给降维器
+            self._dimension_reducer.fit(all_features, verbose=verbose)
 
         return self._dimension_reducer.transform(all_features)
 
@@ -576,11 +581,7 @@ class FeaturePipeline:
 
     # ========== 训练接口 ==========
 
-    def fit(
-        self,
-        candles: np.ndarray,
-        verbose: bool = True,
-    ) -> "FeaturePipeline":
+    def fit(self, candles: np.ndarray) -> "FeaturePipeline":
         """
         训练所有模块（在无 NaN 数据上）
 
@@ -590,7 +591,6 @@ class FeaturePipeline:
 
         Args:
             candles: K 线数据，二维数组 (N, 6)，列为 [timestamp, open, close, high, low, volume]
-            verbose: 是否打印训练进度
 
         Returns:
             self（支持链式调用）
@@ -599,6 +599,8 @@ class FeaturePipeline:
             TypeError: candles 不是 numpy 数组
             ValueError: candles 维度或形状不符合要求，或数据全为 NaN，或存在中间 NaN
         """
+        verbose = self.config.verbose
+
         self._validate_candles(candles)
         n_candles = len(candles)
 
@@ -639,11 +641,7 @@ class FeaturePipeline:
 
         return self
 
-    def fit_transform(
-        self,
-        candles: np.ndarray,
-        verbose: bool = True,
-    ) -> pd.DataFrame:
+    def fit_transform(self, candles: np.ndarray) -> pd.DataFrame:
         """
         训练并转换（优化版，单 pass 避免重复计算）
 
@@ -656,7 +654,6 @@ class FeaturePipeline:
 
         Args:
             candles: K 线数据，二维数组 (N, 6)，列为 [timestamp, open, close, high, low, volume]
-            verbose: 是否打印进度
 
         Returns:
             转换后的特征 DataFrame（只包含 config.feature_names 中的特征）
@@ -666,6 +663,8 @@ class FeaturePipeline:
             TypeError: candles 不是 numpy 数组
             ValueError: candles 维度或形状不符合要求，或数据全为 NaN，或存在中间 NaN
         """
+        verbose = self.config.verbose
+
         self._validate_candles(candles)
         n_candles = len(candles)
 
@@ -773,6 +772,46 @@ class FeaturePipeline:
             config.feature_names 的副本
         """
         return self.config.feature_names.copy()
+
+    def share_raw_calculator_from(
+        self,
+        source: "FeaturePipeline",
+    ) -> "FeaturePipeline":
+        """
+        共享另一个 Pipeline 的 SimpleFeatureCalculator（引用传递，非拷贝）
+
+        用于复用已计算的特征缓存，避免重复计算。共享后两个 Pipeline
+        使用同一个 calculator 实例，对同一 candles 数据的特征计算会复用缓存。
+
+        注意：这是引用共享，不是深拷贝。源 calculator 的状态变化会影响本 Pipeline。
+        SimpleFeatureCalculator.load() 方法会智能检测相同的 candles 数据并保留缓存。
+
+        典型使用场景：
+        1. 训练全量特征 Pipeline（计算所有特征，缓存在 calculator 中）
+        2. 为每个模型创建特定 Pipeline，共享 calculator 复用缓存
+        3. fit_transform 时 calculator 检测到相同数据，跳过重复计算
+
+        Args:
+            source: 源 Pipeline
+
+        Returns:
+            self（支持链式调用）
+
+        Example:
+            >>> # 1. 训练全量 Pipeline
+            >>> global_pipeline = FeaturePipeline(full_config)
+            >>> global_pipeline.fit_transform(candles)  # 计算并缓存所有特征
+            >>>
+            >>> # 2. 创建模型特定 Pipeline，共享 calculator 和复制 SSM
+            >>> model_pipeline = FeaturePipeline(model_config)
+            >>> model_pipeline.share_raw_calculator_from(global_pipeline)
+            >>> model_pipeline.copy_ssm_from(global_pipeline)
+            >>>
+            >>> # 3. fit_transform 复用缓存，特征计算几乎零耗时
+            >>> model_features = model_pipeline.fit_transform(candles)
+        """
+        self._raw_calculator = source._raw_calculator
+        return self
 
     def copy_ssm_from(
         self,
@@ -923,7 +962,7 @@ class FeaturePipeline:
         for processor in self._ssm_processors.values():
             processor.reset_state()
 
-    def warmup_ssm(self, candles: np.ndarray, verbose: bool = False) -> None:
+    def warmup_ssm(self, candles: np.ndarray) -> None:
         """
         SSM 预热
 
@@ -935,13 +974,14 @@ class FeaturePipeline:
         Args:
             candles: K 线数据，二维数组 (N, 6)，列为 [timestamp, open, close, high, low, volume]
                      建议使用 3000+ 根 K 线以确保 SSM 状态稳定
-            verbose: 是否打印进度
 
         Raises:
             RuntimeError: Pipeline 未训练
             TypeError: candles 不是 numpy 数组
             ValueError: candles 维度或形状不符合要求
         """
+        verbose = self.config.verbose
+
         if not self._is_fitted:
             raise RuntimeError("Pipeline not fitted. Call fit() or load() first.")
 

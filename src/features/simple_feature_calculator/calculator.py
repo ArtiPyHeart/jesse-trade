@@ -52,14 +52,28 @@ class SimpleFeatureCalculator:
         """
         加载K线数据
 
+        如果输入的 candles 与当前缓存的数据相同（引用相等或内容相等），
+        则保留已计算的特征缓存，避免重复计算。
+
         Args:
             candles: K线数据（Jesse格式）
             sequential: 是否返回序列数据
         """
-        # 不截断数据，让特征自己处理
+        # 1. 快速路径：同一对象引用
+        if self.candles is candles:
+            # sequential=True 的缓存可以服务 sequential=False 的请求
+            if self.sequential == sequential or self.sequential:
+                return  # 保留缓存
+
+        # 2. 内容相等检查：不同对象但内容相同
+        if self.candles is not None and self.candles.shape == candles.shape:
+            if np.array_equal(self.candles, candles, equal_nan=True):
+                self.sequential = sequential
+                return  # 保留缓存
+
+        # 3. 数据不同，清空缓存并更新状态
         self.candles = candles
         self.sequential = sequential
-        # 清空缓存
         self.cache.clear()
 
     def get(self, features: Union[str, List[str]]) -> Dict[str, np.ndarray]:

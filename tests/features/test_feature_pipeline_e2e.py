@@ -231,7 +231,7 @@ class TestNoReductionConsistency:
         )
 
         # fit_transform
-        result1 = pipeline.fit_transform(realistic_candles, verbose=False)
+        result1 = pipeline.fit_transform(realistic_candles)
 
         # transform
         result2 = pipeline.transform(realistic_candles)
@@ -271,7 +271,7 @@ class TestNoReductionConsistency:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        pipeline.fit_transform(realistic_candles, verbose=False)
+        pipeline.fit_transform(realistic_candles)
 
         # Ground truth: transform
         transform_result = pipeline.transform(realistic_candles)
@@ -282,7 +282,7 @@ class TestNoReductionConsistency:
         assert warmup_len < len(realistic_candles) - 50, "Not enough data for test"
 
         # warmup + inference
-        pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+        pipeline.warmup_ssm(realistic_candles[:warmup_len])
 
         inference_results = []
         for i in range(warmup_len, len(realistic_candles)):
@@ -316,7 +316,7 @@ class TestNoReductionConsistency:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        result = pipeline.fit_transform(realistic_candles)
 
         # 列名应与配置完全一致
         assert list(result.columns) == config_no_reduction.feature_names
@@ -344,7 +344,7 @@ class TestNoReductionConsistency:
         )
 
         # 1. fit_transform 输出
-        fit_transform_result = pipeline.fit_transform(realistic_candles, verbose=False)
+        fit_transform_result = pipeline.fit_transform(realistic_candles)
         fit_transform_columns = list(fit_transform_result.columns)
 
         # 2. transform 输出
@@ -354,7 +354,7 @@ class TestNoReductionConsistency:
         # 3. inference 输出（需要先 warmup）
         first_valid, _ = get_valid_data_range(fit_transform_result)
         warmup_len = first_valid + 30
-        pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+        pipeline.warmup_ssm(realistic_candles[:warmup_len])
         inference_result = pipeline.inference(realistic_candles[: warmup_len + 1])
         inference_columns = list(inference_result.columns)
 
@@ -396,7 +396,7 @@ class TestNoReductionConsistency:
         )
 
         # fit_transform 输出行数
-        fit_transform_result = pipeline.fit_transform(realistic_candles, verbose=False)
+        fit_transform_result = pipeline.fit_transform(realistic_candles)
         assert len(fit_transform_result) == len(realistic_candles), (
             f"fit_transform row count mismatch: "
             f"output={len(fit_transform_result)}, candles={len(realistic_candles)}"
@@ -412,7 +412,7 @@ class TestNoReductionConsistency:
         # inference 输出行数（应为 1）
         first_valid, _ = get_valid_data_range(fit_transform_result)
         warmup_len = first_valid + 30
-        pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+        pipeline.warmup_ssm(realistic_candles[:warmup_len])
         inference_result = pipeline.inference(realistic_candles[: warmup_len + 1])
         assert len(inference_result) == 1, (
             f"inference row count should be 1, got {len(inference_result)}"
@@ -436,7 +436,7 @@ class TestNoReductionConsistency:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        result = pipeline.fit_transform(realistic_candles)
 
         # 验证一阶特征存在
         for feat in FIRST_ORDER_FEATURES:
@@ -477,7 +477,7 @@ class TestWithReductionConsistency:
         )
 
         # fit_transform
-        result1 = pipeline.fit_transform(realistic_candles, verbose=False)
+        result1 = pipeline.fit_transform(realistic_candles)
 
         # transform
         result2 = pipeline.transform(realistic_candles)
@@ -514,7 +514,7 @@ class TestWithReductionConsistency:
             config_with_reduction, lgssm_config, deepssm_config
         )
 
-        pipeline.fit_transform(realistic_candles, verbose=False)
+        pipeline.fit_transform(realistic_candles)
 
         # Ground truth
         transform_result = pipeline.transform(realistic_candles)
@@ -524,7 +524,7 @@ class TestWithReductionConsistency:
         assert warmup_len < len(realistic_candles) - 50
 
         # warmup + inference
-        pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+        pipeline.warmup_ssm(realistic_candles[:warmup_len])
 
         inference_results = []
         for i in range(warmup_len, len(realistic_candles)):
@@ -558,7 +558,7 @@ class TestWithReductionConsistency:
             config_with_reduction, lgssm_config, deepssm_config
         )
 
-        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        result = pipeline.fit_transform(realistic_candles)
 
         # 列名应为数字字符串
         expected_cols = [str(i) for i in range(len(result.columns))]
@@ -586,7 +586,7 @@ class TestWithReductionConsistency:
             config_with_reduction, lgssm_config, deepssm_config
         )
 
-        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        result = pipeline.fit_transform(realistic_candles)
 
         # 降维后列数应 <= max_latent_dim
         max_latent_dim = config_with_reduction.dimension_reducer_config[
@@ -619,7 +619,7 @@ class TestWithReductionConsistency:
         )
 
         # 1. fit_transform 输出
-        fit_transform_result = pipeline.fit_transform(realistic_candles, verbose=False)
+        fit_transform_result = pipeline.fit_transform(realistic_candles)
         fit_transform_columns = list(fit_transform_result.columns)
 
         # 2. transform 输出
@@ -629,7 +629,7 @@ class TestWithReductionConsistency:
         # 3. inference 输出（需要先 warmup）
         first_valid, _ = get_valid_data_range(fit_transform_result)
         warmup_len = first_valid + 30
-        pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+        pipeline.warmup_ssm(realistic_candles[:warmup_len])
         inference_result = pipeline.inference(realistic_candles[: warmup_len + 1])
         inference_columns = list(inference_result.columns)
 
@@ -665,7 +665,7 @@ class TestSaveLoadBatchTransform:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        original = pipeline.fit_transform(realistic_candles, verbose=False)
+        original = pipeline.fit_transform(realistic_candles)
         first_valid, _ = get_valid_data_range(original)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -698,7 +698,7 @@ class TestSaveLoadBatchTransform:
             config_with_reduction, lgssm_config, deepssm_config
         )
 
-        original = pipeline.fit_transform(realistic_candles, verbose=False)
+        original = pipeline.fit_transform(realistic_candles)
         first_valid, _ = get_valid_data_range(original)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -741,7 +741,7 @@ class TestSaveLoadRealtimeInference:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        pipeline.fit_transform(realistic_candles, verbose=False)
+        pipeline.fit_transform(realistic_candles)
 
         transform_result = pipeline.transform(realistic_candles)
         first_valid, _ = get_valid_data_range(transform_result)
@@ -750,7 +750,7 @@ class TestSaveLoadRealtimeInference:
         assert warmup_len < len(realistic_candles)
 
         # 原始 pipeline: warmup + inference
-        pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+        pipeline.warmup_ssm(realistic_candles[:warmup_len])
         original_inference = (
             pipeline.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
         )
@@ -760,7 +760,7 @@ class TestSaveLoadRealtimeInference:
             loaded = FeaturePipeline.load(tmpdir, "e2e_inference_test")
 
             # 加载后: warmup + inference
-            loaded.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+            loaded.warmup_ssm(realistic_candles[:warmup_len])
             restored_inference = (
                 loaded.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
             )
@@ -789,7 +789,7 @@ class TestSaveLoadRealtimeInference:
             config_with_reduction, lgssm_config, deepssm_config
         )
 
-        pipeline.fit_transform(realistic_candles, verbose=False)
+        pipeline.fit_transform(realistic_candles)
 
         transform_result = pipeline.transform(realistic_candles)
         first_valid, _ = get_valid_data_range(transform_result)
@@ -798,7 +798,7 @@ class TestSaveLoadRealtimeInference:
         assert warmup_len < len(realistic_candles)
 
         # 原始 pipeline
-        pipeline.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+        pipeline.warmup_ssm(realistic_candles[:warmup_len])
         original_inference = (
             pipeline.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
         )
@@ -811,7 +811,7 @@ class TestSaveLoadRealtimeInference:
             loaded = FeaturePipeline.load(tmpdir, "e2e_inference_reduction")
 
             # 加载后
-            loaded.warmup_ssm(realistic_candles[:warmup_len], verbose=False)
+            loaded.warmup_ssm(realistic_candles[:warmup_len])
             restored_inference = (
                 loaded.inference(realistic_candles[: warmup_len + 1]).iloc[0].values
             )
@@ -846,7 +846,7 @@ class TestEdgeCases:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        result = pipeline.fit_transform(realistic_candles)
 
         # 输出行数应等于 candles 行数
         assert len(result) == len(realistic_candles)
@@ -880,7 +880,7 @@ class TestEdgeCases:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        pipeline.fit_transform(realistic_candles, verbose=False)
+        pipeline.fit_transform(realistic_candles)
 
         # 使用太短的历史数据应该触发 NaN 错误
         with pytest.raises(ValueError, match="inference.*received NaN"):
@@ -904,7 +904,7 @@ class TestEdgeCases:
             config_no_reduction, lgssm_config, deepssm_config
         )
 
-        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        result = pipeline.fit_transform(realistic_candles)
 
         # 验证两种 SSM 特征都存在
         deep_ssm_cols = [c for c in result.columns if c.startswith("deep_ssm_")]
@@ -947,14 +947,14 @@ class TestFitTransformSemantics:
         pipeline1 = create_pipeline_with_ssm(
             config_no_reduction, lgssm_config, deepssm_config
         )
-        result1 = pipeline1.fit_transform(realistic_candles, verbose=False)
+        result1 = pipeline1.fit_transform(realistic_candles)
 
         # 方法2: fit + transform（使用相同的随机种子）
         seed_everything(42)
         pipeline2 = create_pipeline_with_ssm(
             config_no_reduction, lgssm_config, deepssm_config
         )
-        pipeline2.fit(realistic_candles, verbose=False)
+        pipeline2.fit(realistic_candles)
         result2 = pipeline2.transform(realistic_candles)
 
         # 列名应该完全一致
@@ -996,14 +996,14 @@ class TestFitTransformSemantics:
         pipeline1 = create_pipeline_with_ssm(
             config_with_reduction, lgssm_config, deepssm_config
         )
-        result1 = pipeline1.fit_transform(realistic_candles, verbose=False)
+        result1 = pipeline1.fit_transform(realistic_candles)
 
         # 方法2: fit + transform（使用相同的随机种子）
         seed_everything(42)
         pipeline2 = create_pipeline_with_ssm(
             config_with_reduction, lgssm_config, deepssm_config
         )
-        pipeline2.fit(realistic_candles, verbose=False)
+        pipeline2.fit(realistic_candles)
         result2 = pipeline2.transform(realistic_candles)
 
         # 列名应该完全一致
@@ -1048,7 +1048,7 @@ class TestFitTransformSemantics:
         )
 
         # fit_transform 应该成功并返回结果
-        result = pipeline.fit_transform(realistic_candles, verbose=False)
+        result = pipeline.fit_transform(realistic_candles)
         first_valid_fit_transform, _ = get_valid_data_range(result)
 
         # 新 pipeline: fit 也应该成功处理相同的数据
@@ -1058,7 +1058,7 @@ class TestFitTransformSemantics:
         )
 
         # fit 不应该报错（即使数据开头有 NaN）
-        pipeline2.fit(realistic_candles, verbose=False)
+        pipeline2.fit(realistic_candles)
 
         # transform 应该产生相同的结果
         result2 = pipeline2.transform(realistic_candles)
@@ -1095,7 +1095,7 @@ class TestFitTransformSemantics:
 
         # fit 应该报错（因为所有特征行都包含 NaN）
         with pytest.raises(ValueError, match="All rows contain NaN"):
-            pipeline.fit(short_candles, verbose=False)
+            pipeline.fit(short_candles)
 
 
 class TestSSMCopy:
@@ -1123,7 +1123,7 @@ class TestSSMCopy:
         full_pipeline = create_pipeline_with_ssm(
             full_config, lgssm_config, deepssm_config
         )
-        full_pipeline.fit_transform(realistic_candles, verbose=False)
+        full_pipeline.fit_transform(realistic_candles)
 
         # 2. 创建模型特定 Pipeline（只选择部分特征）
         model_config = PipelineConfig(
@@ -1143,7 +1143,7 @@ class TestSSMCopy:
         assert model_pipeline.ssm_processors["lg_ssm"].is_fitted
 
         # 4. fit_transform 应该跳过 SSM 训练（因为已复制）
-        model_result = model_pipeline.fit_transform(realistic_candles, verbose=False)
+        model_result = model_pipeline.fit_transform(realistic_candles)
 
         # 验证输出格式
         assert model_result.shape[1] == 3  # deep_ssm_0, lg_ssm_0, adx_14
@@ -1175,7 +1175,7 @@ class TestSSMCopy:
         full_pipeline = create_pipeline_with_ssm(
             full_config, lgssm_config, deepssm_config
         )
-        full_pipeline.fit_transform(realistic_candles, verbose=False)
+        full_pipeline.fit_transform(realistic_candles)
 
         # 2. 创建带降维的模型 Pipeline
         model_config = PipelineConfig(
@@ -1193,7 +1193,7 @@ class TestSSMCopy:
         model_pipeline.copy_ssm_from(full_pipeline)
 
         # 3. fit_transform 应该只训练降维器
-        model_result = model_pipeline.fit_transform(realistic_candles, verbose=False)
+        model_result = model_pipeline.fit_transform(realistic_candles)
 
         # 验证降维器已训练
         assert model_pipeline.dimension_reducer is not None
@@ -1223,7 +1223,7 @@ class TestSSMCopy:
         source_pipeline = create_pipeline_with_ssm(
             source_config, lgssm_config, deepssm_config
         )
-        source_pipeline.fit_transform(realistic_candles, verbose=False)
+        source_pipeline.fit_transform(realistic_candles)
 
         # 2. 创建目标 Pipeline，使用不同的 ssm_input_features
         target_config = PipelineConfig(
@@ -1256,7 +1256,7 @@ class TestSSMCopy:
         lgssm_config = LGSSMConfig(obs_dim=80, state_dim=5)
         source_pipeline = FeaturePipeline(source_config)
         source_pipeline._ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config)
-        source_pipeline.fit_transform(realistic_candles, verbose=False)
+        source_pipeline.fit_transform(realistic_candles)
 
         # 2. 创建目标 Pipeline（state_dim=10）
         target_config = PipelineConfig(
@@ -1319,7 +1319,7 @@ class TestSSMCopy:
         lgssm_config = LGSSMConfig(obs_dim=80, state_dim=5)
         source_pipeline = FeaturePipeline(source_config)
         source_pipeline._ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config)
-        source_pipeline.fit_transform(realistic_candles, verbose=False)
+        source_pipeline.fit_transform(realistic_candles)
 
         # 2. 创建需要 deep_ssm 的目标 Pipeline
         target_config = PipelineConfig(
@@ -1353,7 +1353,7 @@ class TestSSMCopy:
         lgssm_config = LGSSMConfig(obs_dim=80, state_dim=5)
         source_pipeline = FeaturePipeline(source_config)
         source_pipeline._ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config)
-        source_pipeline.fit_transform(realistic_candles, verbose=False)
+        source_pipeline.fit_transform(realistic_candles)
 
         # 记录源 SSM 的状态
         source_ssm = source_pipeline.ssm_processors["lg_ssm"]
@@ -1372,7 +1372,7 @@ class TestSSMCopy:
 
         # 3. 使用目标 Pipeline 进行推理（会修改状态）
         target_pipeline._is_fitted = True  # 标记为已 fit
-        target_pipeline.warmup_ssm(realistic_candles, verbose=False)
+        target_pipeline.warmup_ssm(realistic_candles)
 
         # 4. 验证源 SSM 状态未被修改
         source_state_after = (
@@ -1385,6 +1385,134 @@ class TestSSMCopy:
                 source_state_after,
                 err_msg="Source SSM state should not be modified by target pipeline",
             )
+
+
+class TestShareRawCalculatorE2E:
+    """测试 share_raw_calculator_from 完整工作流"""
+
+    def test_share_calculator_then_fit_transform_no_ssm(self, realistic_candles):
+        """共享 calculator 后 fit_transform 应复用缓存（无 SSM 场景）"""
+        import time
+
+        # 1. 源 Pipeline 计算所有特征（使用注册表中存在的特征）
+        source_config = PipelineConfig(
+            feature_names=["fisher", "natr", "vwap", "adx_7", "adx_14"],
+            use_dimension_reducer=False,
+        )
+        source_pipeline = FeaturePipeline(source_config)
+
+        start_time = time.perf_counter()
+        source_result = source_pipeline.fit_transform(realistic_candles)
+        source_time = time.perf_counter() - start_time
+
+        # 验证缓存已建立
+        assert len(source_pipeline._raw_calculator.cache) > 0
+
+        # 2. 目标 Pipeline 共享 calculator
+        target_config = PipelineConfig(
+            feature_names=["fisher", "natr"],  # 子集
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+        target_pipeline.share_raw_calculator_from(source_pipeline)
+
+        # 3. fit_transform 应该复用缓存
+        start_time = time.perf_counter()
+        target_result = target_pipeline.fit_transform(realistic_candles)
+        target_time = time.perf_counter() - start_time
+
+        # 4. 验证结果正确
+        assert list(target_result.columns) == ["fisher", "natr"]
+        assert len(target_result) == len(source_result)
+
+        # 验证非 NaN 值一致（fit_transform 的 NaN 填充可能导致 NaN 位置略有不同）
+        for col in ["fisher", "natr"]:
+            source_vals = source_result[col].values
+            target_vals = target_result[col].values
+            # 找到两者都非 NaN 的位置
+            valid_mask = ~np.isnan(source_vals) & ~np.isnan(target_vals)
+            np.testing.assert_array_almost_equal(
+                target_vals[valid_mask],
+                source_vals[valid_mask],
+                decimal=10,
+            )
+
+        # 5. 目标 Pipeline 应该显著更快（缓存复用）
+        # 注意：由于缓存复用，目标 Pipeline 几乎不需要计算
+        assert target_time < source_time
+
+    def test_share_calculator_with_copy_ssm(
+        self, realistic_candles, lgssm_config, deepssm_config
+    ):
+        """共享 calculator + 复制 SSM 的完整工作流"""
+        # 1. 源 Pipeline：全量特征
+        source_config = PipelineConfig(
+            feature_names=["lg_ssm_0", "lg_ssm_1", "deep_ssm_0", "fisher", "natr"],
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        source_pipeline = FeaturePipeline(source_config)
+        source_pipeline._ssm_processors["lg_ssm"] = LGSSMAdapter(config=lgssm_config)
+        source_pipeline._ssm_processors["deep_ssm"] = DeepSSMAdapter(
+            config=deepssm_config
+        )
+
+        source_result = source_pipeline.fit_transform(realistic_candles)
+
+        # 2. 目标 Pipeline：特征子集，共享 calculator + 复制 SSM
+        target_config = PipelineConfig(
+            feature_names=["lg_ssm_0", "fisher"],  # 子集
+            ssm_state_dim=5,
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+        target_pipeline.share_raw_calculator_from(source_pipeline)
+        target_pipeline.copy_ssm_from(source_pipeline, ssm_types=["lg_ssm"])
+
+        target_result = target_pipeline.fit_transform(realistic_candles)
+
+        # 3. 验证结果
+        assert list(target_result.columns) == ["lg_ssm_0", "fisher"]
+
+        # SSM 特征值应该一致（因为复制了训练好的 SSM）
+        np.testing.assert_array_almost_equal(
+            target_result["lg_ssm_0"].values,
+            source_result["lg_ssm_0"].values,
+            decimal=5,
+        )
+
+        # 原始特征值应该一致（因为共享了 calculator 缓存）
+        np.testing.assert_array_equal(
+            target_result["fisher"].values,
+            source_result["fisher"].values,
+        )
+
+    def test_shared_calculator_is_same_instance(self, realistic_candles):
+        """验证共享的 calculator 是同一个实例"""
+        source_config = PipelineConfig(
+            feature_names=["fisher"],
+            use_dimension_reducer=False,
+        )
+        source_pipeline = FeaturePipeline(source_config)
+
+        target_config = PipelineConfig(
+            feature_names=["natr"],
+            use_dimension_reducer=False,
+        )
+        target_pipeline = FeaturePipeline(target_config)
+
+        # 共享前
+        assert source_pipeline._raw_calculator is not target_pipeline._raw_calculator
+
+        # 共享
+        target_pipeline.share_raw_calculator_from(source_pipeline)
+
+        # 共享后是同一实例
+        assert source_pipeline._raw_calculator is target_pipeline._raw_calculator
+
+        # 对其中一个操作会影响另一个
+        source_pipeline._raw_calculator.load(realistic_candles, sequential=True)
+        assert target_pipeline._raw_calculator.candles is realistic_candles
 
 
 if __name__ == "__main__":

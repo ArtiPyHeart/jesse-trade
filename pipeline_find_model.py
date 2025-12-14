@@ -1,3 +1,15 @@
+"""
+Pipeline Find Model - 使用 FeaturePipeline 的模型搜索流水线
+
+新流程：
+1. 获取 fusion candles
+2. 全局 FeaturePipeline（不降维）→ 计算全量特征（含 SSM）
+3. 按 label 进行特征筛选 → 返回特征名称（含 SSM 如 deep_ssm_0）
+4. 模型特定 FeaturePipeline（copy_ssm_from + 降维）→ 降维后特征
+5. LightGBM 调参
+6. CSV 记录（含降维器配置、降维前特征数量）
+"""
+
 import gc
 import json
 import logging
@@ -12,10 +24,16 @@ import pandas as pd
 from jesse.helpers import date_to_timestamp
 
 from research.model_pick.candle_fetch import FusionCandles, bar_container
-from research.model_pick.feature_select import FeatureSelector
-from research.model_pick.features import FeatureLoader
+from research.model_pick.feature_utils import (
+    align_features_and_labels,
+    build_full_feature_config,
+    build_model_config,
+    select_features,
+)
+from research.model_pick.features import ALL_FEATS
 from research.model_pick.labeler import PipelineLabeler
 from research.model_pick.model_tuning import ModelTuning
+from src.features.pipeline import FeaturePipeline
 
 # 配置日志系统
 logging.basicConfig(
@@ -36,15 +54,22 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # 用于保存deep ssm与lg ssm
-# 使用 path = MODEL_SAVE_DIR / "deep_ssm"
-# path.resolve().as_posix()的方式生成路径
 MODEL_SAVE_DIR = Path("strategies/BinanceBtcDemoBarV2/models")
 
-# 固定训练集切分点，从而固定训练集，节约特征生成和筛选的时间。测试集主要用于回测
+# 固定训练集切分点
 TRAIN_TEST_SPLIT_DATE = "2025-05-31"
 CANDLE_START = "2022-08-01"
 CANDLE_END = "2025-07-01"
 RESULTS_FILE = "model_search_results.csv"
+
+# ARDVAE 降维器配置（固定，不进行调参）
+REDUCER_CONFIG = {
+    "max_latent_dim": 512,  # over-complete 设计，ARD prior 自动确定 active dims
+    "kl_threshold": 0.01,  # 判断维度是否 active 的阈值
+    "max_epochs": 200,
+    "patience": 15,
+    "seed": 42,
+}
 
 
 class ModelSearchTracker:
@@ -95,9 +120,12 @@ class ModelSearchTracker:
         feature_count: int,
         feature_names: list[str],
         duration: float,
+        reducer_config: dict,
+        n_features_before_reduction: int,
+        n_features_after_reduction: int,
         status: str = "completed",
     ):
-        """保存单个实验结果"""
+        """保存单个实验结果（新增降维相关字段）"""
         result = {
             "log_return_lag": log_return_lag,
             "pred_next": pred_next,
@@ -107,10 +135,13 @@ class ModelSearchTracker:
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "status": status,
             "duration_seconds": duration,
+            "selected_features": json.dumps(feature_names),
+            # 新增字段：降维器相关
+            "reducer_config": json.dumps(reducer_config),
+            "n_features_before_reduction": n_features_before_reduction,
+            "n_features_after_reduction": n_features_after_reduction,
+            # 模型最佳参数
             "best_params": json.dumps(best_params),
-            "selected_features": json.dumps(
-                feature_names
-            ),  # 将特征列表保存为JSON字符串
         }
 
         # 添加到DataFrame
@@ -147,15 +178,51 @@ class ModelSearchTracker:
         for model_type in ["classifier", "regressor"]:
             type_df = self.results_df[self.results_df["model_type"] == model_type]
             if not type_df.empty:
-                # 分类器和回归器（R²）都是越大越好
                 best_row = type_df.loc[type_df["best_score"].idxmax()]
                 print(f"\n{model_type.upper()} 最佳模型:")
                 print(f"  - Log Return Lag: {int(best_row['log_return_lag'])}")
                 print(f"  - Pred Next: {int(best_row['pred_next'])}")
                 print(f"  - Score: {best_row['best_score']:.4f}")
-                print(f"  - Features: {int(best_row['feature_count'])}")
+                print(
+                    f"  - Features (降维前): {int(best_row.get('n_features_before_reduction', best_row['feature_count']))}"
+                )
+                print(
+                    f"  - Features (降维后): {int(best_row.get('n_features_after_reduction', best_row['feature_count']))}"
+                )
 
         print("\n" + "=" * 60)
+
+
+def cleanup_multiprocessing_resources():
+    """强制清理 multiprocessing 资源，防止累积泄漏"""
+    import ctypes
+
+    # 多轮强制 Python 垃圾回收（处理循环引用）
+    for _ in range(3):
+        gc.collect()
+
+    # 清理 multiprocessing 的全局资源
+    try:
+        for child in multiprocessing.active_children():
+            child.join(timeout=1.0)
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=1.0)
+        gc.collect()
+    except Exception as e:
+        logger.warning(f"清理 multiprocessing 资源时出现警告（可忽略）: {e}")
+
+    # 尝试释放 C 库内存（macOS/Linux）
+    try:
+        if hasattr(ctypes, "CDLL"):
+            libc = ctypes.CDLL("libc.dylib")
+            if hasattr(libc, "malloc_trim"):
+                libc.malloc_trim(0)
+    except Exception:
+        pass
+
+    gc.collect()
+    logger.debug("✓ Multiprocessing 资源清理完成")
 
 
 logger.info("=" * 60)
@@ -173,180 +240,222 @@ logger.info(
     f"时间范围: {pd.to_datetime(candles[0][0], unit='ms')} - {pd.to_datetime(candles[-1][0], unit='ms')}"
 )
 
-# 特征生成只关心特征名称和原始数据
-logger.info("初始化特征加载器...")
-feature_loader = FeatureLoader(candles)
+# 构建全局 FeaturePipeline（不降维），计算全量特征
+logger.info("初始化全局 FeaturePipeline（不降维）...")
+global_config = build_full_feature_config(ALL_FEATS, ssm_state_dim=5)
+global_pipeline = FeaturePipeline(global_config)
+logger.info(f"配置特征数: {len(global_config.feature_names)} (含 SSM 特征)")
 
-# 由于训练集相同，selector内部的deep ssm与lg ssm只需要训练一次
-logger.info("初始化特征选择器（将缓存SSM模型）...")
-feature_selector = FeatureSelector(model_save_dir=MODEL_SAVE_DIR)
-logger.info("初始化完成")
+logger.info("计算全局特征（训练 SSM 模型）...")
+global_features = global_pipeline.fit_transform(candles)
+logger.info(f"全局特征计算完成: {global_features.shape}")
 
 # 初始化追踪器
 tracker = ModelSearchTracker()
 
 
-def cleanup_multiprocessing_resources():
-    """
-    强制清理 multiprocessing 资源，防止累积泄漏
-
-    这个函数解决的问题：
-    - LightGBM + GridSearchCV 创建的 worker 进程池
-    - 进程间通信的 semaphore 和 shared memory
-    - Optuna 和 LightGBM 的内部缓存
-    - 这些资源在任务结束后可能不会自动释放
-    """
-    import ctypes
-
-    # 1. 多轮强制 Python 垃圾回收（处理循环引用）
-    for _ in range(3):
-        gc.collect()
-
-    # 2. 清理 multiprocessing 的全局资源
-    try:
-        # 如果存在活跃的子进程，等待它们结束
-        for child in multiprocessing.active_children():
-            child.join(timeout=1.0)  # 增加超时时间
-            if child.is_alive():
-                child.terminate()  # 强制终止僵尸进程
-                child.join(timeout=1.0)  # 等待终止完成
-
-        # 3. 再次垃圾回收，清理终止进程的资源
-        gc.collect()
-
-    except Exception as e:
-        logger.warning(f"清理 multiprocessing 资源时出现警告（可忽略）: {e}")
-
-    # 4. 尝试释放 C 库内存（macOS/Linux）
-    try:
-        if hasattr(ctypes, "CDLL"):
-            # macOS
-            libc = ctypes.CDLL("libc.dylib")
-            if hasattr(libc, "malloc_trim"):
-                libc.malloc_trim(0)
-    except Exception:
-        pass  # 忽略平台相关的错误
-
-    # 5. 最终垃圾回收
-    gc.collect()
-
-    logger.debug("✓ Multiprocessing 资源清理完成")
-
-
 def evaluate_classifier(
+    global_pipeline: FeaturePipeline,
+    global_features: pd.DataFrame,
     candles: np.ndarray,
     log_return_lag: int,
     pred_next: int,
 ):
+    """
+    评估分类器
+
+    流程：
+    1. 生成标签
+    2. 对齐全局特征与标签
+    3. 划分训练集
+    4. 特征筛选
+    5. 构建模型特定 Pipeline（启用降维）
+    6. 计算降维后特征
+    7. 模型调参
+    """
     logger.info(
         f"[分类器] 开始评估 - log_return_lag={log_return_lag}, pred_next={pred_next}"
     )
 
-    # 创建标签
+    # 1. 生成标签
     logger.info(f"[分类器] 创建标签器，log_return_lag={log_return_lag}")
     labeler = PipelineLabeler(candles, log_return_lag)
-    label_for_classifier = labeler.label_hard
+    raw_label = labeler.label_hard
     logger.info(
-        f"[分类器] 标签分布: {np.unique(label_for_classifier, return_counts=True)}"
+        f"[分类器] 标签分布: {dict(zip(*np.unique(raw_label[~np.isnan(raw_label)].astype(int), return_counts=True)))}"
     )
 
-    # 获取特征和标签
-    logger.info(f"[分类器] 加载特征数据，pred_next={pred_next}")
-    df_feat, label_c = feature_loader.get_feature_label_bundle(
-        label_for_classifier, pred_next
+    # 2. 对齐全局特征与标签
+    logger.info("[分类器] 对齐特征和标签...")
+    aligned_features, aligned_labels = align_features_and_labels(
+        global_features, raw_label, pred_next, candles[:, 0]
     )
-    logger.info(f"[分类器] 特征维度: {df_feat.shape}")
+    logger.info(f"[分类器] 对齐后特征维度: {aligned_features.shape}")
 
-    # 划分训练集
-    train_mask = df_feat.index.to_numpy() < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
-    train_x_all_feat = df_feat[train_mask]
-    train_y = label_c[train_mask]
+    # 3. 划分训练集
+    train_mask = aligned_features.index < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
+    train_x = aligned_features[train_mask]
+    train_y = aligned_labels[: train_mask.sum()]
     logger.info(
-        f"[分类器] 训练集大小: {train_x_all_feat.shape[0]} 样本, {train_x_all_feat.shape[1]} 特征"
+        f"[分类器] 训练集大小: {train_x.shape[0]} 样本, {train_x.shape[1]} 特征"
     )
+
+    # 4. 特征筛选
+    logger.info("[分类器] 开始特征筛选...")
+    selection_result = select_features(train_x, train_y)
     logger.info(
-        f"[分类器] 训练集标签分布: {dict(zip(*np.unique(train_y, return_counts=True)))}"
+        f"[分类器] 特征筛选完成: 从 {selection_result.n_total} 个特征中选择了 {selection_result.n_selected} 个"
     )
 
-    # 特征选择
-    logger.info(f"[分类器] 开始特征选择...")
-    feature_names = feature_selector.select_features(train_x_all_feat, train_y)
+    # 5. 构建模型特定 Pipeline（启用降维）
+    logger.info("[分类器] 构建模型特定 Pipeline（启用 ARDVAE 降维）...")
+    model_config = build_model_config(
+        selection_result.selected_features,
+        ssm_state_dim=5,
+        reducer_config=REDUCER_CONFIG,
+    )
+    model_pipeline = FeaturePipeline(model_config)
+    model_pipeline.share_raw_calculator_from(global_pipeline)
+    model_pipeline.copy_ssm_from(global_pipeline)
+
+    # 6. 计算降维后特征
+    logger.info("[分类器] 计算降维后特征...")
+    model_features = model_pipeline.fit_transform(candles)
     logger.info(
-        f"[分类器] 特征选择完成: 从 {train_x_all_feat.shape[1]} 个特征中选择了 {len(feature_names)} 个"
-    )
-    logger.debug(f"[分类器] 选中的特征: {feature_names[:10]}...")  # 只显示前10个特征
-
-    # 模型调参
-    logger.info(f"[分类器] 开始模型调参...")
-    model_tuning = ModelTuning(
-        TRAIN_TEST_SPLIT_DATE,
-        train_x_all_feat,
-        train_y,
+        f"[分类器] 降维完成: {selection_result.n_selected} -> {model_features.shape[1]} 维"
     )
 
-    params, best_score = model_tuning.tuning_classifier(feature_selector, feature_names)
+    # 7. 重新对齐降维后特征
+    model_aligned, _ = align_features_and_labels(
+        model_features, raw_label, pred_next, candles[:, 0]
+    )
+    train_x_reduced = model_aligned[
+        model_aligned.index < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
+    ]
+
+    # 8. 模型调参
+    logger.info("[分类器] 开始模型调参...")
+    model_tuning = ModelTuning(TRAIN_TEST_SPLIT_DATE, train_x_reduced, train_y)
+    params, best_score = model_tuning.tuning_classifier_direct(train_x_reduced, train_y)
     logger.info(f"[分类器] 调参完成 - 最佳得分: {best_score:.4f}")
-    logger.info(f"[分类器] 最佳参数: {params}")
 
-    return params, best_score, len(feature_names), feature_names
+    # 返回结果
+    reducer_info = {
+        "config": REDUCER_CONFIG,
+        "n_before_reduction": selection_result.n_selected,
+        "n_after_reduction": model_features.shape[1],
+    }
+
+    # 清理模型特定 Pipeline
+    del model_pipeline
+    gc.collect()
+
+    return (
+        params,
+        best_score,
+        selection_result.n_selected,
+        selection_result.selected_features,
+        reducer_info,
+    )
 
 
 def evaluate_regressor(
+    global_pipeline: FeaturePipeline,
+    global_features: pd.DataFrame,
     candles: np.ndarray,
     log_return_lag: int,
     pred_next: int,
 ):
+    """
+    评估回归器
+
+    流程与分类器相同，使用连续标签
+    """
     logger.info(
         f"[回归器] 开始评估 - log_return_lag={log_return_lag}, pred_next={pred_next}"
     )
 
-    # 创建标签
+    # 1. 生成标签
     logger.info(f"[回归器] 创建标签器，log_return_lag={log_return_lag}")
     labeler = PipelineLabeler(candles, log_return_lag)
-    label_for_regressor = labeler.label_direction
+    raw_label = labeler.label_direction
+    valid_labels = raw_label[~np.isnan(raw_label)]
     logger.info(
-        f"[回归器] 标签统计: 均值={np.mean(label_for_regressor):.6f}, 标准差={np.std(label_for_regressor):.6f}"
+        f"[回归器] 标签统计: 均值={np.mean(valid_labels):.6f}, 标准差={np.std(valid_labels):.6f}"
     )
 
-    # 获取特征和标签
-    logger.info(f"[回归器] 加载特征数据，pred_next={pred_next}")
-    df_feat, label_r = feature_loader.get_feature_label_bundle(
-        label_for_regressor, pred_next
+    # 2. 对齐全局特征与标签
+    logger.info("[回归器] 对齐特征和标签...")
+    aligned_features, aligned_labels = align_features_and_labels(
+        global_features, raw_label, pred_next, candles[:, 0]
     )
-    logger.info(f"[回归器] 特征维度: {df_feat.shape}")
+    logger.info(f"[回归器] 对齐后特征维度: {aligned_features.shape}")
 
-    # 划分训练集
-    train_mask = df_feat.index.to_numpy() < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
-    train_x_all_feat = df_feat[train_mask]
-    train_y = label_r[train_mask]
+    # 3. 划分训练集
+    train_mask = aligned_features.index < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
+    train_x = aligned_features[train_mask]
+    train_y = aligned_labels[: train_mask.sum()]
     logger.info(
-        f"[回归器] 训练集大小: {train_x_all_feat.shape[0]} 样本, {train_x_all_feat.shape[1]} 特征"
+        f"[回归器] 训练集大小: {train_x.shape[0]} 样本, {train_x.shape[1]} 特征"
     )
+
+    # 4. 特征筛选
+    logger.info("[回归器] 开始特征筛选...")
+    selection_result = select_features(train_x, train_y)
     logger.info(
-        f"[回归器] 训练集标签范围: [{np.min(train_y):.6f}, {np.max(train_y):.6f}]"
+        f"[回归器] 特征筛选完成: 从 {selection_result.n_total} 个特征中选择了 {selection_result.n_selected} 个"
     )
 
-    # 特征选择
-    logger.info(f"[回归器] 开始特征选择...")
-    feature_names = feature_selector.select_features(train_x_all_feat, train_y)
+    # 5. 构建模型特定 Pipeline（启用降维）
+    logger.info("[回归器] 构建模型特定 Pipeline（启用 ARDVAE 降维）...")
+    model_config = build_model_config(
+        selection_result.selected_features,
+        ssm_state_dim=5,
+        reducer_config=REDUCER_CONFIG,
+    )
+    model_pipeline = FeaturePipeline(model_config)
+    model_pipeline.share_raw_calculator_from(global_pipeline)
+    model_pipeline.copy_ssm_from(global_pipeline)
+
+    # 6. 计算降维后特征
+    logger.info("[回归器] 计算降维后特征...")
+    model_features = model_pipeline.fit_transform(candles)
     logger.info(
-        f"[回归器] 特征选择完成: 从 {train_x_all_feat.shape[1]} 个特征中选择了 {len(feature_names)} 个"
-    )
-    logger.debug(f"[回归器] 选中的特征: {feature_names[:10]}...")  # 只显示前10个特征
-
-    # 模型调参
-    logger.info(f"[回归器] 开始模型调参...")
-    model_tuning = ModelTuning(
-        TRAIN_TEST_SPLIT_DATE,
-        train_x_all_feat,
-        train_y,
+        f"[回归器] 降维完成: {selection_result.n_selected} -> {model_features.shape[1]} 维"
     )
 
-    params, best_score = model_tuning.tuning_regressor(feature_selector, feature_names)
+    # 7. 重新对齐降维后特征
+    model_aligned, _ = align_features_and_labels(
+        model_features, raw_label, pred_next, candles[:, 0]
+    )
+    train_x_reduced = model_aligned[
+        model_aligned.index < date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
+    ]
+
+    # 8. 模型调参
+    logger.info("[回归器] 开始模型调参...")
+    model_tuning = ModelTuning(TRAIN_TEST_SPLIT_DATE, train_x_reduced, train_y)
+    params, best_score = model_tuning.tuning_regressor_direct(train_x_reduced, train_y)
     logger.info(f"[回归器] 调参完成 - 最佳R²得分: {best_score:.4f}")
-    logger.info(f"[回归器] 最佳参数: {params}")
 
-    return params, best_score, len(feature_names), feature_names
+    # 返回结果
+    reducer_info = {
+        "config": REDUCER_CONFIG,
+        "n_before_reduction": selection_result.n_selected,
+        "n_after_reduction": model_features.shape[1],
+    }
+
+    # 清理模型特定 Pipeline
+    del model_pipeline
+    gc.collect()
+
+    return (
+        params,
+        best_score,
+        selection_result.n_selected,
+        selection_result.selected_features,
+        reducer_info,
+    )
 
 
 if __name__ == "__main__":
@@ -358,26 +467,27 @@ if __name__ == "__main__":
     logger.info("\n" + "=" * 60)
     logger.info("任务规划")
     logger.info("=" * 60)
-    logger.info(f"参数配置:")
+    logger.info("参数配置:")
     logger.info(f"  - log_return_lags: {log_return_lags}")
     logger.info(f"  - pred_next_steps: {pred_next_steps}")
-    logger.info(f"  - 模型类型: ['classifier', 'regressor']")
+    logger.info("  - 模型类型: ['classifier', 'regressor']")
     logger.info(f"  - 训练/测试分割日期: {TRAIN_TEST_SPLIT_DATE}")
+    logger.info(
+        f"  - 降维器配置: max_latent_dim={REDUCER_CONFIG['max_latent_dim']}, kl_threshold={REDUCER_CONFIG['kl_threshold']}"
+    )
 
     pending_tasks = tracker.get_pending_tasks(log_return_lags, pred_next_steps)
-    total_tasks = len(log_return_lags) * len(pred_next_steps) * 2  # 2种模型类型
+    total_tasks = len(log_return_lags) * len(pred_next_steps) * 2
     completed_tasks = total_tasks - len(pending_tasks)
 
-    logger.info(f"\n任务统计:")
+    logger.info("\n任务统计:")
     logger.info(f"  - 总任务数: {total_tasks}")
     logger.info(f"  - 已完成: {completed_tasks}")
     logger.info(f"  - 待完成: {len(pending_tasks)}")
 
     if pending_tasks:
-        logger.info(f"\n待完成任务列表:")
-        for i, (lag, pred, model_type) in enumerate(
-            pending_tasks[:5], 1
-        ):  # 只显示前5个
+        logger.info("\n待完成任务列表:")
+        for i, (lag, pred, model_type) in enumerate(pending_tasks[:5], 1):
             logger.info(f"  {i}. {model_type}: lag={lag}, pred={pred}")
         if len(pending_tasks) > 5:
             logger.info(f"  ... 还有 {len(pending_tasks) - 5} 个任务")
@@ -408,12 +518,24 @@ if __name__ == "__main__":
             start_time = time.time()
 
             if model_type == "classifier":
-                params, score, feature_count, feature_names = evaluate_classifier(
-                    candles.copy(), lag, pred
+                params, score, feature_count, feature_names, reducer_info = (
+                    evaluate_classifier(
+                        global_pipeline,
+                        global_features.copy(),
+                        candles.copy(),
+                        lag,
+                        pred,
+                    )
                 )
             else:
-                params, score, feature_count, feature_names = evaluate_regressor(
-                    candles.copy(), lag, pred
+                params, score, feature_count, feature_names, reducer_info = (
+                    evaluate_regressor(
+                        global_pipeline,
+                        global_features.copy(),
+                        candles.copy(),
+                        lag,
+                        pred,
+                    )
                 )
 
             duration = time.time() - start_time
@@ -428,25 +550,27 @@ if __name__ == "__main__":
                 feature_count=feature_count,
                 feature_names=feature_names,
                 duration=duration,
+                reducer_config=reducer_info["config"],
+                n_features_before_reduction=reducer_info["n_before_reduction"],
+                n_features_after_reduction=reducer_info["n_after_reduction"],
                 status="completed",
             )
 
             logger.info("\n" + "=" * 40)
-            logger.info(f"✓ 任务完成！")
+            logger.info("✓ 任务完成！")
             logger.info(f"  - 模型类型: {model_type}")
             logger.info(f"  - 参数: lag={lag}, pred={pred}")
             logger.info(f"  - 最佳得分: {score:.4f}")
-            logger.info(f"  - 特征数量: {feature_count}")
+            logger.info(
+                f"  - 特征数量: {reducer_info['n_before_reduction']} -> {reducer_info['n_after_reduction']} (降维后)"
+            )
             logger.info(f"  - 训练耗时: {duration:.1f} 秒")
             logger.info(
                 f"  - 预计剩余时间: {(len(pending_tasks) - task_idx) * duration / 60:.1f} 分钟"
             )
             logger.info("=" * 40)
 
-            # 🔧 强制清理资源，防止多进程资源泄漏累积
-            # 清理 feature_selector 的缓存（每个任务的 train_x 切片不同）
-            # 注意：不清理 feature_loader，全量特征需要保留供后续任务使用
-            feature_selector.clear_cache()
+            # 强制清理资源
             cleanup_multiprocessing_resources()
 
         except KeyboardInterrupt:
@@ -461,13 +585,12 @@ if __name__ == "__main__":
 
         except Exception as e:
             logger.error("\n" + "!" * 60)
-            logger.error(f"✗ 训练失败!")
+            logger.error("✗ 训练失败!")
             logger.error(f"  - 错误信息: {str(e)}")
             logger.error(f"  - 失败任务: {model_type} (lag={lag}, pred={pred})")
             logger.error(f"  - 当前进度: {overall_progress}/{total_tasks}")
             logger.error("!" * 60)
             logger.error("程序终止，显示已完成的结果：")
-            # 显示已完成的结果
             tracker.print_summary()
             raise
 

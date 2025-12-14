@@ -10,7 +10,6 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import KFold, StratifiedKFold
 
 from src.utils.drop_na import drop_na_and_align_x_and_y
-from .feature_select import FeatureSelector
 
 METRIC = "f1"
 
@@ -37,18 +36,29 @@ class ModelTuning:
 
         assert len(self.train_X) == len(self.train_Y)
 
-    def tuning_classifier(
-        self, selector: FeatureSelector, feature_names: list[str]
+    def tuning_classifier_direct(
+        self, train_x: pd.DataFrame, train_y: np.ndarray
     ) -> tuple[dict, float]:
-        all_feats = selector.get_all_features(self.train_X)[feature_names]
-        print(f"{len(feature_names)} features selected")
+        """
+        直接使用预计算特征调参（分类器）
 
-        x, y = drop_na_and_align_x_and_y(all_feats, self.train_Y)
+        与 tuning_classifier 的区别：不依赖 FeatureSelector，
+        直接使用传入的特征 DataFrame。
 
-        # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
+        Args:
+            train_x: 预计算的特征 DataFrame（已对齐、无 NaN）
+            train_y: 标签数组
+
+        Returns:
+            (best_params, best_score): 最优参数和最优 F1 分数
+        """
+        x, y = drop_na_and_align_x_and_y(train_x, train_y)
+        print(f"{train_x.shape[1]} features for tuning")
+
+        # LightGBM prefers contiguous float32 arrays
         x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
 
-        # 固定max_bin参数，使用 free_raw_data=True 释放原始数据避免内存泄漏
+        # 固定max_bin参数，使用 free_raw_data=True 释放原始数据
         dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
         cv_folds = list(
             StratifiedKFold(n_splits=5, shuffle=True, random_state=42).split(x, y)
@@ -58,7 +68,6 @@ class ModelTuning:
             boosting_type = trial.suggest_categorical("boosting", ["gbdt", "dart"])
             params = {
                 "objective": "binary",
-                # 不在params中指定metric，因为使用feval时会冲突
                 "num_threads": -1,
                 "verbose": -1,
                 "is_unbalance": trial.suggest_categorical(
@@ -80,17 +89,13 @@ class ModelTuning:
                 "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 1.0),
                 "bagging_fraction": trial.suggest_float("bagging_fraction", 0.4, 1.0),
                 "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-                # 移除过于激进的性能优化参数，优先保证模型质量
                 "feature_pre_filter": False,
             }
-            # 如果使用 dart，添加 dart 特有参数
             if boosting_type == "dart":
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
                 params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
             num_boost_round = trial.suggest_int("num_boost_round", 300, 1500)
-            # 注意：使用feval时，LightGBMPruningCallback需要metric名称而非"metric-mean"格式
-            # 实际callback接收的是('valid', 'f1', value, is_higher_better, std)格式
             pruning_cb = LightGBMPruningCallback(trial, METRIC)
             callbacks = [
                 lgb.early_stopping(stopping_rounds=150, verbose=False),
@@ -116,13 +121,8 @@ class ModelTuning:
                 warn_independent_sampling=False,
             ),
         )
-        # 设置 Optuna 日志级别为警告，隐藏详细日志
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        # 使用 show_progress_bar 显示进度条
-        # n_jobs=1 在M4 Pro上避免过度并行导致的性能下降
-        study.optimize(
-            objective, n_trials=300, n_jobs=1, show_progress_bar=True
-        )  # 增加试验次数
+        study.optimize(objective, n_trials=300, n_jobs=1, show_progress_bar=True)
 
         params = {
             "objective": "binary",
@@ -132,47 +132,51 @@ class ModelTuning:
         }
         best_value = study.best_value
 
-        # 🔧 显式清理 Optuna study 和 Dataset，防止内存泄漏
         del study
         del dtrain
         gc.collect()
 
         return params, best_value
 
-    def tuning_regressor(
-        self, selector: FeatureSelector, feature_names: list[str]
+    def tuning_regressor_direct(
+        self, train_x: pd.DataFrame, train_y: np.ndarray
     ) -> tuple[dict, float]:
-        all_feats = selector.get_all_features(self.train_X)[feature_names]
-        print(f"{len(feature_names)} features selected")
+        """
+        直接使用预计算特征调参（回归器）
 
-        x, y = drop_na_and_align_x_and_y(all_feats, self.train_Y)
+        与 tuning_regressor 的区别：不依赖 FeatureSelector，
+        直接使用传入的特征 DataFrame。
 
-        # LightGBM prefers contiguous float32 arrays; cache once to reuse across trials
+        Args:
+            train_x: 预计算的特征 DataFrame（已对齐、无 NaN）
+            train_y: 标签数组
+
+        Returns:
+            (best_params, best_score): 最优参数和最优 R² 分数
+        """
+        x, y = drop_na_and_align_x_and_y(train_x, train_y)
+        print(f"{train_x.shape[1]} features for tuning")
+
+        # LightGBM prefers contiguous float32 arrays
         x = np.ascontiguousarray(x.to_numpy(dtype=np.float32))
-        # 固定max_bin参数，使用 free_raw_data=True 释放原始数据避免内存泄漏
+
+        # 固定max_bin参数，使用 free_raw_data=True 释放原始数据
         dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
         cv_folds = list(KFold(n_splits=5, shuffle=True, random_state=42).split(x))
 
         # 预计算训练集标签的方差，用于计算R²
         y_var = np.var(y)
 
-        # 自定义R²评估函数（用于LightGBM的feval参数）
         def r2_eval(preds, eval_dataset):
-            """
-            计算R²分数
-            R² = 1 - (MSE / Var(y))
-            """
             y_true = eval_dataset.get_label()
             mse = np.mean((y_true - preds) ** 2)
             r2 = 1 - (mse / y_var)
-            # 返回 (metric_name, metric_value, is_higher_better)
             return "r2", r2, True
 
         def objective(trial):
             boosting_type = trial.suggest_categorical("boosting", ["gbdt", "dart"])
             params = {
                 "objective": "regression",
-                # 不在params中指定metric，使用feval
                 "num_threads": -1,
                 "verbose": -1,
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
@@ -185,7 +189,6 @@ class ModelTuning:
                 "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 200),
                 "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 10.0, log=True),
                 "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
-                # 添加 regression 特有的参数
                 "min_sum_hessian_in_leaf": trial.suggest_float(
                     "min_sum_hessian_in_leaf", 1e-3, 10, log=True
                 ),
@@ -195,18 +198,13 @@ class ModelTuning:
                 "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 1.0),
                 "bagging_fraction": trial.suggest_float("bagging_fraction", 0.4, 1.0),
                 "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
-                # 移除过于激进的性能优化参数
                 "feature_pre_filter": False,
             }
-
-            # 如果使用 dart，添加 dart 特有参数
             if boosting_type == "dart":
                 params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
                 params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
             num_boost_round = trial.suggest_int("num_boost_round", 300, 1500)
-
-            # 使用LightGBMPruningCallback监控R²指标
             pruning_cb = LightGBMPruningCallback(trial, "r2")
             callbacks = [
                 lgb.early_stopping(stopping_rounds=150, verbose=False),
@@ -217,14 +215,13 @@ class ModelTuning:
                 dtrain,
                 num_boost_round=num_boost_round,
                 folds=cv_folds,
-                feval=r2_eval,  # 使用自定义R²评估函数
+                feval=r2_eval,
                 callbacks=callbacks,
             )
-            # 返回交叉验证的平均R²分数
             return model_res["valid r2-mean"][-1]
 
         study = optuna.create_study(
-            direction="maximize",  # R²需要最大化
+            direction="maximize",
             pruner=optuna.pruners.HyperbandPruner(),
             sampler=optuna.samplers.TPESampler(
                 n_startup_trials=100,
@@ -233,13 +230,8 @@ class ModelTuning:
                 warn_independent_sampling=False,
             ),
         )
-        # 设置 Optuna 日志级别为警告，隐藏详细日志
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        # 使用 show_progress_bar 显示进度条
-        # n_jobs=1 在M4 Pro上避免过度并行导致的性能下降
-        study.optimize(
-            objective, n_trials=300, n_jobs=1, show_progress_bar=True
-        )  # 增加试验次数
+        study.optimize(objective, n_trials=300, n_jobs=1, show_progress_bar=True)
 
         params = {
             "objective": "regression",
@@ -249,9 +241,8 @@ class ModelTuning:
         }
         best_value = study.best_value
 
-        # 🔧 显式清理 Optuna study 和 Dataset，防止内存泄漏
         del study
         del dtrain
         gc.collect()
 
-        return params, best_value  # 返回R²值
+        return params, best_value

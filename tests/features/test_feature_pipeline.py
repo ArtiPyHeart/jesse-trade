@@ -413,7 +413,7 @@ class TestFeaturePipelineSSMIntegration:
         initial_state = lg_ssm._state.copy()
 
         # 预热（传入符合 Jesse 格式的 candles）
-        pipeline.warmup_ssm(candles, verbose=False)
+        pipeline.warmup_ssm(candles)
 
         # 状态应该已改变
         assert not np.allclose(lg_ssm._state, initial_state)
@@ -915,7 +915,7 @@ class TestFeaturePipelineNoSSM:
         )
 
         # fit 应该正常完成，不报错
-        pipeline.fit(candles, verbose=False)
+        pipeline.fit(candles)
 
         assert pipeline.is_fitted
         assert len(pipeline.ssm_processors) == 0
@@ -935,7 +935,7 @@ class TestFeaturePipelineNoSSM:
         )
 
         # fit_transform 应该正常完成
-        result = pipeline.fit_transform(candles, verbose=False)
+        result = pipeline.fit_transform(candles)
 
         assert pipeline.is_fitted
         assert list(result.columns) == ["rsi", "macd", "atr"]
@@ -994,7 +994,7 @@ class TestFeaturePipelineNoSSM:
         pipeline._is_fitted = True
 
         # warmup_ssm 应该直接返回，不调用 calculator
-        pipeline.warmup_ssm(candles, verbose=False)
+        pipeline.warmup_ssm(candles)
 
         # mock_calculator 不应该被调用
         assert not mock_calculator.load.called
@@ -1007,6 +1007,145 @@ class TestFeaturePipelineNoSSM:
 
         # 应该不报错
         pipeline.reset_ssm_states()
+
+
+class TestSimpleFeatureCalculatorCachePreservation:
+    """测试 SimpleFeatureCalculator 的缓存保留逻辑"""
+
+    def test_load_same_candles_reference_preserves_cache(self):
+        """同一 candles 引用应保留缓存"""
+        from src.features.simple_feature_calculator import SimpleFeatureCalculator
+
+        calc = SimpleFeatureCalculator(verbose=False)
+        candles = np.random.rand(100, 6)
+
+        # 第一次 load 并计算特征
+        calc.load(candles, sequential=True)
+        calc.get(["fisher"])  # 使用注册表中存在的特征
+
+        # 验证缓存已建立
+        assert len(calc.cache) > 0
+        cache_before = dict(calc.cache)
+
+        # 再次 load 同一引用
+        calc.load(candles, sequential=True)
+
+        # 缓存应该被保留
+        assert calc.cache == cache_before
+
+    def test_load_same_candles_content_preserves_cache(self):
+        """相同内容的不同对象应保留缓存"""
+        from src.features.simple_feature_calculator import SimpleFeatureCalculator
+
+        calc = SimpleFeatureCalculator(verbose=False)
+        candles = np.random.rand(100, 6)
+
+        # 第一次 load 并计算特征
+        calc.load(candles, sequential=True)
+        calc.get(["fisher"])  # 使用注册表中存在的特征
+
+        # 验证缓存已建立
+        assert len(calc.cache) > 0
+        cache_before = dict(calc.cache)
+
+        # 创建内容相同的新数组
+        candles_copy = candles.copy()
+        assert candles is not candles_copy  # 确认是不同对象
+        assert np.array_equal(candles, candles_copy)  # 确认内容相同
+
+        # load 新对象
+        calc.load(candles_copy, sequential=True)
+
+        # 缓存应该被保留
+        assert calc.cache == cache_before
+
+    def test_load_different_candles_clears_cache(self):
+        """不同内容的 candles 应清空缓存"""
+        from src.features.simple_feature_calculator import SimpleFeatureCalculator
+
+        calc = SimpleFeatureCalculator(verbose=False)
+        candles1 = np.random.rand(100, 6)
+
+        # 第一次 load 并计算特征
+        calc.load(candles1, sequential=True)
+        calc.get(["fisher"])  # 使用注册表中存在的特征
+
+        # 验证缓存已建立
+        assert len(calc.cache) > 0
+
+        # load 不同数据
+        candles2 = np.random.rand(100, 6)
+        calc.load(candles2, sequential=True)
+
+        # 缓存应该被清空
+        assert len(calc.cache) == 0
+
+    def test_load_sequential_true_can_serve_false(self):
+        """sequential=True 的缓存可以服务 sequential=False"""
+        from src.features.simple_feature_calculator import SimpleFeatureCalculator
+
+        calc = SimpleFeatureCalculator(verbose=False)
+        candles = np.random.rand(100, 6)
+
+        # 以 sequential=True 加载
+        calc.load(candles, sequential=True)
+        calc.get(["fisher"])  # 使用注册表中存在的特征
+
+        cache_before = dict(calc.cache)
+
+        # 以 sequential=False 再次加载同一数据
+        calc.load(candles, sequential=False)
+
+        # 缓存应该被保留
+        assert calc.cache == cache_before
+
+
+class TestShareRawCalculator:
+    """测试 share_raw_calculator_from 方法"""
+
+    @pytest.fixture
+    def raw_only_config(self):
+        """只有原始特征的配置（无 SSM）"""
+        return PipelineConfig(
+            feature_names=["rsi", "macd", "atr"],
+            verbose=False,
+        )
+
+    @pytest.fixture
+    def raw_only_config_subset(self):
+        """原始特征子集的配置"""
+        return PipelineConfig(
+            feature_names=["rsi", "macd"],
+            verbose=False,
+        )
+
+    def test_share_raw_calculator_from_basic(self, raw_only_config, raw_only_config_subset):
+        """基本共享功能测试"""
+        source_pipeline = FeaturePipeline(config=raw_only_config)
+        target_pipeline = FeaturePipeline(config=raw_only_config_subset)
+
+        # 共享前是不同的 calculator
+        assert source_pipeline._raw_calculator is not target_pipeline._raw_calculator
+
+        # 执行共享
+        result = target_pipeline.share_raw_calculator_from(source_pipeline)
+
+        # 验证返回 self（支持链式调用）
+        assert result is target_pipeline
+
+        # 验证是同一个 calculator
+        assert source_pipeline._raw_calculator is target_pipeline._raw_calculator
+
+    def test_share_raw_calculator_chain_call(self, raw_only_config, raw_only_config_subset):
+        """链式调用测试"""
+        source_pipeline = FeaturePipeline(config=raw_only_config)
+        target_pipeline = FeaturePipeline(config=raw_only_config_subset)
+
+        # 链式调用
+        target_pipeline.share_raw_calculator_from(source_pipeline)
+
+        # 验证共享成功
+        assert source_pipeline._raw_calculator is target_pipeline._raw_calculator
 
 
 if __name__ == "__main__":

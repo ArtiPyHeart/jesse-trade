@@ -41,6 +41,12 @@ class PipelineConfig:
         降维器类型，目前支持 "ard_vae"
     dimension_reducer_config : Optional[Dict]
         降维器配置参数
+    verbose : bool
+        是否打印进度信息（默认 False）。
+        此设置会被 FeaturePipeline 及其子模块继承：
+        - SimpleFeatureCalculator：构造时继承
+        - ARDVAE：fit 时通过参数传递
+        - fit/fit_transform/warmup_ssm：默认继承，可通过参数覆盖
     version : str
         配置版本号
 
@@ -71,6 +77,9 @@ class PipelineConfig:
     use_dimension_reducer: bool = False
     dimension_reducer_type: str = "ard_vae"
     dimension_reducer_config: Optional[Dict] = None
+
+    # 运行时配置
+    verbose: bool = False
 
     # 元信息
     version: str = "2.0.0"
@@ -181,6 +190,7 @@ class PipelineConfig:
             "use_dimension_reducer": self.use_dimension_reducer,
             "dimension_reducer_type": self.dimension_reducer_type,
             "dimension_reducer_config": self.dimension_reducer_config,
+            "verbose": self.verbose,
             "version": self.version,
         }
 
@@ -225,6 +235,7 @@ class PipelineConfig:
             "use_dimension_reducer": self.use_dimension_reducer,
             "dimension_reducer_type": self.dimension_reducer_type,
             "dimension_reducer_config": self.dimension_reducer_config,
+            "verbose": self.verbose,
             "version": self.version,
         }
         config_dict.update(kwargs)
