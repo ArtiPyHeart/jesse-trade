@@ -62,6 +62,7 @@ pip install -r requirements-dev.txt  # 开发依赖
 ## 编码规范
 - 内部函数用`_`前缀
 - 数据操作用NumPy/Pandas
+- **禁止使用 `*args` 和 `**kwargs`**：这两种可变参数形式容易引入隐蔽的 bug，应使用显式参数或配置对象代替
 - **Fail Fast**：立即暴露错误而非静默处理
   - 使用`assert`拦截非法输入，避免宽泛`try/except`
   - 特征计算/指标计算失败应立即抛出异常，不记录错误后继续
