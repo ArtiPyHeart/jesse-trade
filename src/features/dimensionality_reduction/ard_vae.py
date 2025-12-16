@@ -221,8 +221,6 @@ class ARDVAE:
     ----------
     config : ARDVAEConfig, optional
         模型配置。若为 None，使用默认配置。
-    **kwargs
-        覆盖默认配置的参数。
 
     Attributes
     ----------
@@ -244,16 +242,15 @@ class ARDVAE:
     >>> loaded = ARDVAE.load("/path/to/models", "my_model")
     """
 
-    def __init__(self, config: Optional[ARDVAEConfig] = None, **kwargs):
+    def __init__(self, config: Optional[ARDVAEConfig] = None):
+        """
+        初始化 ARD-VAE 模型。
+
+        Args:
+            config: ARDVAEConfig 配置对象。若为 None，使用默认配置。
+        """
         if config is None:
-            config = ARDVAEConfig(**kwargs)
-        elif kwargs:
-            # 用 kwargs 覆盖 config 中的值
-            config_dict = asdict(config)
-            config_dict.update(kwargs)
-            # 移除 torch_dtype（不可序列化）
-            config_dict.pop("torch_dtype", None)
-            config = ARDVAEConfig(**config_dict)
+            config = ARDVAEConfig()
 
         self.config = config
 

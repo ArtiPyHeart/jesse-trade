@@ -5,8 +5,10 @@ Pipeline Configuration - FeaturePipeline 配置类
 """
 
 import json
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import asdict, dataclass, field
+from typing import List, Optional
+
+from src.features.dimensionality_reduction import ARDVAEConfig
 
 
 # SSM 默认输入特征（fracdiff 特征）
@@ -39,8 +41,8 @@ class PipelineConfig:
         是否使用降维模块
     dimension_reducer_type : str
         降维器类型，目前支持 "ard_vae"
-    dimension_reducer_config : Optional[Dict]
-        降维器配置参数
+    dimension_reducer_config : Optional[ARDVAEConfig]
+        降维器配置对象（ARDVAEConfig 实例）
     verbose : bool
         是否打印进度信息（默认 False）。
         此设置会被 FeaturePipeline 及其子模块继承：
@@ -76,7 +78,7 @@ class PipelineConfig:
     # 降维配置
     use_dimension_reducer: bool = False
     dimension_reducer_type: str = "ard_vae"
-    dimension_reducer_config: Optional[Dict] = None
+    dimension_reducer_config: Optional[ARDVAEConfig] = None
 
     # 运行时配置
     verbose: bool = False
@@ -182,6 +184,13 @@ class PipelineConfig:
         Args:
             path: 保存路径
         """
+        # 序列化 dimension_reducer_config
+        reducer_config_dict = None
+        if self.dimension_reducer_config is not None:
+            reducer_config_dict = asdict(self.dimension_reducer_config)
+            # 移除不可序列化的字段
+            reducer_config_dict.pop("torch_dtype", None)
+
         # 只保存用户可配置的字段，不保存内部解析结果
         config_dict = {
             "feature_names": self.feature_names,
@@ -189,7 +198,7 @@ class PipelineConfig:
             "ssm_input_features": self.ssm_input_features,
             "use_dimension_reducer": self.use_dimension_reducer,
             "dimension_reducer_type": self.dimension_reducer_type,
-            "dimension_reducer_config": self.dimension_reducer_config,
+            "dimension_reducer_config": reducer_config_dict,
             "verbose": self.verbose,
             "version": self.version,
         }
@@ -215,6 +224,13 @@ class PipelineConfig:
         config_dict.pop("_raw_features", None)
         config_dict.pop("_ssm_features", None)
         config_dict.pop("_ssm_types", None)
+
+        # 反序列化 dimension_reducer_config
+        reducer_config_dict = config_dict.get("dimension_reducer_config")
+        if reducer_config_dict is not None:
+            config_dict["dimension_reducer_config"] = ARDVAEConfig(
+                **reducer_config_dict
+            )
 
         return cls(**config_dict)
 

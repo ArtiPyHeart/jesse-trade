@@ -33,6 +33,7 @@ from research.model_pick.feature_utils import (
 from research.model_pick.features import ALL_FEATS
 from research.model_pick.labeler import PipelineLabeler
 from research.model_pick.model_tuning import ModelTuning
+from src.features.dimensionality_reduction import ARDVAEConfig
 from src.features.pipeline import FeaturePipeline
 
 # 配置日志系统
@@ -63,13 +64,13 @@ CANDLE_END = "2025-07-01"
 RESULTS_FILE = "model_search_results.csv"
 
 # ARDVAE 降维器配置（固定，不进行调参）
-REDUCER_CONFIG = {
-    "max_latent_dim": 512,  # over-complete 设计，ARD prior 自动确定 active dims
-    "kl_threshold": 0.01,  # 判断维度是否 active 的阈值
-    "max_epochs": 200,
-    "patience": 15,
-    "seed": 42,
-}
+REDUCER_CONFIG = ARDVAEConfig(
+    max_latent_dim=512,  # over-complete 设计，ARD prior 自动确定 active dims
+    kl_threshold=0.01,  # 判断维度是否 active 的阈值
+    max_epochs=200,
+    patience=15,
+    seed=42,
+)
 
 
 class ModelSearchTracker:
@@ -339,9 +340,15 @@ def evaluate_classifier(
     params, best_score = model_tuning.tuning_classifier_direct(train_x_reduced, train_y)
     logger.info(f"[分类器] 调参完成 - 最佳得分: {best_score:.4f}")
 
-    # 返回结果
+    # 返回结果（将 ARDVAEConfig 转换为字典用于 JSON 序列化）
     reducer_info = {
-        "config": REDUCER_CONFIG,
+        "config": {
+            "max_latent_dim": REDUCER_CONFIG.max_latent_dim,
+            "kl_threshold": REDUCER_CONFIG.kl_threshold,
+            "max_epochs": REDUCER_CONFIG.max_epochs,
+            "patience": REDUCER_CONFIG.patience,
+            "seed": REDUCER_CONFIG.seed,
+        },
         "n_before_reduction": selection_result.n_selected,
         "n_after_reduction": model_features.shape[1],
     }
@@ -438,9 +445,15 @@ def evaluate_regressor(
     params, best_score = model_tuning.tuning_regressor_direct(train_x_reduced, train_y)
     logger.info(f"[回归器] 调参完成 - 最佳R²得分: {best_score:.4f}")
 
-    # 返回结果
+    # 返回结果（将 ARDVAEConfig 转换为字典用于 JSON 序列化）
     reducer_info = {
-        "config": REDUCER_CONFIG,
+        "config": {
+            "max_latent_dim": REDUCER_CONFIG.max_latent_dim,
+            "kl_threshold": REDUCER_CONFIG.kl_threshold,
+            "max_epochs": REDUCER_CONFIG.max_epochs,
+            "patience": REDUCER_CONFIG.patience,
+            "seed": REDUCER_CONFIG.seed,
+        },
         "n_before_reduction": selection_result.n_selected,
         "n_after_reduction": model_features.shape[1],
     }
@@ -473,7 +486,7 @@ if __name__ == "__main__":
     logger.info("  - 模型类型: ['classifier', 'regressor']")
     logger.info(f"  - 训练/测试分割日期: {TRAIN_TEST_SPLIT_DATE}")
     logger.info(
-        f"  - 降维器配置: max_latent_dim={REDUCER_CONFIG['max_latent_dim']}, kl_threshold={REDUCER_CONFIG['kl_threshold']}"
+        f"  - 降维器配置: max_latent_dim={REDUCER_CONFIG.max_latent_dim}, kl_threshold={REDUCER_CONFIG.kl_threshold}"
     )
 
     pending_tasks = tracker.get_pending_tasks(log_return_lags, pred_next_steps)

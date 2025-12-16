@@ -1167,8 +1167,8 @@ class FeaturePipeline:
     def _create_dimension_reducer(self) -> DimensionReducerProtocol:
         """创建降维器"""
         if self.config.dimension_reducer_type == "ard_vae":
-            reducer_config = self.config.dimension_reducer_config or {}
-            config = ARDVAEConfig(**reducer_config)
+            # 使用配置中的 ARDVAEConfig，若为 None 则使用默认配置
+            config = self.config.dimension_reducer_config or ARDVAEConfig()
             return ARDVAE(config)
         else:
             raise ValueError(

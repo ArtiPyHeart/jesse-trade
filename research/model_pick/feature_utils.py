@@ -5,11 +5,12 @@
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 
+from src.features.dimensionality_reduction import ARDVAEConfig
 from src.features.feature_selection.rf_importance_selector import RFImportanceSelector
 from src.features.pipeline import PipelineConfig
 
@@ -53,7 +54,7 @@ def build_full_feature_config(
 def build_model_config(
     selected_features: List[str],
     ssm_state_dim: int = 5,
-    reducer_config: Optional[Dict] = None,
+    reducer_config: Optional[ARDVAEConfig] = None,
 ) -> PipelineConfig:
     """
     构建模型特定配置（启用降维）
@@ -61,24 +62,24 @@ def build_model_config(
     Args:
         selected_features: 筛选后的特征名称列表
         ssm_state_dim: SSM 输出维度
-        reducer_config: 降维器配置，None 时使用默认配置
+        reducer_config: 降维器配置（ARDVAEConfig 实例），None 时使用默认配置
 
     Returns:
         PipelineConfig 配置对象
     """
     if reducer_config is None:
-        # ARDVAE 配置（参考 codex 建议）：
+        # ARDVAE 默认配置（参考 codex 建议）：
         # - max_latent_dim=512：over-complete 设计，ARD prior 自动确定 active dims
         # - kl_threshold=0.01：判断维度是否 active 的阈值
         # - patience=15：早停耐心，避免过拟合
         # - 如果 active dims 经常逼近 512，考虑增加到 1024
-        reducer_config = {
-            "max_latent_dim": 512,  # 对 1000-10000 特征通常足够
-            "kl_threshold": 0.01,  # 合理起点，可微调
-            "max_epochs": 200,  # 默认值
-            "patience": 15,  # 早停
-            "seed": 42,
-        }
+        reducer_config = ARDVAEConfig(
+            max_latent_dim=512,  # 对 1000-10000 特征通常足够
+            kl_threshold=0.01,  # 合理起点，可微调
+            max_epochs=200,  # 默认值
+            patience=15,  # 早停
+            seed=42,
+        )
     return PipelineConfig(
         feature_names=selected_features,
         ssm_state_dim=ssm_state_dim,
