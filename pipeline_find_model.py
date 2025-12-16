@@ -67,7 +67,7 @@ RESULTS_FILE = "model_search_results.csv"
 REDUCER_CONFIG = ARDVAEConfig(
     max_latent_dim=512,  # over-complete 设计，ARD prior 自动确定 active dims
     kl_threshold=0.01,  # 判断维度是否 active 的阈值
-    max_epochs=200,
+    max_epochs=150,
     patience=15,
     seed=42,
 )
@@ -136,13 +136,14 @@ class ModelSearchTracker:
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "status": status,
             "duration_seconds": duration,
-            "selected_features": json.dumps(feature_names),
             # 新增字段：降维器相关
             "reducer_config": json.dumps(reducer_config),
             "n_features_before_reduction": n_features_before_reduction,
             "n_features_after_reduction": n_features_after_reduction,
             # 模型最佳参数
             "best_params": json.dumps(best_params),
+            # 筛选后的特征名称
+            "selected_features": json.dumps(feature_names),
         }
 
         # 添加到DataFrame

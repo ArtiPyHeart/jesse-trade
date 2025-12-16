@@ -61,50 +61,47 @@ class ModelTuning:
         # 固定max_bin参数，使用 free_raw_data=True 释放原始数据
         dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
         cv_folds = list(
-            StratifiedKFold(n_splits=5, shuffle=True, random_state=42).split(x, y)
+            StratifiedKFold(n_splits=3, shuffle=True, random_state=42).split(x, y)
         )
 
         def objective(trial):
-            boosting_type = trial.suggest_categorical("boosting", ["gbdt", "dart"])
+            # 参数范围针对降维后 ~20 维特征优化，防止过拟合同时保持拟合精度
+            # 先采样 max_depth，再约束 num_leaves ≤ 2^max_depth
+            max_depth = trial.suggest_int("max_depth", 3, 8)
+            max_leaves = 2**max_depth
+            num_leaves = trial.suggest_int("num_leaves", 16, min(256, max_leaves))
+
             params = {
                 "objective": "binary",
                 "num_threads": -1,
                 "verbose": -1,
-                "is_unbalance": trial.suggest_categorical(
-                    "is_unbalance", [True, False]
-                ),
+                "boosting": "gbdt",
+                "is_unbalance": False,
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
-                "boosting": boosting_type,
                 "learning_rate": trial.suggest_float(
                     "learning_rate", 0.02, 0.1, log=True
                 ),
-                "num_leaves": trial.suggest_int("num_leaves", 31, 512),
-                "max_depth": trial.suggest_int("max_depth", 10, 50),
-                "min_gain_to_split": trial.suggest_float(
-                    "min_gain_to_split", 1e-8, 1, log=True
-                ),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 200),
-                "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 10.0, log=True),
-                "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
-                "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 1.0),
-                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.4, 1.0),
-                "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
+                "num_leaves": num_leaves,
+                "max_depth": max_depth,
+                "min_gain_to_split": trial.suggest_float("min_gain_to_split", 0.0, 0.5),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 500),
+                "lambda_l1": trial.suggest_float("lambda_l1", 0.0, 5.0),
+                "lambda_l2": trial.suggest_float("lambda_l2", 0.0, 100.0),
+                "feature_fraction": 1.0,
+                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.7, 1.0),
+                "bagging_freq": trial.suggest_categorical("bagging_freq", [0, 1]),
                 "feature_pre_filter": False,
             }
-            if boosting_type == "dart":
-                params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
-                params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
-            num_boost_round = trial.suggest_int("num_boost_round", 300, 1500)
             pruning_cb = LightGBMPruningCallback(trial, METRIC)
             callbacks = [
-                lgb.early_stopping(stopping_rounds=150, verbose=False),
+                lgb.early_stopping(stopping_rounds=50, verbose=False),
                 pruning_cb,
             ]
             model_res = lgb.cv(
                 params,
                 dtrain,
-                num_boost_round=num_boost_round,
+                num_boost_round=3000,
                 folds=cv_folds,
                 feval=eval_metric,
                 callbacks=callbacks,
@@ -115,14 +112,14 @@ class ModelTuning:
             direction="maximize",
             pruner=optuna.pruners.HyperbandPruner(),
             sampler=optuna.samplers.TPESampler(
-                n_startup_trials=100,
+                n_startup_trials=50,
                 multivariate=True,
-                constant_liar=True,
+                constant_liar=False,
                 warn_independent_sampling=False,
             ),
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study.optimize(objective, n_trials=300, n_jobs=1, show_progress_bar=True)
+        study.optimize(objective, n_trials=200, n_jobs=1, show_progress_bar=True)
 
         params = {
             "objective": "binary",
@@ -162,7 +159,7 @@ class ModelTuning:
 
         # 固定max_bin参数，使用 free_raw_data=True 释放原始数据
         dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
-        cv_folds = list(KFold(n_splits=5, shuffle=True, random_state=42).split(x))
+        cv_folds = list(KFold(n_splits=3, shuffle=True, random_state=42).split(x))
 
         # 预计算训练集标签的方差，用于计算R²
         y_var = np.var(y)
@@ -174,46 +171,42 @@ class ModelTuning:
             return "r2", r2, True
 
         def objective(trial):
-            boosting_type = trial.suggest_categorical("boosting", ["gbdt", "dart"])
+            # 参数范围针对降维后 ~20 维特征优化，防止过拟合同时保持拟合精度
+            # 先采样 max_depth，再约束 num_leaves ≤ 2^max_depth
+            max_depth = trial.suggest_int("max_depth", 3, 8)
+            max_leaves = 2**max_depth
+            num_leaves = trial.suggest_int("num_leaves", 16, min(256, max_leaves))
+
             params = {
                 "objective": "regression",
                 "num_threads": -1,
                 "verbose": -1,
+                "boosting": "gbdt",
                 "extra_trees": trial.suggest_categorical("extra_trees", [True, False]),
-                "boosting": boosting_type,
-                "num_leaves": trial.suggest_int("num_leaves", 31, 512),
-                "max_depth": trial.suggest_int("max_depth", 10, 50),
-                "min_gain_to_split": trial.suggest_float(
-                    "min_gain_to_split", 1e-8, 1, log=True
-                ),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 200),
-                "lambda_l1": trial.suggest_float("lambda_l1", 1e-8, 10.0, log=True),
-                "lambda_l2": trial.suggest_float("lambda_l2", 1e-8, 10.0, log=True),
-                "min_sum_hessian_in_leaf": trial.suggest_float(
-                    "min_sum_hessian_in_leaf", 1e-3, 10, log=True
-                ),
                 "learning_rate": trial.suggest_float(
                     "learning_rate", 0.02, 0.1, log=True
                 ),
-                "feature_fraction": trial.suggest_float("feature_fraction", 0.4, 1.0),
-                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.4, 1.0),
-                "bagging_freq": trial.suggest_int("bagging_freq", 1, 7),
+                "num_leaves": num_leaves,
+                "max_depth": max_depth,
+                "min_gain_to_split": trial.suggest_float("min_gain_to_split", 0.0, 0.5),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 500),
+                "lambda_l1": trial.suggest_float("lambda_l1", 0.0, 5.0),
+                "lambda_l2": trial.suggest_float("lambda_l2", 0.0, 100.0),
+                "feature_fraction": 1.0,
+                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.7, 1.0),
+                "bagging_freq": trial.suggest_categorical("bagging_freq", [0, 1]),
                 "feature_pre_filter": False,
             }
-            if boosting_type == "dart":
-                params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
-                params["skip_drop"] = trial.suggest_float("skip_drop", 0.1, 0.5)
 
-            num_boost_round = trial.suggest_int("num_boost_round", 300, 1500)
             pruning_cb = LightGBMPruningCallback(trial, "r2")
             callbacks = [
-                lgb.early_stopping(stopping_rounds=150, verbose=False),
+                lgb.early_stopping(stopping_rounds=50, verbose=False),
                 pruning_cb,
             ]
             model_res = lgb.cv(
                 params,
                 dtrain,
-                num_boost_round=num_boost_round,
+                num_boost_round=3000,
                 folds=cv_folds,
                 feval=r2_eval,
                 callbacks=callbacks,
@@ -224,14 +217,14 @@ class ModelTuning:
             direction="maximize",
             pruner=optuna.pruners.HyperbandPruner(),
             sampler=optuna.samplers.TPESampler(
-                n_startup_trials=100,
+                n_startup_trials=50,
                 multivariate=True,
-                constant_liar=True,
+                constant_liar=False,
                 warn_independent_sampling=False,
             ),
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study.optimize(objective, n_trials=300, n_jobs=1, show_progress_bar=True)
+        study.optimize(objective, n_trials=200, n_jobs=1, show_progress_bar=True)
 
         params = {
             "objective": "regression",
