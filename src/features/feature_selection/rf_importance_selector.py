@@ -131,7 +131,7 @@ class RFImportanceSelector:
         if is_classification:
             model = LGBMClassifier(
                 boosting_type="rf",
-                n_estimators=150,  # 适度减少树数量（200→150）
+                n_estimators=500,
                 num_leaves=31,  # 由 GridSearchCV 调优
                 subsample=0.632,  # RF bootstrap 采样率（官方推荐）
                 subsample_freq=1,
@@ -149,7 +149,7 @@ class RFImportanceSelector:
         else:
             model = LGBMRegressor(
                 boosting_type="rf",
-                n_estimators=150,  # 适度减少树数量（200→150）
+                n_estimators=500,
                 num_leaves=31,  # 由 GridSearchCV 调优
                 subsample=0.632,  # RF bootstrap 采样率（官方推荐）
                 subsample_freq=1,

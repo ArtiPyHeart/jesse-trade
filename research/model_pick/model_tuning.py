@@ -67,7 +67,8 @@ class ModelTuning:
         def objective(trial):
             # 参数范围针对降维后 ~20 维特征优化，防止过拟合同时保持拟合精度
             # 先采样 max_depth，再约束 num_leaves ≤ 2^max_depth
-            max_depth = trial.suggest_int("max_depth", 3, 8)
+            # max_depth 下限为 4，因为 2^4=16 是 num_leaves 的下限
+            max_depth = trial.suggest_int("max_depth", 4, 8)
             max_leaves = 2**max_depth
             num_leaves = trial.suggest_int("num_leaves", 16, min(256, max_leaves))
 
@@ -173,7 +174,8 @@ class ModelTuning:
         def objective(trial):
             # 参数范围针对降维后 ~20 维特征优化，防止过拟合同时保持拟合精度
             # 先采样 max_depth，再约束 num_leaves ≤ 2^max_depth
-            max_depth = trial.suggest_int("max_depth", 3, 8)
+            # max_depth 下限为 4，因为 2^4=16 是 num_leaves 的下限
+            max_depth = trial.suggest_int("max_depth", 4, 8)
             max_leaves = 2**max_depth
             num_leaves = trial.suggest_int("num_leaves", 16, min(256, max_leaves))
 
