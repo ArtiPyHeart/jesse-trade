@@ -6,11 +6,11 @@ for learning latent representations of time series data.
 """
 
 import random
-from dataclasses import dataclass, asdict
 from typing import Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Import PyTorch configuration first to ensure CPU usage
 try:
@@ -44,17 +44,18 @@ except ImportError:
     from kalman_filter import KalmanFilter
 
 
-@dataclass
-class LGSSMConfig:
+class LGSSMConfig(BaseModel):
     """Configuration for LGSSM model."""
 
-    obs_dim: int = None  # Will be set from data
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    obs_dim: Optional[int] = None  # Will be set from data
     state_dim: int = 5
 
     # Training parameters
     learning_rate: float = 0.01
     max_epochs: int = 100
-    batch_size: int = None  # Use full batch by default
+    batch_size: Optional[int] = None  # Use full batch by default
     patience: int = 10
     min_delta: float = 0.001
 
@@ -76,12 +77,16 @@ class LGSSMConfig:
     dtype: str = "float32"
     seed: Optional[int] = 42
 
-    def __post_init__(self):
-        # Always use CPU, ignore auto detection
-        self.device = get_device()  # Returns 'cpu'
+    # Non-serialized computed field
+    torch_dtype: torch.dtype = Field(default=None, exclude=True)
 
+    @model_validator(mode="after")
+    def set_computed_fields(self) -> "LGSSMConfig":
+        # Always use CPU, ignore auto detection
+        object.__setattr__(self, "device", get_device())  # Returns 'cpu'
         # Use helper function to get torch dtype
-        self.torch_dtype = get_torch_dtype(self.dtype)
+        object.__setattr__(self, "torch_dtype", get_torch_dtype(self.dtype))
+        return self
 
 
 class LGSSM(nn.Module):
@@ -576,7 +581,7 @@ class LGSSM(nn.Module):
         save_file(state_dict, f"{path}.safetensors")
 
         # Prepare metadata as JSON-serializable dict
-        config_dict = asdict(self.config)
+        config_dict = self.config.model_dump()
         metadata = {
             "version": "2.0.0",  # New version for SafeTensors
             "config": config_dict,

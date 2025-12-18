@@ -6,6 +6,10 @@ pipeline_build_models.py - 使用统一 FeaturePipeline 构建所有 LightGBM �
 2. 单一 FeaturePipeline (启用降维) → 一阶特征计算 + SSM 训练/transform + ARDVAE 降维
 3. 保存 FeaturePipeline 到 MODEL_DIR/feature_pipeline/
 4. 对每个 (lag, pred_next, model_type): 生成标签 → 对齐 → 训练 LightGBM → 保存
+
+参数来源：
+- 固定参数：TRAIN_TEST_SPLIT_DATE, CANDLE_START, CANDLE_END, GLOBAL_SEED, REDUCER_CONFIG 直接设置
+- 调优参数：log_return_lag, pred_next, best_params, selected_features 从 model_search_results.csv 读取
 """
 
 from research.model_pick.candle_fetch import FusionCandles
@@ -25,19 +29,22 @@ import numpy as np
 import lightgbm as lgb
 from jesse.helpers import date_to_timestamp
 
-# 常量配置
+# ============================================================
+# 固定参数配置（直接设置，与 pipeline_find_model.py 保持一致）
+# ============================================================
 MODEL_DIR = Path("./strategies/BinanceBtcDemoBarV2/models")
 PIPELINE_NAME = "feature_pipeline"
-TRAIN_TEST_SPLIT_DATE = "2025-05-31"
-CANDLE_START = "2022-07-01"
-CANDLE_END = "2025-11-25"
+TRAIN_TEST_SPLIT_DATE = "2025-05-31"  # 训练集切分点
+CANDLE_START = "2022-08-01"  # 与 pipeline_find_model.py 一致
+CANDLE_END = "2025-11-25"  # 生产环境需要更长的数据范围
 GLOBAL_SEED = 42
+RESULTS_FILE = "model_search_results.csv"
 
-# ARDVAE 降维器配置
+# ARDVAE 降维器配置（固定，与 pipeline_find_model.py 保持一致）
 REDUCER_CONFIG = ARDVAEConfig(
-    max_latent_dim=512,
-    kl_threshold=0.01,
-    max_epochs=200,
+    max_latent_dim=512,  # over-complete 设计，ARD prior 自动确定 active dims
+    kl_threshold=0.01,  # 判断维度是否 active 的阈值
+    max_epochs=150,  # 与 pipeline_find_model.py 一致
     patience=15,
     seed=GLOBAL_SEED,
 )
@@ -57,6 +64,23 @@ def collect_all_features_from_csv(df_params: pd.DataFrame) -> list[str]:
     for features in df_params["selected_features"]:
         all_features.update(features)
     return sorted(all_features)
+
+
+def get_param_combinations_from_csv(
+    df_params: pd.DataFrame,
+) -> tuple[list[int], list[int]]:
+    """
+    从 CSV 获取 log_return_lag 和 pred_next 的唯一值组合
+
+    Args:
+        df_params: 包含 log_return_lag 和 pred_next 列的 DataFrame
+
+    Returns:
+        (log_return_lags, pred_next_steps) 排序后的唯一值列表
+    """
+    log_return_lags = sorted(df_params["log_return_lag"].unique().tolist())
+    pred_next_steps = sorted(df_params["pred_next"].unique().tolist())
+    return log_return_lags, pred_next_steps
 
 
 def build_unified_pipeline(
@@ -178,26 +202,32 @@ if __name__ == "__main__":
     candles = candle_container.get_candles(CANDLE_START, CANDLE_END)
     print(f"Loaded {len(candles)} candles")
 
-    # 3. 收集所有特征并去重
+    # 3. 从 CSV 获取参数组合（调优参数）
+    log_return_lags, pred_next_steps = get_param_combinations_from_csv(df_params)
+    print("Parameter combinations from CSV:")
+    print(f"  - log_return_lags: {log_return_lags}")
+    print(f"  - pred_next_steps: {pred_next_steps}")
+
+    # 4. 收集所有特征并去重
     all_features = collect_all_features_from_csv(df_params)
     print(f"Total unique features: {len(all_features)}")
 
-    # 4. 构建统一 Pipeline
+    # 5. 构建统一 Pipeline
     print("\nBuilding unified FeaturePipeline...")
     unified_pipeline, reduced_features = build_unified_pipeline(candles, all_features)
     print(f"Reduced features shape: {reduced_features.shape}")
 
-    # 5. 保存 Pipeline
+    # 6. 保存 Pipeline
     unified_pipeline.save(str(MODEL_DIR), PIPELINE_NAME)
     print(f"Saved FeaturePipeline to {MODEL_DIR / PIPELINE_NAME}")
 
-    # 6. 训练所有模型
+    # 7. 训练所有模型
     print("\n" + "=" * 60)
     print("Training LightGBM models...")
     print("=" * 60)
 
-    for lag in range(4, 8):
-        for pred_next in range(1, 4):
+    for lag in log_return_lags:
+        for pred_next in pred_next_steps:
             # Classifier
             build_model(
                 df_params,

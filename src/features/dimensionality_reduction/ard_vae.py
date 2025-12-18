@@ -15,7 +15,6 @@ ARD-VAE (Automatic Relevance Determination Variational Autoencoder)
 
 import gc
 import json
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -24,15 +23,17 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from safetensors.torch import load_file, save_file
 from torch.utils.data import DataLoader, TensorDataset
 
 from pytorch_config import get_device, get_torch_dtype
 
 
-@dataclass
-class ARDVAEConfig:
+class ARDVAEConfig(BaseModel):
     """Configuration for ARD-VAE dimensionality reduction model."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # 输入维度（训练时自动设置）
     input_dim: Optional[int] = None
@@ -71,31 +72,42 @@ class ARDVAEConfig:
     seed: Optional[int] = 42
 
     # 非序列化字段
-    torch_dtype: torch.dtype = field(init=False, repr=False)
+    torch_dtype: torch.dtype = Field(default=None, exclude=True)
 
-    def __post_init__(self):
-        # 强制使用 CPU（遵循项目惯例）
-        self.device = get_device()
-        self.torch_dtype = get_torch_dtype(self.dtype)
+    @field_validator("encoder_hidden", "decoder_hidden", mode="before")
+    @classmethod
+    def convert_to_tuple(cls, v):
+        """确保 tuple 类型。"""
+        if isinstance(v, list):
+            return tuple(v)
+        return v
 
-        # 验证 ard_prior_type
-        # TODO: 考虑实现 Horseshoe ARD prior
-        #   - Horseshoe 提供更强的稀疏性（全局-局部收缩机制）
-        #   - 适合需要激进维度剪枝的场景（如 100+ 特征 → 10-30 活跃维度）
-        #   - 实现要点：hierarchical scales, non-centered parameterization, approximate KL
-        #   - 参考：Carvalho et al. (2010) "The Horseshoe Estimator"
-        #   - 不建议实现 Spike-and-Slab（金融时序噪声大，离散门控不稳定）
-        if self.ard_prior_type != "gaussian":
+    @field_validator("ard_prior_type")
+    @classmethod
+    def validate_prior_type(cls, v):
+        """验证 ard_prior_type。
+
+        TODO: 考虑实现 Horseshoe ARD prior
+          - Horseshoe 提供更强的稀疏性（全局-局部收缩机制）
+          - 适合需要激进维度剪枝的场景（如 100+ 特征 → 10-30 活跃维度）
+          - 实现要点：hierarchical scales, non-centered parameterization, approximate KL
+          - 参考：Carvalho et al. (2010) "The Horseshoe Estimator"
+          - 不建议实现 Spike-and-Slab（金融时序噪声大，离散门控不稳定）
+        """
+        if v != "gaussian":
             raise NotImplementedError(
-                f"Prior type '{self.ard_prior_type}' not implemented. "
+                f"Prior type '{v}' not implemented. "
                 "Only 'gaussian' is currently supported."
             )
+        return v
 
-        # 确保 tuple 类型
-        if isinstance(self.encoder_hidden, list):
-            self.encoder_hidden = tuple(self.encoder_hidden)
-        if isinstance(self.decoder_hidden, list):
-            self.decoder_hidden = tuple(self.decoder_hidden)
+    @model_validator(mode="after")
+    def set_computed_fields(self) -> "ARDVAEConfig":
+        """设置计算字段。"""
+        # 强制使用 CPU（遵循项目惯例）
+        object.__setattr__(self, "device", get_device())
+        object.__setattr__(self, "torch_dtype", get_torch_dtype(self.dtype))
+        return self
 
 
 class ARDVAENet(nn.Module):
@@ -802,14 +814,9 @@ class ARDVAE:
         save_file(state_dict, f"{base_path}.safetensors")
 
         # 2. 准备元数据
-        config_dict = asdict(self.config)
-        config_dict.pop("torch_dtype", None)  # 不可序列化
-
-        # 转换 tuple 为 list（JSON 兼容）
-        if isinstance(config_dict.get("encoder_hidden"), tuple):
-            config_dict["encoder_hidden"] = list(config_dict["encoder_hidden"])
-        if isinstance(config_dict.get("decoder_hidden"), tuple):
-            config_dict["decoder_hidden"] = list(config_dict["decoder_hidden"])
+        # model_dump() 自动排除 exclude=True 的字段（如 torch_dtype）
+        # 并将 tuple 转换为 list（JSON 兼容）
+        config_dict = self.config.model_dump()
 
         metadata = {
             "version": "1.0.0",

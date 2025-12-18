@@ -4,19 +4,18 @@
 提供特征配置构建、特征-标签对齐、特征筛选等功能。
 """
 
-from dataclasses import dataclass
 from typing import List, Optional
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel
 
 from src.features.dimensionality_reduction import ARDVAEConfig
 from src.features.feature_selection.rf_importance_selector import RFImportanceSelector
 from src.features.pipeline import PipelineConfig
 
 
-@dataclass
-class FeatureSelectionResult:
+class FeatureSelectionResult(BaseModel):
     """特征筛选结果"""
 
     selected_features: List[str]  # 含 SSM 特征名

@@ -5,23 +5,23 @@ Pipeline Configuration - FeaturePipeline 配置类
 """
 
 import json
-from dataclasses import asdict, dataclass, field
 from typing import List, Optional
+
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 from src.features.dimensionality_reduction import ARDVAEConfig
 
 
 # SSM 默认输入特征（fracdiff 特征）
 SSM_DEFAULT_INPUT_FEATURES = [
-    f"frac_{p1}_{p2}{l}_diff"
+    f"frac_{p1}_{p2}{lag}_diff"
     for p1 in ["o", "h", "l", "c"]
     for p2 in ["o", "h", "l", "c"]
-    for l in range(1, 6)
+    for lag in range(1, 6)
 ]
 
 
-@dataclass
-class PipelineConfig:
+class PipelineConfig(BaseModel):
     """
     FeaturePipeline 配置
 
@@ -67,11 +67,11 @@ class PipelineConfig:
     """
 
     # 用户接口 - 最终想要的特征
-    feature_names: List[str] = field(default_factory=list)
+    feature_names: List[str] = Field(default_factory=list)
 
     # SSM 配置
     ssm_state_dim: int = 5
-    ssm_input_features: List[str] = field(
+    ssm_input_features: List[str] = Field(
         default_factory=lambda: SSM_DEFAULT_INPUT_FEATURES.copy()
     )
 
@@ -86,17 +86,19 @@ class PipelineConfig:
     # 元信息
     version: str = "2.0.0"
 
-    # 内部解析结果（不序列化）
-    _raw_features: List[str] = field(default_factory=list, repr=False)
-    _ssm_features: List[str] = field(default_factory=list, repr=False)
+    # 内部解析结果（使用 PrivateAttr，不参与序列化）
+    _raw_features: List[str] = PrivateAttr(default_factory=list)
+    _ssm_features: List[str] = PrivateAttr(default_factory=list)
     # 使用 List 而非 Set，保证 SSM 类型的顺序一致性
     # 顺序由 feature_names 中首次出现的 SSM 类型决定
-    _ssm_types: List[str] = field(default_factory=list, repr=False)
+    _ssm_types: List[str] = PrivateAttr(default_factory=list)
 
-    def __post_init__(self):
+    @model_validator(mode="after")
+    def parse_and_validate(self) -> "PipelineConfig":
         """解析特征并验证配置"""
         self._parse_features()
         self._validate()
+        return self
 
     def _parse_features(self):
         """解析特征名称，识别层级"""
@@ -187,9 +189,8 @@ class PipelineConfig:
         # 序列化 dimension_reducer_config
         reducer_config_dict = None
         if self.dimension_reducer_config is not None:
-            reducer_config_dict = asdict(self.dimension_reducer_config)
-            # 移除不可序列化的字段
-            reducer_config_dict.pop("torch_dtype", None)
+            # model_dump() 自动排除 exclude=True 的字段（如 torch_dtype）
+            reducer_config_dict = self.dimension_reducer_config.model_dump()
 
         # 只保存用户可配置的字段，不保存内部解析结果
         config_dict = {

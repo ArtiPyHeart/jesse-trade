@@ -14,13 +14,13 @@
 
 import json
 import time
-from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Literal, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel
 from tqdm.auto import tqdm
 
 from src.bars.fusion.demo import DemoBar
@@ -37,8 +37,7 @@ POSITION_SIZE_RATIO = 0.95
 
 
 # ==================== 数据类 ====================
-@dataclass
-class Trade:
+class Trade(BaseModel):
     """交易记录"""
 
     timestamp: int  # 毫秒时间戳
@@ -49,12 +48,11 @@ class Trade:
     pnl: float = 0.0  # 本次交易的盈亏（仅平仓时有值）
     balance: float = 0.0  # 交易后的余额
 
-    def to_dict(self):
-        return asdict(self)
+    def to_dict(self) -> dict:
+        return self.model_dump()
 
 
-@dataclass
-class Position:
+class Position(BaseModel):
     """仓位信息"""
 
     side: Literal["long", "short", "flat"] = "flat"
@@ -84,8 +82,7 @@ class Position:
             return (self.entry_price - current_price) * self.qty
 
 
-@dataclass
-class EquityPoint:
+class EquityPoint(BaseModel):
     """权益曲线点"""
 
     timestamp: int

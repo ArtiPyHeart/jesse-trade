@@ -6,11 +6,11 @@ LSTM networks with Extended Kalman Filtering for robust state estimation.
 """
 
 import random
-from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Tuple, Union, List
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Import PyTorch configuration first to ensure CPU usage
 try:
@@ -41,11 +41,12 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from .kalman_filter import ExtendedKalmanFilter, compute_jacobian_numerical
 
 
-@dataclass
-class DeepSSMConfig:
+class DeepSSMConfig(BaseModel):
     """Configuration for DeepSSM model."""
 
-    obs_dim: int = None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    obs_dim: Optional[int] = None
     state_dim: int = 5
     lstm_hidden: int = 64
     lstm_layers: int = 1
@@ -68,12 +69,16 @@ class DeepSSMConfig:
     dtype: str = "float32"
     seed: Optional[int] = 42
 
-    def __post_init__(self):
-        # Always use CPU, ignore auto detection
-        self.device = get_device()  # Returns 'cpu'
+    # Non-serialized computed field
+    torch_dtype: torch.dtype = Field(default=None, exclude=True)
 
+    @model_validator(mode="after")
+    def set_computed_fields(self) -> "DeepSSMConfig":
+        # Always use CPU, ignore auto detection
+        object.__setattr__(self, "device", get_device())  # Returns 'cpu'
         # Use helper function to get torch dtype
-        self.torch_dtype = get_torch_dtype(self.dtype)
+        object.__setattr__(self, "torch_dtype", get_torch_dtype(self.dtype))
+        return self
 
 
 def set_seed(seed: int):
@@ -737,7 +742,7 @@ class DeepSSM:
         # Prepare metadata as JSON-serializable dict
         metadata = {
             "version": "2.0.0",  # New version for SafeTensors
-            "config": asdict(self.config),
+            "config": self.config.model_dump(),
             "is_fitted": self.is_fitted,
             "training_history": self.training_history,
         }
