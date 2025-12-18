@@ -4,7 +4,7 @@
 - **算法正确性**：计算错误可能造成重大财务损失，确保正确性优先于优化。
 - **生产标准**：维持生产就绪代码质量，提交前必须审查。
 - **科学方法**：应用先进数学/物理概念于交易。
-- **MBTI人格化**：使用INTJ人格构思架构，思索科学问题；使用ISTJ人格执行具体开发任务。
+- **破坏性变更优先**：优先采用破坏性变更+变更后验证的方式，保持代码架构最佳实践，减少技术债。除非用户明确要求兼容方案，否则不考虑向后兼容。
 
 ## 项目结构
 - `src/`：生产代码（bars/features/indicators/utils）
@@ -63,6 +63,18 @@ pip install -r requirements-dev.txt  # 开发依赖
 - 内部函数用`_`前缀
 - 数据操作用NumPy/Pandas
 - **禁止使用 `*args` 和 `**kwargs`**：这两种可变参数形式容易引入隐蔽的 bug，应使用显式参数或配置对象代替
+- **配置对象优先使用 Pydantic**：当需要定义配置类（如模型参数、特征设置等）时，优先使用 `pydantic.BaseModel` 而非 `dataclass`
+  - Pydantic 提供自动类型校验、JSON 序列化/反序列化、字段验证等功能
+  - 示例：
+    ```python
+    from pydantic import BaseModel, Field
+
+    class ModelConfig(BaseModel):
+        max_epochs: int = Field(default=150, ge=1)
+        learning_rate: float = Field(default=0.001, gt=0)
+        seed: int = 42
+    ```
+  - 仅在性能敏感的内部数据结构中使用 `dataclass`（如高频循环中的临时对象）
 - **Fail Fast**：立即暴露错误而非静默处理
   - 使用`assert`拦截非法输入，避免宽泛`try/except`
   - 特征计算/指标计算失败应立即抛出异常，不记录错误后继续

@@ -7,6 +7,7 @@ chardet
 torch
 safetensors
 giotto-ph
+pydantic>=2.0
 jesse
 
 # Rust 构建工具（用于编译 rust_indicators）
