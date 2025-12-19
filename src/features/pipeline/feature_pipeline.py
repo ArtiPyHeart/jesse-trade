@@ -299,10 +299,10 @@ class FeaturePipeline:
         if current_rows >= target_rows:
             return df
 
-        # 创建 NaN 填充行
+        # 创建 NaN 填充行（使用 float32 与 SimpleFeatureCalculator 输出保持一致）
         nan_rows = target_rows - current_rows
         nan_df = pd.DataFrame(
-            np.nan,
+            np.float32(np.nan),
             index=range(nan_rows),
             columns=df.columns,
         )
@@ -339,6 +339,7 @@ class FeaturePipeline:
         raw_features_dict = self._raw_calculator.get(
             self.config.all_calculator_features
         )
+        # SimpleFeatureCalculator 已在源头转换为 float32，无需额外转换
         return pd.DataFrame(raw_features_dict)
 
     def _prepare_valid_data(
@@ -473,6 +474,11 @@ class FeaturePipeline:
             if verbose:
                 print("  Computing SSM features...")
             ssm_features = self._compute_ssm_features_batch(valid_ssm_input_df)
+
+            # 清理 SSM 输入数据（不再需要）
+            del valid_ssm_input_df
+            gc.collect()
+
             all_features = pd.concat([ssm_features, valid_raw_features_df], axis=1)
         else:
             if verbose:
@@ -683,10 +689,18 @@ class FeaturePipeline:
             raw_features_df, n_candles, verbose
         )
 
+        # 清理原始特征（已提取有效部分）
+        del raw_features_df
+        gc.collect()
+
         # 3. 训练 SSM 并立即计算 SSM 特征（优化：单 pass）
         if verbose:
             print("  [3/4] Training SSM and computing features...")
         all_features = self._train_and_compute_features(valid_raw_features_df, verbose)
+
+        # 清理有效原始特征（已合并到 all_features）
+        del valid_raw_features_df
+        gc.collect()
 
         # 4. 可选：训练并应用降维
         if self.config.use_dimension_reducer:

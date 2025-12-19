@@ -121,21 +121,45 @@ mcp__mcp-shell-server__shell_exec(
 ```
 
 **使用场景**：
-- 算法复杂度分析（如 Ripser 的 O(N³) 复杂度）
-- 架构设计建议（如 apparent pairs 优化）
+- 代码审查与 bug 检测
+- 算法复杂度分析
+- 架构设计建议
 - 数学/物理概念解释
 - 最佳实践咨询
 
-**关键点**：
+**⚠️ 关键规则：必须附带具体文件路径**
+
+所有 `codex exec` 调用必须在问题描述中包含相关的具体文件路径，让 Codex 能够聚焦于具体文件和问题：
+
+```bash
+# ✅ 正确示例：附带文件路径
+codex exec "Review the Chunked BPTT implementation at tests/features/test_chunked_bptt_comparison.py
+Check if the forward_chunked_basic correctly detaches states at chunk boundaries."
+
+# ✅ 正确示例：代码审查
+codex exec "Review src/models/deep_ssm/deep_ssm.py lines 200-300
+Check if the ELBO computation is numerically stable."
+
+# ❌ 错误示例：没有文件路径
+codex exec "How should I implement chunked BPTT?"
+
+# ❌ 错误示例：问题太抽象
+codex exec "What's wrong with my code?"
+```
+
+**其他关键点**：
 - 必须使用 `codex exec` 子命令（非交互模式）
 - 需要在项目目录中运行（cd 到 repo）
 - 从 stdout 直接获取答案
-- 要求codex给出简明扼要的叙述
+- 要求 codex 给出简明扼要的叙述（如 "Answer in 3-5 sentences"）
 - **给予充分思考时间**：复杂问题需要长时间推理，应设置最长超时（600000ms）或使用后台任务（run_in_background: true）
 
-**示例**：
+**完整示例**：
 ```bash
-cd /Users/yangqiuyu/Github/jesse-trade && codex exec "What is the time complexity of matrix reduction in persistent homology? Answer in 2 sentences."
+cd /Users/yangqiuyu/Github/jesse-trade && codex exec "Review the memory measurement approach in tests/features/test_chunked_bptt_comparison.py
+
+The test uses tracemalloc to measure memory. Is this appropriate for PyTorch tensor allocations?
+Suggest better alternatives if needed. Answer in 3-4 sentences."
 ```
 
 ## 关键提醒

@@ -218,6 +218,10 @@ class SimpleFeatureCalculator:
             else:
                 result = base_value
 
+        # 转换为 float32 以节省内存（约减少 50%）
+        if result.dtype != np.float32:
+            result = result.astype(np.float32)
+
         # 缓存结果
         self.cache[cache_key] = result
         return result
@@ -338,6 +342,10 @@ class SimpleFeatureCalculator:
             sequential=use_sequential,
             returns_multiple=returns_multiple,
         )
+
+        # 转换为 float32 以节省内存
+        if output.dtype != np.float32:
+            output = output.astype(np.float32)
 
         # 缓存结果
         self.cache[cache_key] = output

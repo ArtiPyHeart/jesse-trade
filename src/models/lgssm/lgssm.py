@@ -5,6 +5,7 @@ This module implements a linear state space model with variational inference
 for learning latent representations of time series data.
 """
 
+import gc
 import random
 from typing import Optional, Tuple, Union
 
@@ -185,9 +186,21 @@ class LGSSM(nn.Module):
         """Observation noise covariance matrix (diagonal)."""
         return torch.diag(torch.exp(self.R_log_diag))
 
-    def normalize(self, x: torch.Tensor) -> torch.Tensor:
-        """Normalize input data if scaler is enabled."""
+    def normalize(self, x: torch.Tensor, inplace: bool = False) -> torch.Tensor:
+        """Normalize input data if scaler is enabled.
+
+        Args:
+            x: Input tensor
+            inplace: If True, modify tensor in-place to save memory
+
+        Returns:
+            Normalized tensor
+        """
         if self.config.use_scaler and self.scaler_mean is not None:
+            if inplace:
+                x.sub_(self.scaler_mean)
+                x.div_(self.scaler_std + 1e-8)
+                return x
             return (x - self.scaler_mean) / (self.scaler_std + 1e-8)
         return x
 
@@ -197,16 +210,17 @@ class LGSSM(nn.Module):
             return x * (self.scaler_std + 1e-8) + self.scaler_mean
         return x
 
-    def compute_elbo(
+    def _compute_elbo_loop(
         self,
         y: torch.Tensor,
         states: torch.Tensor,
         covariances: torch.Tensor,
         log_likelihood: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute Evidence Lower Bound (ELBO) for variational inference.
+        """Original loop-based ELBO computation (kept for testing/comparison).
 
-        ELBO = E_q[log p(y|z)] - KL[q(z)||p(z)]
+        This is the reference implementation. The vectorized version compute_elbo()
+        should produce identical results with better performance.
 
         Args:
             y: Observations (T, obs_dim)
@@ -258,6 +272,88 @@ class LGSSM(nn.Module):
                 - torch.logdet(P_t)
             )
             kl_divergence += kl_t
+
+        # ELBO = likelihood - KL
+        elbo = reconstruction_term - kl_divergence
+
+        return elbo / T  # Normalize by sequence length
+
+    def compute_elbo(
+        self,
+        y: torch.Tensor,
+        states: torch.Tensor,
+        covariances: torch.Tensor,
+        log_likelihood: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute Evidence Lower Bound (ELBO) for variational inference (vectorized).
+
+        ELBO = E_q[log p(y|z)] - KL[q(z)||p(z)]
+
+        This is the vectorized version that pre-computes Q inverse and uses
+        batch operations for better performance.
+
+        Args:
+            y: Observations (T, obs_dim)
+            states: Filtered states from Kalman filter (T, state_dim)
+            covariances: Filtered covariances (T, state_dim, state_dim)
+            log_likelihood: Log likelihood from Kalman filter
+
+        Returns:
+            ELBO value (scalar)
+        """
+        T = y.shape[0]
+        state_dim = self.config.state_dim
+
+        # The log likelihood from Kalman filter already contains p(y|z)
+        reconstruction_term = log_likelihood
+
+        # ===== Initial state KL: KL[q(z0)||p(z0)] =====
+        # Assume p(z0) = N(0, I)
+        z0 = states[0]
+        P0 = covariances[0]
+        kl_0 = 0.5 * (
+            torch.trace(P0)
+            + torch.dot(z0, z0)
+            - state_dim
+            - torch.logdet(P0)
+        )
+
+        # ===== Transition KL (vectorized): sum_t KL[q(z_t|z_{t-1})||p(z_t|z_{t-1})] =====
+        if T > 1:
+            # Pre-compute Q inverse and log determinant (only once)
+            Q_inv = torch.linalg.inv(self.Q)
+            log_det_Q = torch.logdet(self.Q)
+
+            # Vectorized computation for transitions (t=1 to T-1)
+            # states[:-1] shape: (T-1, state_dim) - previous states z_{t-1}
+            # states[1:] shape: (T-1, state_dim) - current states z_t
+            z_prior_means = states[:-1] @ self.A.T  # (T-1, state_dim)
+            diff = states[1:] - z_prior_means  # (T-1, state_dim)
+
+            # Trace terms: trace(Q_inv @ P_t) for each t
+            # Since both Q_inv and P_t are symmetric: trace(A @ B) = sum_ij A_ij * B_ij
+            trace_terms = torch.einsum("ij,tij->t", Q_inv, covariances[1:])  # (T-1,)
+
+            # Quadratic forms: diff^T @ Q_inv @ diff for each t
+            quad_forms = torch.einsum("ti,ij,tj->t", diff, Q_inv, diff)  # (T-1,)
+
+            # Log determinants of P_t using slogdet for numerical stability
+            _, log_det_P = torch.linalg.slogdet(covariances[1:])  # (T-1,)
+
+            # Total transition KL
+            T_minus_1 = T - 1
+            transition_kl = 0.5 * (
+                trace_terms.sum()
+                + quad_forms.sum()
+                - T_minus_1 * state_dim
+                + T_minus_1 * log_det_Q
+                - log_det_P.sum()
+            )
+        else:
+            transition_kl = 0.0
+
+        # Total KL divergence
+        kl_divergence = kl_0 + transition_kl
 
         # ELBO = likelihood - KL
         elbo = reconstruction_term - kl_divergence
@@ -427,6 +523,14 @@ class LGSSM(nn.Module):
 
         # Mark model as fitted
         self._is_fitted = True
+
+        # 清理训练过程中的临时变量
+        del X_train
+        if X_val is not None:
+            del X_val
+        if best_state_dict is not None:
+            del best_state_dict
+        gc.collect()
 
         return self
 

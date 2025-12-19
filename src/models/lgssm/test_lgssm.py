@@ -386,6 +386,51 @@ def test_parameter_constraints():
     print("✓ Parameter constraint tests passed")
 
 
+def test_vectorized_elbo_consistency():
+    """Test that vectorized ELBO produces same results as loop version."""
+    print("\nTesting vectorized ELBO consistency...")
+
+    # Generate data
+    T, obs_dim, state_dim = 200, 10, 5
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Create and train model (short training to get valid parameters)
+    config = LGSSMConfig(
+        state_dim=state_dim,
+        max_epochs=10,
+        use_scaler=True,
+        seed=42,
+    )
+
+    model = LGSSM(config)
+    model.fit(observations, verbose=False)
+
+    # Get states and covariances using forward pass
+    y_tensor = torch.from_numpy(observations).to(model.dtype).to(model.device)
+    model.eval()
+    with torch.no_grad():
+        states, covariances, log_likelihood = model(y_tensor)
+
+    # Compare vectorized vs loop ELBO
+    elbo_vectorized = model.compute_elbo(y_tensor, states, covariances, log_likelihood)
+    elbo_loop = model._compute_elbo_loop(y_tensor, states, covariances, log_likelihood)
+
+    # They should be numerically identical (or very close)
+    np.testing.assert_allclose(
+        elbo_vectorized.detach().cpu().numpy(),
+        elbo_loop.detach().cpu().numpy(),
+        rtol=1e-5,
+        atol=1e-7,
+        err_msg="Vectorized ELBO differs from loop version",
+    )
+
+    print(f"  Vectorized ELBO: {elbo_vectorized.item():.6f}")
+    print(f"  Loop ELBO:       {elbo_loop.item():.6f}")
+    print(f"  Difference:      {abs(elbo_vectorized - elbo_loop).detach().item():.2e}")
+
+    print("✓ Vectorized ELBO consistency tests passed")
+
+
 def compare_with_original():
     """Compare results with expected behavior from original implementation."""
     print("\nComparing with original implementation behavior...")
@@ -447,6 +492,7 @@ def run_all_tests():
     test_lgssm_no_scaler()
     test_lgssm_pandas_input()
     test_parameter_constraints()
+    test_vectorized_elbo_consistency()  # Vectorized ELBO test
     compare_with_original()
 
     print("\n" + "=" * 60)

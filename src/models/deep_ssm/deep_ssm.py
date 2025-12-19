@@ -5,6 +5,7 @@ This module implements a deep learning-based state space model that combines
 LSTM networks with Extended Kalman Filtering for robust state estimation.
 """
 
+import gc
 import random
 from typing import Optional, Dict, Tuple, Union, List
 
@@ -65,6 +66,10 @@ class DeepSSMConfig(BaseModel):
 
     use_scaler: bool = True  # Whether to use StandardScaler for input data
 
+    # Chunked BPTT 参数 (Overlap + Per-chunk Backward)
+    chunk_size: int = Field(default=256, ge=64, description="每个 chunk 的长度")
+    overlap: int = Field(default=64, ge=0, description="Overlap/burn-in 长度")
+
     device: str = "cpu"  # Force CPU usage
     dtype: str = "float32"
     seed: Optional[int] = 42
@@ -78,6 +83,12 @@ class DeepSSMConfig(BaseModel):
         object.__setattr__(self, "device", get_device())  # Returns 'cpu'
         # Use helper function to get torch dtype
         object.__setattr__(self, "torch_dtype", get_torch_dtype(self.dtype))
+
+        # 验证 overlap < chunk_size
+        if self.overlap >= self.chunk_size:
+            raise ValueError(
+                f"overlap ({self.overlap}) must be less than chunk_size ({self.chunk_size})"
+            )
         return self
 
 
@@ -260,6 +271,189 @@ class DeepSSMNet(nn.Module):
 
         return output
 
+    def _ssm_step(
+        self,
+        lstm_out_t: torch.Tensor,  # [batch, lstm_hidden]
+        z_prev: torch.Tensor,  # [batch, state_dim]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        单步 SSM 更新（重参数化采样）
+
+        Returns:
+            z: 采样后的状态
+            z_mean: 转移均值
+            z_log_var: 转移对数方差
+        """
+        z_mean, z_log_var = self.get_transition_dist(lstm_out_t, z_prev)
+        z_std = torch.exp(0.5 * z_log_var)
+        eps = torch.randn_like(z_std)
+        z = z_mean + z_std * eps
+        return z, z_mean, z_log_var
+
+    def _compute_step_loss(
+        self,
+        z: torch.Tensor,  # [batch, state_dim]
+        obs_t: torch.Tensor,  # [batch, obs_dim]
+        z_mean: torch.Tensor,
+        z_log_var: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        计算单步 loss (reconstruction + KL)
+        """
+        # 观测分布
+        obs_mean, obs_log_var = self.get_observation_dist(z)
+
+        # Reconstruction loss (Gaussian NLL)
+        obs_var = torch.exp(obs_log_var)
+        recon_loss = 0.5 * (
+            obs_log_var + (obs_t - obs_mean) ** 2 / obs_var
+        ).sum(dim=-1).mean()
+
+        # KL loss (vs standard normal prior)
+        kl_loss = -0.5 * (
+            1 + z_log_var - z_mean ** 2 - torch.exp(z_log_var)
+        ).sum(dim=-1).mean()
+
+        return recon_loss + 0.1 * kl_loss
+
+    def forward_train(
+        self,
+        observations: torch.Tensor,  # [batch, T, obs_dim]
+        chunk_size: int = 256,
+        overlap: int = 64,
+    ) -> Dict[str, float]:
+        """
+        Overlap + Per-chunk Backward 训练（默认训练方式）
+
+        关键实现点：
+        1. 第一个 chunk 保持与 initial_state_mean 的梯度连接（不 detach）
+        2. Overlap 区域 [burn_start, t) 只做 warm-up，不计算 loss
+        3. 在 chunk_end - overlap 位置保存 LSTM (h, c) 和 SSM (z) 状态
+        4. 每个 chunk 立即 backward() 释放计算图
+        5. 使用 chunk_loss / T 缩放保持梯度幅度一致
+
+        Args:
+            observations: 输入序列 [batch, T, obs_dim]
+            chunk_size: 每个 chunk 的长度
+            overlap: Overlap/burn-in 长度
+
+        Returns:
+            包含 total_loss 和 num_chunks 的字典
+        """
+        batch_size, T, _ = observations.shape
+        device = observations.device
+
+        # 初始状态 - 第一个 chunk 保持与 initial_state_mean 的梯度连接
+        z = self.initial_state_mean.expand(batch_size, -1)  # 不 detach
+        h = torch.zeros(
+            self.config.lstm_layers, batch_size, self.config.lstm_hidden,
+            device=device, dtype=observations.dtype
+        )
+        c = torch.zeros_like(h)
+
+        total_loss_value = 0.0
+        num_chunks = 0
+        is_first_chunk = True
+
+        t = 0
+        while t < T:
+            burn_start = max(0, t - overlap)
+            chunk_end = min(t + chunk_size, T)
+
+            # 下一个 chunk 的 burn_start = chunk_end - overlap
+            # 所以需要在 chunk_end - overlap 位置保存状态
+            save_state_at = chunk_end - overlap if chunk_end < T else None
+
+            # 第一个 chunk 保持与 initial_state_mean 的梯度连接
+            if is_first_chunk:
+                z_chunk = z  # 不 clone，保持梯度连接
+            else:
+                z_chunk = z.clone()
+
+            # LSTM 处理 - 如果需要保存中间状态，分两段处理
+            # 边界检查：save_state_at 必须严格在 (burn_start, chunk_end) 范围内才分段
+            need_split = (
+                save_state_at is not None
+                and save_state_at > burn_start
+                and save_state_at < chunk_end  # 确保第二段不为空
+            )
+
+            if need_split:
+                # 第一段：[burn_start : save_state_at]
+                if burn_start == 0:
+                    lstm_out_1, (h_save, c_save) = self.lstm(
+                        observations[:, burn_start:save_state_at]
+                    )
+                else:
+                    lstm_out_1, (h_save, c_save) = self.lstm(
+                        observations[:, burn_start:save_state_at], (h, c)
+                    )
+
+                # 第二段：[save_state_at : chunk_end]
+                lstm_out_2, (h_new, c_new) = self.lstm(
+                    observations[:, save_state_at:chunk_end], (h_save, c_save)
+                )
+
+                lstm_out = torch.cat([lstm_out_1, lstm_out_2], dim=1)
+            else:
+                # 不需要保存中间状态，直接处理
+                if burn_start == 0:
+                    lstm_out, (h_new, c_new) = self.lstm(
+                        observations[:, burn_start:chunk_end]
+                    )
+                else:
+                    lstm_out, (h_new, c_new) = self.lstm(
+                        observations[:, burn_start:chunk_end], (h, c)
+                    )
+                h_save, c_save = h_new, c_new
+
+            # SSM 循环
+            chunk_loss = torch.tensor(0.0, device=device)
+            loss_steps = 0
+            z_at_save = None
+
+            for i, tau in enumerate(range(burn_start, chunk_end)):
+                z_chunk, z_mean, z_log_var = self._ssm_step(lstm_out[:, i], z_chunk)
+
+                # 保存 save_state_at 位置的 z 状态
+                if save_state_at is not None and tau == save_state_at - 1:
+                    z_at_save = z_chunk.detach().clone()
+
+                # 只在非 overlap 区域计算 loss
+                if tau >= t:
+                    chunk_loss = chunk_loss + self._compute_step_loss(
+                        z_chunk, observations[:, tau], z_mean, z_log_var
+                    )
+                    loss_steps += 1
+
+            # 使用 1/T 缩放保持梯度幅度一致
+            if loss_steps > 0:
+                scaled_chunk_loss = chunk_loss / T
+
+                # 立即 backward - 释放该 chunk 的计算图
+                if scaled_chunk_loss.requires_grad:
+                    scaled_chunk_loss.backward()
+
+            total_loss_value += chunk_loss.item()
+            num_chunks += 1
+
+            # 使用正确位置的状态：chunk_end - overlap 位置
+            if z_at_save is not None:
+                z = z_at_save
+            else:
+                z = z_chunk.detach().clone()
+
+            # LSTM 状态使用 save_state_at 位置的状态
+            h = h_save.detach().clone()
+            c = c_save.detach().clone()
+            t = chunk_end
+            is_first_chunk = False
+
+        return {
+            "total_loss": total_loss_value / T if T > 0 else 0.0,
+            "num_chunks": num_chunks,
+        }
+
 
 class DeepSSM:
     """
@@ -307,13 +501,16 @@ class DeepSSM:
         """Indicates whether the model has been trained."""
         return self._is_fitted
 
-    def _standardize(self, data: np.ndarray, fit: bool = False) -> np.ndarray:
+    def _standardize(
+        self, data: np.ndarray, fit: bool = False, inplace: bool = False
+    ) -> np.ndarray:
         """
         Standardize data using stored parameters.
 
         Args:
             data: Input data
             fit: Whether to fit the scaler
+            inplace: If True, modify data in-place to save memory
 
         Returns:
             Standardized data (or original if use_scaler=False)
@@ -332,7 +529,13 @@ class DeepSSM:
         mean = self.scaler_params["mean"]
         std = self.scaler_params["std"]
 
-        return (data - mean) / std
+        if inplace:
+            # In-place modification to avoid creating copies
+            data -= mean
+            data /= std
+            return data
+        else:
+            return (data - mean) / std
 
     def _inverse_standardize(self, data: np.ndarray) -> np.ndarray:
         """Inverse standardization."""
@@ -409,11 +612,14 @@ class DeepSSM:
         if len(X.shape) == 2:
             X = X[np.newaxis, :]
 
-        X_scaled = self._standardize(X[0], fit=True)
+        # In-place standardization to avoid extra copy
+        # X is already a copy from astype(), so inplace is safe
+        X_scaled = self._standardize(X[0], fit=True, inplace=True)
+        # Use from_numpy for zero-copy tensor creation
         X_tensor = (
-            torch.tensor(X_scaled, dtype=self.config.torch_dtype)
+            torch.from_numpy(X_scaled)
+            .to(dtype=self.config.torch_dtype, device=self.device)
             .unsqueeze(0)
-            .to(self.device)
         )
 
         val_tensor = None
@@ -427,11 +633,12 @@ class DeepSSM:
             if len(val_data.shape) == 2:
                 val_data = val_data[np.newaxis, :]
 
-            val_scaled = self._standardize(val_data[0], fit=False)
+            # In-place standardization for validation data too
+            val_scaled = self._standardize(val_data[0], fit=False, inplace=True)
             val_tensor = (
-                torch.tensor(val_scaled, dtype=self.config.torch_dtype)
+                torch.from_numpy(val_scaled)
+                .to(dtype=self.config.torch_dtype, device=self.device)
                 .unsqueeze(0)
-                .to(self.device)
             )
 
         optimizer = Adam(
@@ -457,10 +664,16 @@ class DeepSSM:
         for epoch in range(self.config.max_epochs):
             optimizer.zero_grad()
 
-            output = self.model(X_tensor)
-            loss = self._compute_elbo_loss(X_tensor, output)
+            # 使用 overlap_pcb 训练（梯度已在 forward_train 中累积）
+            result = self.model.forward_train(
+                X_tensor,
+                chunk_size=self.config.chunk_size,
+                overlap=self.config.overlap,
+            )
+            train_loss = result["total_loss"]
 
-            loss.backward()
+            # 梯度已在 forward_train 中通过 per-chunk backward 累积
+            # 无需再调用 loss.backward()
 
             if self.config.gradient_clip > 0:
                 torch.nn.utils.clip_grad_norm_(
@@ -468,8 +681,6 @@ class DeepSSM:
                 )
 
             optimizer.step()
-
-            train_loss = loss.item()
 
             val_loss = None
             if val_tensor is not None:
@@ -508,6 +719,12 @@ class DeepSSM:
 
         self.model.eval()
         self._is_fitted = True
+
+        # 清理训练过程中的临时变量
+        del X_tensor
+        if val_tensor is not None:
+            del val_tensor
+        gc.collect()
 
         return self
 

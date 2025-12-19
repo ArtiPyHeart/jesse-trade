@@ -589,9 +589,7 @@ class TestWithReductionConsistency:
         result = pipeline.fit_transform(realistic_candles)
 
         # 降维后列数应 <= max_latent_dim
-        max_latent_dim = config_with_reduction.dimension_reducer_config[
-            "max_latent_dim"
-        ]
+        max_latent_dim = config_with_reduction.dimension_reducer_config.max_latent_dim
         n_output_features = len(result.columns)
 
         assert n_output_features <= max_latent_dim, (

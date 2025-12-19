@@ -285,8 +285,8 @@ class ARDVAE:
         self._scaler_mean: Optional[np.ndarray] = None
         self._scaler_std: Optional[np.ndarray] = None
 
-        # 训练数据缓存（用于计算 active dims）
-        self._X_train_scaled: Optional[np.ndarray] = None
+        # 训练数据张量缓存（用于计算 active dims，训练后清理）
+        self._train_tensor: Optional[torch.Tensor] = None
 
         # 设置随机种子
         if config.seed is not None:
@@ -506,9 +506,8 @@ class ARDVAE:
         kl_sum = torch.zeros(self.config.max_latent_dim, device=self.device)
         n_samples = 0
 
-        dataset = TensorDataset(
-            torch.tensor(self._X_train_scaled, dtype=self.config.torch_dtype)
-        )
+        # 复用训练张量，避免创建额外副本
+        dataset = TensorDataset(self._train_tensor)
         loader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False)
 
         with torch.no_grad():
@@ -582,18 +581,18 @@ class ARDVAE:
         self._validate_input(X, is_training=True)
         self._feature_names = list(X.columns)
 
-        # 标准化
+        # 标准化并创建张量（只创建一次，复用于训练和 active dim 计算）
         X_scaled = self._fit_scaler(X.values)
-        self._X_train_scaled = X_scaled
+        self._train_tensor = torch.tensor(X_scaled, dtype=self.config.torch_dtype)
+        del X_scaled  # 立即释放 numpy 副本
+        gc.collect()
 
         # 构建网络
         self.config.input_dim = X.shape[1]
         self._build_network()
 
-        # 准备数据
-        train_dataset = TensorDataset(
-            torch.tensor(X_scaled, dtype=self.config.torch_dtype)
-        )
+        # 准备数据（复用同一张量）
+        train_dataset = TensorDataset(self._train_tensor)
         train_loader = DataLoader(
             train_dataset, batch_size=self.config.batch_size, shuffle=True
         )
@@ -677,8 +676,9 @@ class ARDVAE:
         # 计算 active dimensions
         self._active_dims, self._kl_per_dim = self._compute_active_dimensions()
 
-        # 清理训练数据缓存
-        self._X_train_scaled = None
+        # 清理训练数据张量
+        del self._train_tensor
+        self._train_tensor = None
         gc.collect()
 
         self._is_fitted = True
@@ -744,12 +744,9 @@ class ARDVAE:
         verbose: bool = True,
     ) -> pd.DataFrame:
         """训练并转换数据。"""
-        # 保存训练数据用于 transform
-        self._X_train_for_transform = X
         self.fit(X, val_data, verbose)
-        result = self.transform(self._X_train_for_transform)
-        del self._X_train_for_transform
-        return result
+        # 直接使用 X 进行 transform，无需额外副本
+        return self.transform(X)
 
     def get_dimension_importance(self) -> pd.DataFrame:
         """
@@ -917,56 +914,116 @@ class ARDVAE:
 
 
 if __name__ == "__main__":
-    # 简单测试
+    # 测试 ARD-VAE，包含内存监控
+    import tempfile
+    import tracemalloc
+
     import numpy as np
     import pandas as pd
 
-    print("Testing ARDVAE...")
+    def get_memory_mb() -> float:
+        """获取当前进程内存使用量 (MB)"""
+        try:
+            import psutil
 
-    # 创建测试数据
+            process = psutil.Process()
+            return process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            return 0.0
+
+    def print_memory(label: str, baseline_mb: float = 0.0):
+        """打印内存使用情况"""
+        current = get_memory_mb()
+        delta = current - baseline_mb if baseline_mb > 0 else 0
+        print(f"  [{label}] Memory: {current:.1f} MB (Δ {delta:+.1f} MB)")
+
+    print("=" * 60)
+    print("Testing ARDVAE with Memory Monitoring")
+    print("=" * 60)
+
+    # 启动内存追踪
+    tracemalloc.start()
+    baseline_mem = get_memory_mb()
+    print_memory("Baseline", 0)
+
+    # ==================== 小规模测试 ====================
+    print("\n[Test 1] Small scale: 1000 samples × 100 features")
     np.random.seed(42)
-    n_samples = 1000
-    n_features = 100
+    n_samples, n_features = 1000, 100
 
-    # 只有前 10 个特征是真正有信息的
     X_informative = np.random.randn(n_samples, 10)
     X_noise = np.random.randn(n_samples, n_features - 10) * 0.1
-    X = np.hstack([X_informative, X_noise])
+    X = np.hstack([X_informative, X_noise]).astype(np.float32)
+    df = pd.DataFrame(X, columns=[f"feat_{i}" for i in range(n_features)])
+    print_memory("After data creation", baseline_mem)
 
-    # 转换为 DataFrame
-    feature_names = [f"feat_{i}" for i in range(n_features)]
-    df = pd.DataFrame(X, columns=feature_names)
-
-    # 训练
-    config = ARDVAEConfig(
-        max_latent_dim=32,
-        max_epochs=50,
-        kl_threshold=0.01,
-    )
+    config = ARDVAEConfig(max_latent_dim=32, max_epochs=50, kl_threshold=0.01)
     ard_vae = ARDVAE(config)
-    X_reduced = ard_vae.fit_transform(df, verbose=True)
+    X_reduced = ard_vae.fit_transform(df, verbose=False)
+    print_memory("After fit_transform", baseline_mem)
 
-    print(f"\nOriginal shape: {df.shape}")
-    print(f"Reduced shape: {X_reduced.shape}")
-    print(f"Active dimensions: {ard_vae.n_components}")
-    print(f"Active dim indices: {ard_vae.active_dims}")
+    print(f"  Shape: {df.shape} -> {X_reduced.shape}")
+    print(f"  Active dims: {ard_vae.n_components} / {config.max_latent_dim}")
 
-    # 查看维度重要性
-    importance = ard_vae.get_dimension_importance()
-    print("\nTop 10 dimensions by KL contribution:")
-    print(importance.head(10))
-
-    # 测试 save/load
-    import tempfile
-
+    # Save/Load 测试
     with tempfile.TemporaryDirectory() as tmpdir:
         ard_vae.save(tmpdir, "test_model")
         loaded = ARDVAE.load(tmpdir, "test_model")
-
-        # 验证加载后的 transform
         X_reduced_loaded = loaded.transform(df)
         assert X_reduced.shape == X_reduced_loaded.shape
         assert np.allclose(X_reduced.values, X_reduced_loaded.values)
-        print("\nSave/Load test passed!")
+        print("  Save/Load test passed!")
 
-    print("\nAll tests passed!")
+    # 清理
+    del df, X, X_reduced, ard_vae, loaded, X_reduced_loaded
+    gc.collect()
+    print_memory("After cleanup", baseline_mem)
+
+    # ==================== 中等规模测试 ====================
+    print("\n[Test 2] Medium scale: 5000 samples × 1000 features")
+    np.random.seed(42)
+    n_samples, n_features = 5000, 1000
+
+    X = np.random.randn(n_samples, n_features).astype(np.float32)
+    df = pd.DataFrame(X, columns=[f"feat_{i}" for i in range(n_features)])
+    data_size_mb = X.nbytes / 1024 / 1024
+    print(f"  Data size: {data_size_mb:.1f} MB")
+    print_memory("After data creation", baseline_mem)
+
+    config = ARDVAEConfig(max_latent_dim=64, max_epochs=30, kl_threshold=0.01)
+    ard_vae = ARDVAE(config)
+
+    # 监控 fit_transform 过程
+    mem_before_fit = get_memory_mb()
+    X_reduced = ard_vae.fit_transform(df, verbose=False)
+    mem_after_fit = get_memory_mb()
+    peak_during_fit = mem_after_fit - mem_before_fit
+
+    print_memory("After fit_transform", baseline_mem)
+    print(f"  Peak memory during fit: ~{peak_during_fit:.1f} MB")
+    print(f"  Shape: {df.shape} -> {X_reduced.shape}")
+    print(f"  Active dims: {ard_vae.n_components} / {config.max_latent_dim}")
+
+    # 验证 transform 一致性
+    X_transformed_again = ard_vae.transform(df)
+    assert np.allclose(X_reduced.values, X_transformed_again.values)
+    print("  Transform consistency test passed!")
+
+    # 清理
+    del df, X, X_reduced, ard_vae, X_transformed_again
+    gc.collect()
+    print_memory("After cleanup", baseline_mem)
+
+    # ==================== 内存追踪报告 ====================
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    print("\n" + "=" * 60)
+    print("Memory Tracking Summary (tracemalloc)")
+    print("=" * 60)
+    print(f"  Current: {current / 1024 / 1024:.1f} MB")
+    print(f"  Peak:    {peak / 1024 / 1024:.1f} MB")
+
+    print("\n" + "=" * 60)
+    print("All tests passed!")
+    print("=" * 60)
