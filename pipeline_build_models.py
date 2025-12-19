@@ -12,22 +12,25 @@ pipeline_build_models.py - 使用统一 FeaturePipeline 构建所有 LightGBM �
 - 调优参数：log_return_lag, pred_next, best_params, selected_features 从 model_search_results.csv 读取
 """
 
-from research.model_pick.candle_fetch import FusionCandles
-from research.model_pick.labeler import PipelineLabeler
-from research.model_pick.feature_utils import (
-    build_model_config,
-    align_features_and_labels,
-)
-from src.features.dimensionality_reduction import ARDVAEConfig
-from src.features.pipeline import FeaturePipeline
-
 import json
 import random
 from pathlib import Path
-import pandas as pd
-import numpy as np
+
 import lightgbm as lgb
+import numpy as np
+import pandas as pd
 from jesse.helpers import date_to_timestamp
+from sklearn.metrics import f1_score
+from sklearn.model_selection import KFold, StratifiedKFold
+
+from research.model_pick.candle_fetch import FusionCandles
+from research.model_pick.feature_utils import (
+    align_features_and_labels,
+    build_model_config,
+)
+from research.model_pick.labeler import PipelineLabeler
+from src.features.dimensionality_reduction import ARDVAEConfig
+from src.features.pipeline import FeaturePipeline
 
 # ============================================================
 # 固定参数配置（直接设置，与 pipeline_find_model.py 保持一致）
@@ -36,7 +39,7 @@ MODEL_DIR = Path("./strategies/BinanceBtcDemoBarV2/models")
 PIPELINE_NAME = "feature_pipeline"
 TRAIN_TEST_SPLIT_DATE = "2025-05-31"  # 训练集切分点
 CANDLE_START = "2022-08-01"  # 与 pipeline_find_model.py 一致
-CANDLE_END = "2025-11-25"  # 生产环境需要更长的数据范围
+CANDLE_END = "2025-12-15"  # 生产环境需要更长的数据范围
 GLOBAL_SEED = 42
 RESULTS_FILE = "model_search_results.csv"
 
@@ -110,6 +113,80 @@ def build_unified_pipeline(
     return pipeline, reduced_features
 
 
+def _f1_eval(preds: np.ndarray, eval_dataset: lgb.Dataset) -> tuple[str, float, bool]:
+    """LightGBM 自定义评估函数：weighted F1 score"""
+    y_true = eval_dataset.get_label()
+    value = f1_score(y_true, preds > 0.5, average="weighted")
+    return "f1", value, True  # (name, value, higher_is_better)
+
+
+def _r2_eval(preds: np.ndarray, eval_dataset: lgb.Dataset) -> tuple[str, float, bool]:
+    """LightGBM 自定义评估函数：R² score"""
+    y_true = eval_dataset.get_label()
+    ss_res = np.sum((y_true - preds) ** 2)
+    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+    r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+    return "r2", r2, True  # (name, value, higher_is_better)
+
+
+def _determine_best_iterations_by_cv(
+    params: dict,
+    train_x: np.ndarray,
+    train_y: np.ndarray,
+    is_regression: bool,
+    n_splits: int = 5,
+    seed: int = GLOBAL_SEED,
+) -> tuple[int, float]:
+    """
+    通过 5-fold CV 确定最佳迭代轮数
+
+    Args:
+        params: LightGBM 参数
+        train_x: 训练特征
+        train_y: 训练标签
+        is_regression: 是否回归任务
+        n_splits: CV 折数
+        seed: 随机种子
+
+    Returns:
+        (best_iteration, cv_score): 最佳迭代轮数和 CV 评分
+    """
+    # 选择 CV 策略
+    if is_regression:
+        cv_folds = list(
+            KFold(n_splits=n_splits, shuffle=True, random_state=seed).split(train_x)
+        )
+        feval = _r2_eval
+        metric_name = "r2"
+    else:
+        cv_folds = list(
+            StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed).split(
+                train_x, train_y
+            )
+        )
+        feval = _f1_eval
+        metric_name = "f1"
+
+    # 构建 Dataset
+    dtrain = lgb.Dataset(train_x, train_y, free_raw_data=True, params={"max_bin": 255})
+
+    # 执行 CV
+    cv_results = lgb.cv(
+        params,
+        dtrain,
+        num_boost_round=3000,
+        folds=cv_folds,
+        feval=feval,
+        callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)],
+    )
+
+    # 获取最佳迭代轮数和评分
+    best_iteration = len(cv_results[f"valid {metric_name}-mean"])
+    best_score = cv_results[f"valid {metric_name}-mean"][-1]
+
+    return best_iteration, best_score
+
+
 def build_model(
     df_params: pd.DataFrame,
     reduced_features: pd.DataFrame,
@@ -122,6 +199,11 @@ def build_model(
     """
     训练单个 LightGBM 模型
 
+    流程：
+    1. 准备数据和参数
+    2. 5-fold CV 确定最佳迭代轮数，打印评估指标
+    3. 全量训练并保存模型
+
     Args:
         df_params: 包含 best_params 的参数 DataFrame
         reduced_features: 降维后的特征 DataFrame（列名为 "0", "1", ...）
@@ -132,11 +214,11 @@ def build_model(
         seed: 随机种子
     """
     model_type = "r" if is_regression else "c"
-    MODEL_NAME = f"{model_type}_L{lag}_N{pred_next}"
-    model_path = MODEL_DIR / f"model_{MODEL_NAME}.txt"
+    model_name = f"{model_type}_L{lag}_N{pred_next}"
+    model_path = MODEL_DIR / f"model_{model_name}.txt"
 
     if model_path.exists():
-        print(f"Model {MODEL_NAME} already exists, skipping")
+        print(f"Model {model_name} already exists, skipping")
         return
 
     # 获取最佳参数
@@ -146,6 +228,16 @@ def build_model(
         & (df_params["model_type"] == ("regressor" if is_regression else "classifier"))
     ]
     best_params = model_row["best_params"].iloc[0].copy()
+
+    # 添加调参时使用但未保存到 best_params 的固定参数
+    # 这些参数必须与 model_tuning.py 中的设置保持一致
+    fixed_params = {
+        "boosting": "gbdt",
+        "is_unbalance": False,  # 仅分类器使用，回归器会忽略
+        "feature_fraction": 1.0,
+        "feature_pre_filter": False,
+    }
+    best_params.update(fixed_params)
 
     # 统一 seed
     best_params.update(
@@ -171,11 +263,32 @@ def build_model(
     train_x = aligned_features[train_mask]
     train_y = aligned_labels[: train_mask.sum()]
 
-    # 训练并保存
-    print(f"Fitting {MODEL_NAME} with {train_x.shape[1]} features")
-    model = lgb.train(best_params, lgb.Dataset(train_x, train_y))
+    # 转换为 numpy 数组（LightGBM 更高效）
+    train_x_np = np.ascontiguousarray(train_x.to_numpy(dtype=np.float32))
+
+    # Step 1: 5-fold CV 确定最佳迭代轮数
+    metric_name = "R²" if is_regression else "F1"
+    print(f"\n[{model_name}] Running 5-fold CV to determine best iterations...")
+    best_iteration, cv_score = _determine_best_iterations_by_cv(
+        best_params, train_x_np, train_y, is_regression, n_splits=5, seed=seed
+    )
+    print(
+        f"[{model_name}] CV {metric_name}: {cv_score:.4f}, Best iterations: {best_iteration}"
+    )
+
+    # Step 2: 全量训练
+    print(
+        f"[{model_name}] Training final model with {train_x.shape[1]} features, {best_iteration} rounds..."
+    )
+    model = lgb.train(
+        best_params,
+        lgb.Dataset(train_x_np, train_y),
+        num_boost_round=best_iteration,
+    )
+
+    # 保存模型
     model.save_model(model_path.resolve().as_posix())
-    print(f"Saved {MODEL_NAME}")
+    print(f"[{model_name}] Saved to {model_path}")
 
 
 if __name__ == "__main__":
