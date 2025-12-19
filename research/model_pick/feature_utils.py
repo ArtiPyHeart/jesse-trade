@@ -11,7 +11,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from src.features.dimensionality_reduction import ARDVAEConfig
-from src.features.feature_selection.rf_importance_selector import RFImportanceSelector
+from src.features.feature_selection.grootcv_selector import GrootCVSelector
 from src.features.pipeline import PipelineConfig
 
 
@@ -173,14 +173,11 @@ def select_features(
     Returns:
         FeatureSelectionResult 包含筛选后的特征名称
     """
-    selector = RFImportanceSelector(verbose=True)
+    selector = GrootCVSelector(verbose=True)
     selector.fit(features_df, labels)
 
-    importance = pd.Series(selector.relevance_, index=selector.variables_).sort_values(
-        ascending=False
-    )
-
-    selected = importance[importance > 0].index.tolist()
+    # GrootCV 直接返回选中特征，无需通过 relevance_ > 0 筛选
+    selected = selector.selected_features_
 
     return FeatureSelectionResult(
         selected_features=selected,

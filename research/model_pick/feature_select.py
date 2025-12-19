@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from src.features.feature_selection.rf_importance_selector import RFImportanceSelector
+from src.features.feature_selection.grootcv_selector import GrootCVSelector
 from src.models.deep_ssm import DeepSSMConfig, DeepSSM
 from src.models.lgssm import LGSSMConfig, LGSSM
 from .features import ALL_FEATS
@@ -46,7 +46,7 @@ class FeatureSelector:
 
     @property
     def selector(self):
-        return RFImportanceSelector(verbose=True)
+        return GrootCVSelector(verbose=True)
 
     def _compute_data_hash(self, df: pd.DataFrame) -> str:
         """基于内容的快速哈希，用于可靠的缓存检测"""
@@ -182,11 +182,8 @@ class FeatureSelector:
         _selector = self.selector
         df_feat = self.get_all_features(train_x)
         _selector.fit(df_feat, train_y)
-        res = pd.Series(_selector.relevance_, index=_selector.variables_).sort_values(
-            ascending=False
-        )
-        feature_names = res[res > 0].index.tolist()
-        return feature_names
+        # GrootCV 直接返回选中特征
+        return _selector.selected_features_
 
     def clear_cache(self):
         """🔧 清理缓存的特征数据和模型状态，释放内存"""
