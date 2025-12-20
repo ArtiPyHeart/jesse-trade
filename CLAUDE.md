@@ -1,27 +1,25 @@
 # jesse-trade 开发指南
 
 ## 核心原则
-- **算法正确性**：计算错误可能造成重大财务损失，确保正确性优先于优化。
-- **生产标准**：维持生产就绪代码质量，提交前必须审查。
-- **科学方法**：应用先进数学/物理概念于交易。
-- **破坏性变更优先**：优先采用破坏性变更+变更后验证的方式，保持代码架构最佳实践，减少技术债。除非用户明确要求兼容方案，否则不考虑向后兼容。
+- **算法正确性**：计算错误可能造成重大财务损失，确保正确性优先于优化
+- **生产标准**：维持生产就绪代码质量，提交前必须审查
+- **科学方法**：应用先进数学/物理概念于交易
+- **破坏性变更优先**：优先采用破坏性变更+变更后验证，减少技术债。除非用户明确要求，否则不考虑向后兼容
 
 ## 项目结构
-- `src/`：生产代码（bars/features/indicators/utils）
-- `rust_indicators/`：rust化的高性能指标，目前实现了vmd指标的rust化
-- `strategies/`：Jesse策略（每策略独立目录）- **项目运行入口**
+- `src/`：生产代码（bars/features/indicators/utils）—— 生产代码仅从此导入
+- `rust_indicators/`：Rust高性能指标（VMD/NRBO，50-100x加速），详见 `skills/RUST_INDICATORS_SKILL.md`
+- `strategies/`：Jesse策略（每策略独立目录）—— **项目运行入口**，需启动jesse后运行
 - `research/`：离线研究实验（勿在生产导入）
 - `extern/`：参考资料（勿导入）
-- `tests/`：pytest测试
-- `skills/`：Claude专用SKILL文档，定义特定领域的工作流程和标准
-
-## 运行入口
-该项目的运行入口为 `strategies/` 下的各项策略，需要启动jesse后运行，无法直接使用python运行
+- `tests/`：pytest测试（文件名用`test_`前缀）
+- `skills/`：Claude专用SKILL文档，用户提及相关任务时主动读取
 
 ## 开发环境
 ```bash
-./install.sh                      # 生产依赖
+./install.sh                         # 生产依赖
 pip install -r requirements-dev.txt  # 开发依赖
+ruff check <file> && ruff format <file>  # 代码质量检查
 ```
 
 ## Jesse K线规范
@@ -30,145 +28,61 @@ pip install -r requirements-dev.txt  # 开发依赖
 - 自定义K线：Dollar/Range/Entropy Bar，DEAP符号回归
 
 ## 特征→模型流程
-完整的数据处理和预测流程（以 BinanceBtcDeapV1Voting 为例）：
-
 ```
 原始 Candles → Fusion Bars → 特征计算 → 模型预测
 ```
 
-### 特征计算流程
-1. **计算原始特征**（SimpleFeatureCalculator）
-   - 普通特征：直接用于模型
-   - fracdiff 特征：需进一步处理
-2. **SSM 推理**：fracdiff 特征 → `SSM.inference()` → SSM 特征
-3. **特征拼接**：`[SSM特征, 原始特征]` → 完整特征 DataFrame
-4. **模型预测**：从完整特征中选择 LGBM 需要的列 → `model.final_predict()` → 预测结果 (1/-1/0)
+1. **计算原始特征**（SimpleFeatureCalculator）：普通特征直接用于模型，fracdiff特征需SSM处理
+2. **SSM 推理**：fracdiff特征 → `SSM.inference()` → SSM特征
+3. **特征拼接**：`[SSM特征, 原始特征]` → 完整特征DataFrame
+4. **模型预测**：选择LGBM需要的列 → `model.final_predict()` → 预测结果(1/-1/0)
 
-### Warmup vs Trading
-- **Warmup**：批量计算 fracdiff 特征 → 逐行调用 `SSM.inference()` 更新状态（不保存输出）
-- **Trading**：每次新 fusion bar 生成时，计算最新特征 → SSM.inference() → 拼接 → 模型预测
-- **关键**：SSM 全程使用 `inference()`，不使用 `transform()`
+**Warmup vs Trading**：Warmup批量计算后逐行调用`SSM.inference()`更新状态；Trading时每次新bar生成即计算→推理→预测。SSM全程使用`inference()`，不使用`transform()`。
 
 ## 指标开发
 - 位置：稳定→`src/indicators/prod/`，实验→`experimental/`
-- 规范：`sequential=True`返回全序列，`False`返回最新值
-- 长度：用`np.nan`填充保持与K线一致
+- 规范：`sequential=True`返回全序列，`False`返回最新值；用`np.nan`填充保持与K线一致
 - 类指标：继承`_cls_ind.py`基类
 
-### Rust高性能指标
-- **快速使用**: `import _rust_indicators`，已实现VMD/NRBO（50-100x加速）
-- **开发集成**: 阅读 `skills/RUST_INDICATORS_SKILL.md`
-
 ## 编码规范
-- 内部函数用`_`前缀
-- 数据操作用NumPy/Pandas
-- **禁止使用 `*args` 和 `**kwargs`**：这两种可变参数形式容易引入隐蔽的 bug，应使用显式参数或配置对象代替
-- **配置对象优先使用 Pydantic**：当需要定义配置类（如模型参数、特征设置等）时，优先使用 `pydantic.BaseModel` 而非 `dataclass`
-  - Pydantic 提供自动类型校验、JSON 序列化/反序列化、字段验证等功能
-  - 示例：
-    ```python
-    from pydantic import BaseModel, Field
-
-    class ModelConfig(BaseModel):
-        max_epochs: int = Field(default=150, ge=1)
-        learning_rate: float = Field(default=0.001, gt=0)
-        seed: int = 42
-    ```
-  - 仅在性能敏感的内部数据结构中使用 `dataclass`（如高频循环中的临时对象）
-- **Fail Fast**：立即暴露错误而非静默处理
-  - 使用`assert`拦截非法输入，避免宽泛`try/except`
-  - 特征计算/指标计算失败应立即抛出异常，不记录错误后继续
-  - 异常捕获仅用于明确可恢复的场景（如网络重试），不用于掩盖逻辑错误
+- 内部函数用`_`前缀，数据操作用NumPy/Pandas
+- **禁止 `*args`/`**kwargs`**：使用显式参数或配置对象
+- **配置对象用Pydantic**：`class Config(BaseModel): field: int = Field(default=1, ge=0)`，仅高频循环用`dataclass`
+- **Fail Fast**：用`assert`拦截非法输入，异常立即抛出，仅在可恢复场景（如网络重试）捕获异常
 - 简单测试用`if __name__ == "__main__"`，复杂测试放`tests/`
 - EasyLanguage角度→Python弧度：用`src/utils/math_tools.py`
-- **代码质量检查**：添加或修改 Python 代码后，使用 ruff 进行检查和格式化
-  ```bash
-  ruff check <file_or_dir>    # 代码检查（lint）
-  ruff format <file_or_dir>   # 代码格式化
-  ```
 
-## SKILL文档使用
-`skills/`目录包含针对特定任务的专业工作流程和标准：
-- **触发条件**：当用户提及相关任务时，主动读取对应SKILL文档
-- **现有SKILL**：
-  - `MODEL_SCREENING_SKILL.md`：模型快速筛选与质量评估（置信度切片分析的前置步骤）
-  - `CONFIDENCE_SLICE_ANALYSIS_SKILL.md`：置信度切片分析与过滤器配置
-  - `RUST_INDICATORS_SKILL.md`：Rust高性能指标开发、集成与维护
-- **使用原则**：严格遵循SKILL中定义的决策准则、输出格式和沟通方式
+## SKILL文档
+- `MODEL_SCREENING_SKILL.md`：模型快速筛选与质量评估
+- `CONFIDENCE_SLICE_ANALYSIS_SKILL.md`：置信度切片分析与过滤器配置
+- `RUST_INDICATORS_SKILL.md`：Rust高性能指标开发与集成
 
 ## 开发工具
 
-### 代码检索（Auggie MCP）
+### 代码检索
+**优先使用 `mcp__auggie-mcp__codebase-retrieval`** 进行语义化代码检索，而非 Grep/Glob。
 
-**优先使用 `mcp__auggie-mcp__codebase-retrieval` 进行代码检索**，而非普通的 Grep/Glob 工具：
-
-```python
-# 使用 auggie mcp 进行语义化代码检索
-mcp__auggie-mcp__codebase-retrieval(
-    information_request="描述你要查找的代码功能或模式"
-)
+### Codex 技术指导
+遇到算法/架构问题时，通过 mcp-shell-server 调用 codex 获取专业建议：
+```bash
+cd /Users/yangqiuyu/Github/jesse-trade && codex exec "问题描述"
 ```
 
-### 调用 Codex 获取技术指导
-
-当遇到算法或架构问题需要专业建议时，可通过 mcp-shell-server 调用 codex：
-
-```python
-# 使用 mcp__mcp-shell-server__shell_exec 工具
-mcp__mcp-shell-server__shell_exec(
-    command='cd /Users/yangqiuyu/Github/jesse-trade && codex exec "你的问题"'
-)
-```
-
-**使用场景**：
-- 代码审查与 bug 检测
-- 算法复杂度分析
-- 架构设计建议
-- 数学/物理概念解释
-- 最佳实践咨询
-
-**⚠️ 关键规则：必须附带具体文件路径**
-
-所有 `codex exec` 调用必须在问题描述中包含相关的具体文件路径，让 Codex 能够聚焦于具体文件和问题：
+**关键规则**：
+- **每次调用独立**：codex 不知道对话上下文，必须在问题中提供完整背景信息（项目背景、相关代码、已尝试方案等）
+- **必须附带文件路径**：让 codex 聚焦于具体文件和问题
+- 复杂问题设置长超时（600000ms）或后台运行
 
 ```bash
-# ✅ 正确示例：附带文件路径
-codex exec "Review the Chunked BPTT implementation at tests/features/test_chunked_bptt_comparison.py
-Check if the forward_chunked_basic correctly detaches states at chunk boundaries."
-
-# ✅ 正确示例：代码审查
+# 示例
 codex exec "Review src/models/deep_ssm/deep_ssm.py lines 200-300
-Check if the ELBO computation is numerically stable."
-
-# ❌ 错误示例：没有文件路径
-codex exec "How should I implement chunked BPTT?"
-
-# ❌ 错误示例：问题太抽象
-codex exec "What's wrong with my code?"
-```
-
-**其他关键点**：
-- 必须使用 `codex exec` 子命令（非交互模式）
-- 需要在项目目录中运行（cd 到 repo）
-- 从 stdout 直接获取答案
-- 要求 codex 给出简明扼要的叙述（如 "Answer in 3-5 sentences"）
-- **给予充分思考时间**：复杂问题需要长时间推理，应设置最长超时（600000ms）或使用后台任务（run_in_background: true）
-
-**完整示例**：
-```bash
-cd /Users/yangqiuyu/Github/jesse-trade && codex exec "Review the memory measurement approach in tests/features/test_chunked_bptt_comparison.py
-
-The test uses tracemalloc to measure memory. Is this appropriate for PyTorch tensor allocations?
-Suggest better alternatives if needed. Answer in 3-4 sentences."
+Context: This implements ELBO computation for a VAE model.
+Question: Is this numerically stable?"
 ```
 
 ## 关键提醒
-- **MCP 服务依赖**：所有 MCP 工具调用（auggie、context7、chrome-devtools、mcp-shell-server 等）如果发现服务不存在或连接失败，**必须立即停止当前任务并提示用户配置对应的 MCP 服务**，不要尝试使用替代方案绕过
-- 开发时使用 mcp context7 查看最新文档
-- 代码检索优先使用 auggie mcp（`mcp__auggie-mcp__codebase-retrieval`），而非 Grep/Glob
-- 如果WebFetch直接获取网页失败，可使用chrome devtools mcp打开网页并阅读内容（**优先使用 headless 模式**以提高效率，仅需可视化调试时使用常规模式）
-- **遇到复杂算法/架构问题**：使用 codex exec 获取专业建议，避免盲目尝试
-- 生产代码仅从`src/`导入
+- **MCP服务依赖**：auggie/context7/chrome-devtools/mcp-shell-server等服务不可用时，立即停止并提示用户配置，不要绕过
+- 开发时用 context7 MCP 查看最新文档
+- WebFetch失败时可用chrome devtools MCP（优先headless模式）
 - 策略间保持独立，避免交叉依赖
 - 功能实现后必须单元测试
-- 测试文件命名：pytest用`test_`开头，直接运行避免`test_`前缀

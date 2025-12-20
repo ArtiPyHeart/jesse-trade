@@ -75,19 +75,10 @@
 - 优先使用 `mcp__auggie-mcp__codebase-retrieval` 进行语义化检索
 - 避免使用 grep/glob 做代码检索
 
-### Codex 技术指导
-- 使用 `mcp__mcp-shell-server__shell_exec` 调用 `codex exec`
-- 必须在问题描述中附带具体文件路径
-- 在项目目录中运行: `cd /Users/yangqiuyu/Github/jesse-trade`
-- 使用 `codex exec` 子命令, 从 stdout 获取答案
-- 要求简明回答 (例如 3-5 句)
-- 复杂问题使用较长超时 (600000ms) 或后台任务
-
 ## 关键提醒
 - MCP 工具不可用时立即停止并提示用户配置服务
 - 优先使用 context7 获取最新文档
 - WebFetch 获取网页失败时, 使用 chrome-devtools mcp (优先 headless)
-- 遇到复杂算法/架构问题时使用 `codex exec` 获取建议
 - 生产代码仅从 `src/` 导入
 - 策略间保持独立, 避免交叉依赖
 - 新功能必须配套单元测试
