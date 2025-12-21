@@ -176,7 +176,14 @@ class ExtendedKalmanFilter:
             while z_update.dim() > 2:
                 z_update = z_update.squeeze(0)
         self.z = z_update
-        self.P = (self.I - K @ H) @ P_pred
+
+        # Covariance update using Joseph form for numerical stability:
+        # P = (I - KH) @ P_pred @ (I - KH).T + K @ R @ K.T
+        I_KH = self.I - K @ H
+        self.P = I_KH @ P_pred @ I_KH.T + K @ obs_cov @ K.T
+
+        # Enforce symmetry
+        self.P = 0.5 * (self.P + self.P.T)
 
         return self.z, self.P
 

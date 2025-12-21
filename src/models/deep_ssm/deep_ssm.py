@@ -36,10 +36,11 @@ except ImportError:
 
 import torch
 import torch.nn as nn
+from torch.func import jacrev, vmap
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from .kalman_filter import ExtendedKalmanFilter, compute_jacobian_numerical
+from .kalman_filter import ExtendedKalmanFilter
 
 
 class DeepSSMConfig(BaseModel):
@@ -69,6 +70,20 @@ class DeepSSMConfig(BaseModel):
     # Chunked BPTT 参数 (Overlap + Per-chunk Backward)
     chunk_size: int = Field(default=256, ge=64, description="每个 chunk 的长度")
     overlap: int = Field(default=64, ge=0, description="Overlap/burn-in 长度")
+
+    # Training mode: use EKF path (same as inference) or legacy sampling path
+    use_ekf_train: bool = Field(
+        default=True,
+        description="Use EKF-based training (recommended). If False, uses legacy sampling.",
+    )
+
+    # EKF numerical stability parameters
+    ekf_jitter: float = Field(
+        default=1e-4, description="Jitter added to S matrix for numerical stability"
+    )
+    ekf_var_clamp_min: float = Field(
+        default=1e-6, description="Minimum variance for P diagonal clamping"
+    )
 
     device: str = "cpu"  # Force CPU usage
     dtype: str = "float32"
@@ -120,7 +135,19 @@ class DeepSSMNet(nn.Module):
             dropout=config.dropout if config.lstm_layers > 1 else 0,
         )
 
-        self.transition = nn.Sequential(
+        # Prior network: p(z_t | z_{t-1}) - only depends on previous state
+        self.transition_prior = nn.Sequential(
+            nn.Linear(config.state_dim, config.transition_hidden),
+            nn.LayerNorm(config.transition_hidden),
+            nn.Tanh(),
+            nn.Dropout(config.dropout),
+            nn.Linear(config.transition_hidden, config.transition_hidden // 2),
+            nn.Tanh(),
+            nn.Linear(config.transition_hidden // 2, 2 * config.state_dim),
+        )
+
+        # Posterior network: q(z_t | z_{t-1}, h_t) - depends on previous state and LSTM encoding
+        self.transition_posterior = nn.Sequential(
             nn.Linear(config.lstm_hidden + config.state_dim, config.transition_hidden),
             nn.LayerNorm(config.transition_hidden),
             nn.Tanh(),
@@ -161,29 +188,65 @@ class DeepSSMNet(nn.Module):
                     elif "bias" in name:
                         nn.init.zeros_(param)
 
+    def get_transition_prior(
+        self, z_prev: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute state transition prior distribution p(z_t | z_{t-1}).
+
+        The prior only depends on the previous state, not the current observation.
+        This is used for EKF prediction and KL divergence computation.
+
+        Args:
+            z_prev: Previous state [batch, state_dim] or [state_dim]
+
+        Returns:
+            Mean and log variance of prior transition distribution
+        """
+        if z_prev.dim() == 1:
+            z_prev = z_prev.unsqueeze(0)
+
+        output = self.transition_prior(z_prev)
+        mean, log_var = torch.split(output, self.config.state_dim, dim=-1)
+        log_var = torch.clamp(log_var, -10, 10)
+        return mean, log_var
+
+    def get_transition_posterior(
+        self, z_prev: torch.Tensor, lstm_out: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute state transition posterior distribution q(z_t | z_{t-1}, h_t).
+
+        The posterior depends on both the previous state and the LSTM encoding
+        of historical observations. This is used for inference/training.
+
+        Args:
+            z_prev: Previous state [batch, state_dim] or [state_dim]
+            lstm_out: LSTM output encoding [batch, hidden_dim] or [hidden_dim]
+
+        Returns:
+            Mean and log variance of posterior transition distribution
+        """
+        if z_prev.dim() == 1:
+            z_prev = z_prev.unsqueeze(0)
+        if lstm_out.dim() == 1:
+            lstm_out = lstm_out.unsqueeze(0)
+
+        combined = torch.cat([lstm_out, z_prev], dim=-1)
+        output = self.transition_posterior(combined)
+        mean, log_var = torch.split(output, self.config.state_dim, dim=-1)
+        log_var = torch.clamp(log_var, -10, 10)
+        return mean, log_var
+
     def get_transition_dist(
         self, lstm_out: torch.Tensor, z_prev: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Compute state transition distribution parameters.
+        Backward-compatible alias for get_transition_posterior.
 
-        Args:
-            lstm_out: LSTM output [batch, hidden_dim] or [hidden_dim]
-            z_prev: Previous state [batch, state_dim] or [state_dim]
-
-        Returns:
-            Mean and log variance of transition distribution
+        DEPRECATED: Use get_transition_posterior instead.
         """
-        if lstm_out.dim() == 1:
-            lstm_out = lstm_out.unsqueeze(0)
-        if z_prev.dim() == 1:
-            z_prev = z_prev.unsqueeze(0)
-
-        combined = torch.cat([lstm_out, z_prev], dim=-1)
-        output = self.transition(combined)
-        mean, log_var = torch.split(output, self.config.state_dim, dim=-1)
-        log_var = torch.clamp(log_var, -10, 10)
-        return mean, log_var
+        return self.get_transition_posterior(z_prev, lstm_out)
 
     def get_observation_dist(
         self, z: torch.Tensor
@@ -201,6 +264,116 @@ class DeepSSMNet(nn.Module):
         mean, log_var = torch.split(output, self.config.obs_dim, dim=-1)
         log_var = torch.clamp(log_var, -10, 10)
         return mean, log_var
+
+    def compute_transition_jacobian(
+        self, z_prev: torch.Tensor, create_graph: bool = False
+    ) -> torch.Tensor:
+        """
+        Compute per-sample Jacobian of transition prior mean w.r.t. previous state.
+
+        Uses vmap + jacrev for efficient batched Jacobian computation.
+        The Jacobian is differentiable by default (jacrev produces differentiable outputs).
+
+        F = ∂μ_prior(z_{t-1}) / ∂z_{t-1}
+
+        Note: This method uses eval mode internally to disable Dropout for consistent
+        linearization. Callers should also compute prior_mean in eval mode for consistency.
+
+        Args:
+            z_prev: Previous state [batch, state_dim] or [state_dim]
+            create_graph: Unused parameter (kept for API compatibility).
+                         jacrev outputs are differentiable by default.
+
+        Returns:
+            Jacobian matrix F [state_dim, state_dim] (for batch=1)
+            or [batch, state_dim, state_dim] (for batch>1)
+        """
+        if z_prev.dim() == 1:
+            z_prev = z_prev.unsqueeze(0)
+
+        batch_size = z_prev.shape[0]
+
+        # Detach input to prevent gradient explosion through EKF covariance chain
+        # The Jacobian is used for covariance propagation P = F @ P @ F.T + Q
+        # Gradients should flow through the network parameters, not through z_prev
+        z_prev_detached = z_prev.detach()
+
+        # Define per-sample function for Jacobian computation
+        # This function takes a single sample [state_dim] and returns [state_dim]
+        def prior_mean_fn(z: torch.Tensor) -> torch.Tensor:
+            mean, _ = self.get_transition_prior(z.unsqueeze(0))
+            return mean.squeeze(0)
+
+        # Use eval mode for deterministic Jacobian (disable Dropout)
+        # This ensures consistent Jacobians for EKF, as recommended by Codex
+        was_training = self.transition_prior.training
+        self.transition_prior.eval()
+
+        try:
+            # vmap(jacrev(fn)) computes per-sample Jacobians efficiently
+            # jacrev computes Jacobian using reverse-mode autodiff
+            jacobian_fn = jacrev(prior_mean_fn, argnums=0, has_aux=False)
+            F = vmap(jacobian_fn)(z_prev_detached)  # [batch, state_dim, state_dim]
+        finally:
+            # Restore original training mode
+            self.transition_prior.train(was_training)
+
+        # Return [state_dim, state_dim] for batch_size=1 (backward compatibility)
+        return F.squeeze(0) if batch_size == 1 else F
+
+    def compute_observation_jacobian(
+        self, z: torch.Tensor, create_graph: bool = False
+    ) -> torch.Tensor:
+        """
+        Compute per-sample Jacobian of observation mean w.r.t. state.
+
+        Uses vmap + jacrev for efficient batched Jacobian computation.
+        The Jacobian is differentiable by default (jacrev produces differentiable outputs).
+
+        H = ∂μ_obs(z) / ∂z
+
+        Note: This method uses eval mode internally to disable Dropout for consistent
+        linearization. Callers should also compute obs_mean in eval mode for consistency.
+
+        Args:
+            z: Current state [batch, state_dim] or [state_dim]
+            create_graph: Unused parameter (kept for API compatibility).
+                         jacrev outputs are differentiable by default.
+
+        Returns:
+            Jacobian matrix H [obs_dim, state_dim] (for batch=1)
+            or [batch, obs_dim, state_dim] (for batch>1)
+        """
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
+
+        batch_size = z.shape[0]
+
+        # Detach input to prevent gradient explosion through EKF covariance chain
+        # The Jacobian is used for covariance propagation and Kalman gain
+        # Gradients should flow through the network parameters, not through z
+        z_detached = z.detach()
+
+        # Define per-sample function for Jacobian computation
+        # This function takes a single sample [state_dim] and returns [obs_dim]
+        def obs_mean_fn(z_in: torch.Tensor) -> torch.Tensor:
+            mean, _ = self.get_observation_dist(z_in.unsqueeze(0))
+            return mean.squeeze(0)
+
+        # Use eval mode for deterministic Jacobian (disable Dropout in observation network)
+        was_training = self.observation.training
+        self.observation.eval()
+
+        try:
+            # vmap(jacrev(fn)) computes per-sample Jacobians efficiently
+            jacobian_fn = jacrev(obs_mean_fn, argnums=0, has_aux=False)
+            H = vmap(jacobian_fn)(z_detached)  # [batch, obs_dim, state_dim]
+        finally:
+            # Restore original training mode
+            self.observation.train(was_training)
+
+        # Return [obs_dim, state_dim] for batch_size=1 (backward compatibility)
+        return H.squeeze(0) if batch_size == 1 else H
 
     def forward(
         self, observations: torch.Tensor, return_all_states: bool = False
@@ -294,27 +467,137 @@ class DeepSSMNet(nn.Module):
         self,
         z: torch.Tensor,  # [batch, state_dim]
         obs_t: torch.Tensor,  # [batch, obs_dim]
-        z_mean: torch.Tensor,
-        z_log_var: torch.Tensor,
+        posterior_mean: torch.Tensor,
+        posterior_log_var: torch.Tensor,
+        prior_mean: Optional[torch.Tensor] = None,
+        prior_log_var: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-        计算单步 loss (reconstruction + KL)
+        Compute single-step loss (reconstruction + KL).
+
+        If prior is provided, computes KL(posterior || prior).
+        Otherwise, computes KL(posterior || N(0, I)) for backward compatibility.
+
+        Args:
+            z: Current state [batch, state_dim]
+            obs_t: Current observation [batch, obs_dim]
+            posterior_mean: Posterior transition mean [batch, state_dim]
+            posterior_log_var: Posterior transition log variance [batch, state_dim]
+            prior_mean: Prior transition mean [batch, state_dim] (optional)
+            prior_log_var: Prior transition log variance [batch, state_dim] (optional)
+
+        Returns:
+            Combined loss (reconstruction + KL)
         """
-        # 观测分布
+        # Observation distribution
         obs_mean, obs_log_var = self.get_observation_dist(z)
 
         # Reconstruction loss (Gaussian NLL)
         obs_var = torch.exp(obs_log_var)
-        recon_loss = 0.5 * (
-            obs_log_var + (obs_t - obs_mean) ** 2 / obs_var
-        ).sum(dim=-1).mean()
+        recon_loss = (
+            0.5 * (obs_log_var + (obs_t - obs_mean) ** 2 / obs_var).sum(dim=-1).mean()
+        )
 
-        # KL loss (vs standard normal prior)
-        kl_loss = -0.5 * (
-            1 + z_log_var - z_mean ** 2 - torch.exp(z_log_var)
-        ).sum(dim=-1).mean()
+        # KL divergence
+        if prior_mean is not None and prior_log_var is not None:
+            # KL(q || p) = 0.5 * (log(σ_p²/σ_q²) + (σ_q² + (μ_q - μ_p)²)/σ_p² - 1)
+            # = 0.5 * (log_var_p - log_var_q + exp(log_var_q)/exp(log_var_p)
+            #          + (mean_q - mean_p)²/exp(log_var_p) - 1)
+            prior_var = torch.exp(prior_log_var)
+            posterior_var = torch.exp(posterior_log_var)
+            kl_loss = (
+                0.5
+                * (
+                    prior_log_var
+                    - posterior_log_var
+                    + posterior_var / prior_var
+                    + (posterior_mean - prior_mean) ** 2 / prior_var
+                    - 1
+                )
+                .sum(dim=-1)
+                .mean()
+            )
+        else:
+            # Backward compatibility: KL vs N(0, I)
+            kl_loss = (
+                -0.5
+                * (
+                    1
+                    + posterior_log_var
+                    - posterior_mean**2
+                    - torch.exp(posterior_log_var)
+                )
+                .sum(dim=-1)
+                .mean()
+            )
 
         return recon_loss + 0.1 * kl_loss
+
+    def _kl_full_cov_to_diag(
+        self,
+        z_update: torch.Tensor,  # [B, D] posterior mean (from EKF update)
+        P_update: torch.Tensor,  # [B, D, D] posterior full covariance
+        prior_mean: torch.Tensor,  # [B, D] prior mean
+        prior_log_var: torch.Tensor,  # [B, D] prior log variance (diagonal)
+    ) -> torch.Tensor:
+        """
+        Compute KL divergence from full-covariance posterior to diagonal prior.
+
+        KL(N(z_update, P_update) || N(prior_mean, diag(exp(prior_log_var))))
+
+        This is used when the posterior comes from EKF update (full covariance)
+        and the prior is from the transition network (diagonal covariance).
+
+        Args:
+            z_update: Posterior mean [batch, state_dim]
+            P_update: Posterior full covariance [batch, state_dim, state_dim]
+            prior_mean: Prior mean [batch, state_dim]
+            prior_log_var: Prior log variance [batch, state_dim]
+
+        Returns:
+            KL divergence (scalar, averaged over batch)
+        """
+        jitter = self.config.ekf_jitter
+        clamp_min = self.config.ekf_var_clamp_min
+        D = P_update.size(-1)
+        device = P_update.device
+        dtype = P_update.dtype
+
+        # Ensure symmetry (no jitter here - jitter only for Cholesky)
+        P_sym = 0.5 * (P_update + P_update.transpose(-1, -2))
+
+        # logdet Σq via Cholesky (add jitter for numerical stability)
+        P_chol = P_sym + jitter * torch.eye(D, device=device, dtype=dtype)
+        try:
+            L = torch.linalg.cholesky(P_chol)  # [B, D, D]
+            logdet_q = 2.0 * torch.sum(
+                torch.log(torch.diagonal(L, dim1=-2, dim2=-1)), dim=-1
+            )
+        except RuntimeError:
+            # Fallback: use eigenvalues if Cholesky fails
+            eigvals = torch.linalg.eigvalsh(P_sym)
+            eigvals = torch.clamp(eigvals, min=clamp_min)
+            logdet_q = torch.sum(torch.log(eigvals), dim=-1)
+
+        # Prior terms (diagonal): logdet Σp = sum(prior_log_var)
+        prior_log_var_clamped = prior_log_var.clamp(-30, 30)
+        logdet_p = torch.sum(prior_log_var_clamped, dim=-1)
+
+        # Σp^{-1} is diagonal: exp(-log_var)
+        inv_prior_var = torch.exp(-prior_log_var_clamped)
+
+        # trace(Σp^{-1} Σq) - use original P_diag (not jittered) with clamping
+        P_diag = torch.diagonal(P_sym, dim1=-2, dim2=-1)
+        P_diag_clamped = torch.clamp(P_diag, min=clamp_min)
+        trace_term = torch.sum(inv_prior_var * P_diag_clamped, dim=-1)
+
+        # Quadratic term: (μq - μp)^T Σp^{-1} (μq - μp)
+        diff = z_update - prior_mean
+        quad_term = torch.sum(inv_prior_var * diff * diff, dim=-1)
+
+        # KL = 0.5 * (log|Σp| - log|Σq| - D + tr(Σp^{-1}Σq) + quad)
+        kl = 0.5 * (logdet_p - logdet_q - D + trace_term + quad_term)
+        return kl.mean()
 
     def forward_train(
         self,
@@ -346,8 +629,11 @@ class DeepSSMNet(nn.Module):
         # 初始状态 - 第一个 chunk 保持与 initial_state_mean 的梯度连接
         z = self.initial_state_mean.expand(batch_size, -1)  # 不 detach
         h = torch.zeros(
-            self.config.lstm_layers, batch_size, self.config.lstm_hidden,
-            device=device, dtype=observations.dtype
+            self.config.lstm_layers,
+            batch_size,
+            self.config.lstm_hidden,
+            device=device,
+            dtype=observations.dtype,
         )
         c = torch.zeros_like(h)
 
@@ -448,6 +734,266 @@ class DeepSSMNet(nn.Module):
             c = c_save.detach().clone()
             t = chunk_end
             is_first_chunk = False
+
+        return {
+            "total_loss": total_loss_value / T if T > 0 else 0.0,
+            "num_chunks": num_chunks,
+        }
+
+    def forward_train_ekf(
+        self,
+        observations: torch.Tensor,  # [batch, T, obs_dim]
+        chunk_size: int = 256,
+        overlap: int = 64,
+    ) -> Dict[str, float]:
+        """
+        EKF-based training with proper prior/posterior separation.
+
+        This training method mirrors the inference path (_kalman_filter):
+        1. Predict: Use prior p(z_t|z_{t-1}) with transition Jacobian F
+        2. Update: Use observation y_t with observation Jacobian H
+        3. Compute loss = reconstruction + KL(posterior || prior)
+
+        The LSTM is updated AFTER each step (same as inference), and its output
+        from the previous step is used for the posterior distribution.
+
+        Args:
+            observations: Input sequence [batch, T, obs_dim]
+            chunk_size: Length of each chunk
+            overlap: Overlap/burn-in length
+
+        Returns:
+            Dictionary containing total_loss and num_chunks
+        """
+        batch_size, T, _ = observations.shape
+        device = observations.device
+        dtype = observations.dtype
+        state_dim = self.config.state_dim
+        obs_dim = self.config.obs_dim
+
+        # Per-sample Jacobians are now computed using vmap + jacrev,
+        # enabling batch training with correct gradients for all samples.
+
+        # Initialize state deterministically (same as inference)
+        z = self.initial_state_mean.expand(batch_size, -1)
+
+        # Initialize EKF covariance
+        P = (
+            torch.diag(torch.exp(self.initial_state_log_var))
+            .unsqueeze(0)
+            .expand(batch_size, -1, -1)
+            .clone()
+        )
+
+        # Initialize LSTM hidden state
+        lstm_hidden = torch.zeros(
+            self.config.lstm_layers,
+            batch_size,
+            self.config.lstm_hidden,
+            device=device,
+            dtype=dtype,
+        )
+        lstm_cell = torch.zeros_like(lstm_hidden)
+
+        # Identity matrix for EKF update
+        I_state = torch.eye(state_dim, device=device, dtype=dtype)
+
+        total_loss_value = 0.0
+        num_chunks = 0
+
+        t = 0
+        while t < T:
+            burn_start = max(0, t - overlap)
+            chunk_end = min(t + chunk_size, T)
+            save_state_at = chunk_end - overlap if chunk_end < T else None
+
+            chunk_loss = torch.tensor(0.0, device=device, requires_grad=True)
+            loss_steps = 0
+
+            # State and covariance for this chunk
+            z_chunk = z.clone() if t > 0 else z
+            P_chunk = P.clone()
+
+            # Saved states for next chunk
+            z_at_save = None
+            P_at_save = None
+            lstm_hidden_save = None
+            lstm_cell_save = None
+
+            for tau in range(burn_start, chunk_end):
+                y_tau = observations[:, tau : tau + 1, :]  # [batch, 1, obs_dim]
+                obs_t = observations[:, tau]  # [batch, obs_dim]
+
+                if tau == 0:
+                    # t=0: Use initial state, compute initial loss
+                    # For t=0, just compute reconstruction loss (no KL since no transition)
+                    if tau >= t:  # Only compute loss in non-overlap region
+                        obs_mean, obs_log_var = self.get_observation_dist(z_chunk)
+                        obs_var = torch.exp(obs_log_var)
+                        recon_loss = (
+                            0.5
+                            * (obs_log_var + (obs_t - obs_mean) ** 2 / obs_var)
+                            .sum(dim=-1)
+                            .mean()
+                        )
+                        chunk_loss = chunk_loss + recon_loss
+                        loss_steps += 1
+                else:
+                    # Step 1: Get prior p(z_t | z_{t-1}) in eval mode
+                    # Use eval mode to disable Dropout for consistent EKF linearization
+                    # Both prior distribution and Jacobian must use the same mode
+                    was_training_prior = self.transition_prior.training
+                    self.transition_prior.eval()
+                    try:
+                        prior_mean, prior_log_var = self.get_transition_prior(z_chunk)
+                        # Compute per-sample transition Jacobian F using vmap
+                        # (compute_transition_jacobian also uses eval mode internally)
+                        F_batch = self.compute_transition_jacobian(z_chunk)
+                        if F_batch.dim() == 2:
+                            F_batch = F_batch.unsqueeze(0)
+                    finally:
+                        self.transition_prior.train(was_training_prior)
+
+                    # Step 2: EKF Predict with prior
+                    z_pred = prior_mean  # [batch, state_dim]
+                    Q = torch.diag_embed(
+                        torch.exp(prior_log_var)
+                    )  # [batch, state, state]
+
+                    # P_pred = F @ P @ F.T + Q
+                    P_pred = (
+                        torch.bmm(
+                            torch.bmm(F_batch, P_chunk), F_batch.transpose(-1, -2)
+                        )
+                        + Q
+                    )
+
+                    # Step 3: EKF Update with observation (also in eval mode for consistency)
+                    was_training_obs = self.observation.training
+                    self.observation.eval()
+                    try:
+                        # Compute per-sample observation Jacobian H using vmap
+                        H_batch = self.compute_observation_jacobian(z_pred)
+                        if H_batch.dim() == 2:
+                            H_batch = H_batch.unsqueeze(0)
+                        # Observation prediction (same eval mode as Jacobian)
+                        obs_mean, obs_log_var = self.get_observation_dist(z_pred)
+                    finally:
+                        self.observation.train(was_training_obs)
+                    R = torch.diag_embed(
+                        torch.exp(obs_log_var)
+                    )  # [batch, obs_dim, obs_dim]
+
+                    # Innovation covariance S = H @ P_pred @ H.T + R
+                    S = (
+                        torch.bmm(torch.bmm(H_batch, P_pred), H_batch.transpose(-1, -2))
+                        + R
+                    )
+                    # Add jitter for numerical stability
+                    jitter = self.config.ekf_jitter * torch.eye(
+                        obs_dim, device=device, dtype=dtype
+                    )
+                    S = S + jitter
+
+                    # Kalman gain K = P_pred @ H.T @ inv(S)
+                    # Use solve for stability: solve(S, H @ P_pred.T).T
+                    try:
+                        HP = torch.bmm(H_batch, P_pred)  # [batch, obs_dim, state_dim]
+                        K = torch.linalg.solve(S, HP).transpose(
+                            -1, -2
+                        )  # [batch, state_dim, obs_dim]
+                    except RuntimeError:
+                        # Fallback to pseudo-inverse
+                        K = torch.bmm(
+                            torch.bmm(P_pred, H_batch.transpose(-1, -2)),
+                            torch.linalg.pinv(S),
+                        )
+
+                    # State update: z_update = z_pred + K @ (y - obs_mean)
+                    innovation = obs_t - obs_mean  # [batch, obs_dim]
+                    z_update = z_pred + torch.bmm(K, innovation.unsqueeze(-1)).squeeze(
+                        -1
+                    )
+
+                    # Covariance update using Joseph form for numerical stability:
+                    # P_update = (I - KH) @ P_pred @ (I - KH).T + K @ R @ K.T
+                    # This maintains PSD and symmetry better than simplified form
+                    KH = torch.bmm(K, H_batch)  # [batch, state_dim, state_dim]
+                    I_KH = I_state.unsqueeze(0) - KH
+                    P_update = torch.bmm(
+                        torch.bmm(I_KH, P_pred), I_KH.transpose(-1, -2)
+                    )
+                    P_update = P_update + torch.bmm(
+                        torch.bmm(K, R), K.transpose(-1, -2)
+                    )
+
+                    # Enforce symmetry and clamp diagonal for numerical stability
+                    P_update = 0.5 * (P_update + P_update.transpose(-1, -2))
+                    P_diag = torch.diagonal(P_update, dim1=-2, dim2=-1)
+                    P_diag_clamped = torch.clamp(
+                        P_diag, min=self.config.ekf_var_clamp_min
+                    )
+                    # Update diagonal in-place
+                    P_update = P_update.clone()
+                    for i in range(state_dim):
+                        P_update[:, i, i] = P_diag_clamped[:, i]
+
+                    # Update state and covariance
+                    z_chunk = z_update
+                    P_chunk = P_update
+
+                    # Step 4: Compute loss
+                    if tau >= t:  # Only compute loss in non-overlap region
+                        # Reconstruction loss
+                        obs_var = torch.exp(obs_log_var)
+                        recon_loss = (
+                            0.5
+                            * (obs_log_var + (obs_t - obs_mean) ** 2 / obs_var)
+                            .sum(dim=-1)
+                            .mean()
+                        )
+
+                        # KL loss: KL(N(z_update, P_update) || N(prior_mean, diag(prior_var)))
+                        kl_loss = self._kl_full_cov_to_diag(
+                            z_update, P_update, prior_mean, prior_log_var
+                        )
+
+                        step_loss = recon_loss + 0.1 * kl_loss
+                        chunk_loss = chunk_loss + step_loss
+                        loss_steps += 1
+
+                # Update LSTM with y_tau (AFTER state update, same as inference)
+                _, (lstm_hidden, lstm_cell) = self.lstm(y_tau, (lstm_hidden, lstm_cell))
+
+                # Save states at checkpoint
+                if save_state_at is not None and tau == save_state_at - 1:
+                    z_at_save = z_chunk.detach().clone()
+                    P_at_save = P_chunk.detach().clone()
+                    lstm_hidden_save = lstm_hidden.detach().clone()
+                    lstm_cell_save = lstm_cell.detach().clone()
+
+            # Backward for this chunk
+            if loss_steps > 0:
+                scaled_chunk_loss = chunk_loss / T
+                if scaled_chunk_loss.requires_grad:
+                    scaled_chunk_loss.backward()
+
+            total_loss_value += chunk_loss.item()
+            num_chunks += 1
+
+            # Update states for next chunk
+            if z_at_save is not None:
+                z = z_at_save
+                P = P_at_save
+                lstm_hidden = lstm_hidden_save
+                lstm_cell = lstm_cell_save
+            else:
+                z = z_chunk.detach().clone()
+                P = P_chunk.detach().clone()
+                lstm_hidden = lstm_hidden.detach().clone()
+                lstm_cell = lstm_cell.detach().clone()
+
+            t = chunk_end
 
         return {
             "total_loss": total_loss_value / T if T > 0 else 0.0,
@@ -664,12 +1210,21 @@ class DeepSSM:
         for epoch in range(self.config.max_epochs):
             optimizer.zero_grad()
 
-            # 使用 overlap_pcb 训练（梯度已在 forward_train 中累积）
-            result = self.model.forward_train(
-                X_tensor,
-                chunk_size=self.config.chunk_size,
-                overlap=self.config.overlap,
-            )
+            # Choose training method based on config
+            if self.config.use_ekf_train:
+                # EKF-based training (consistent with inference)
+                result = self.model.forward_train_ekf(
+                    X_tensor,
+                    chunk_size=self.config.chunk_size,
+                    overlap=self.config.overlap,
+                )
+            else:
+                # Legacy sampling-based training
+                result = self.model.forward_train(
+                    X_tensor,
+                    chunk_size=self.config.chunk_size,
+                    overlap=self.config.overlap,
+                )
             train_loss = result["total_loss"]
 
             # 梯度已在 forward_train 中通过 per-chunk backward 累积
@@ -702,7 +1257,7 @@ class DeepSSM:
             scheduler.step(val_loss if val_loss is not None else train_loss)
 
             if (epoch + 1) % 10 == 0:
-                msg = f"Epoch {epoch+1}/{self.config.max_epochs} | Train Loss: {train_loss:.4f}"
+                msg = f"Epoch {epoch + 1}/{self.config.max_epochs} | Train Loss: {train_loss:.4f}"
                 if val_loss is not None:
                     msg += f" | Val Loss: {val_loss:.4f}"
                 print(msg)
@@ -714,7 +1269,7 @@ class DeepSSM:
             else:
                 patience_counter += 1
                 if patience_counter >= self.config.patience:
-                    print(f"Early stopping at epoch {epoch+1}")
+                    print(f"Early stopping at epoch {epoch + 1}")
                     break
 
         self.model.eval()
@@ -795,6 +1350,14 @@ class DeepSSM:
         """
         Apply Extended Kalman Filter for state estimation.
 
+        The EKF follows the correct predict-then-update order:
+        1. Predict: Use prior p(z_t|z_{t-1}) with transition Jacobian F
+        2. Update: Use observation y_t with observation Jacobian H
+        3. Update LSTM hidden state with y_t (for next step's posterior if needed)
+
+        This avoids the "double observation" problem where y_t was used both
+        in LSTM (for transition) and in EKF update.
+
         Args:
             observations: Observations tensor [1, time, obs_dim]
             return_final_state: Whether to return the final internal state
@@ -827,6 +1390,7 @@ class DeepSSM:
 
         states = []
 
+        # Initialize LSTM hidden state
         lstm_hidden = torch.zeros(
             self.config.lstm_layers,
             1,
@@ -839,33 +1403,32 @@ class DeepSSM:
         self.model.eval()
         with torch.no_grad():
             for t in range(seq_len):
-                y_t = observations[:, t : t + 1, :]
-
-                lstm_out, (lstm_hidden, lstm_cell) = self.model.lstm(
-                    y_t, (lstm_hidden, lstm_cell)
-                )
-                lstm_out = lstm_out.squeeze(1)
+                y_t = observations[:, t : t + 1, :]  # [1, 1, obs_dim]
 
                 if t == 0:
+                    # t=0: Use initial state, no prediction needed
                     z = ekf.z
                 else:
-                    trans_mean, trans_log_var = self.model.get_transition_dist(
-                        lstm_out.squeeze(0) if lstm_out.dim() > 1 else lstm_out,
-                        ekf.z.squeeze(0) if ekf.z.dim() > 1 else ekf.z,
-                    )
-                    trans_cov = torch.diag(torch.exp(trans_log_var.squeeze(0)))
+                    # Step 1: EKF Predict using PRIOR (does NOT depend on y_t)
+                    # Get prior distribution p(z_t | z_{t-1})
+                    z_prev = ekf.z.squeeze(0) if ekf.z.dim() > 1 else ekf.z
+                    prior_mean, prior_log_var = self.model.get_transition_prior(z_prev)
+                    trans_cov = torch.diag(torch.exp(prior_log_var.squeeze(0)))
 
-                    z_pred, P_pred = ekf.predict(trans_mean, trans_cov)
+                    # Compute transition Jacobian F = ∂prior_mean/∂z_{t-1}
+                    F = self.model.compute_transition_jacobian(z_prev)
 
+                    # EKF predict with proper Jacobian
+                    z_pred, P_pred = ekf.predict(prior_mean, trans_cov, F)
+
+                    # Step 2: EKF Update using observation y_t
                     obs_mean, obs_log_var = self.model.get_observation_dist(z_pred)
                     obs_cov = torch.diag(torch.exp(obs_log_var.squeeze(0)))
 
-                    def obs_func(z):
-                        return self.model.get_observation_dist(z)[0]
+                    # Compute observation Jacobian H = ∂obs_mean/∂z
+                    H = self.model.compute_observation_jacobian(z_pred)
 
-                    H = compute_jacobian_numerical(obs_func, z_pred)
-
-                    # 观测输入维度应为 [1, obs_dim]，与 process_single 保持一致
+                    # EKF update
                     obs_input = observations[:, t, :]  # [1, obs_dim]
                     z, _ = ekf.update(
                         z_pred,
@@ -876,24 +1439,29 @@ class DeepSSM:
                         H,
                     )
 
+                # Step 3: Update LSTM with y_t (for next iteration's posterior)
+                # This happens AFTER the EKF update, so y_t is not used in predict
+                _, (lstm_hidden, lstm_cell) = self.model.lstm(
+                    y_t, (lstm_hidden, lstm_cell)
+                )
+
+                # Collect state
                 state_np = z.cpu().numpy()
-                # 确保 state_np 是 1D 数组 [state_dim]
+                # Ensure state_np is 1D array [state_dim]
                 while state_np.ndim > 1:
                     state_np = state_np.squeeze(0)
-                if state_np.ndim == 0:  # 标量的情况
+                if state_np.ndim == 0:  # Scalar case
                     state_np = state_np.reshape(1)
                 states.append(state_np)
 
-        # 检查所有状态维度是否一致
+        # Check state dimension consistency
         if states:
             state_dims = [s.shape for s in states]
             if len(set(state_dims)) > 1:
-                # 如果维度不一致，尝试修复
                 target_dim = self.config.state_dim
                 fixed_states = []
                 for s in states:
                     if s.shape[0] != target_dim:
-                        # 截断或填充
                         if s.shape[0] > target_dim:
                             s = s[:target_dim]
                         else:
@@ -1102,6 +1670,10 @@ class DeepSSMRealTime:
         """
         Process a single observation and return latent features.
 
+        Uses the correct order: predict → update → LSTM to avoid double observation problem.
+        The prior distribution p(z_t | z_{t-1}) only depends on previous state,
+        not on current observation.
+
         Args:
             observation: Single observation [obs_dim]
 
@@ -1127,36 +1699,41 @@ class DeepSSMRealTime:
         ).unsqueeze(0)
 
         with torch.no_grad():
-            lstm_out, (self.lstm_hidden, self.lstm_cell) = self.model.lstm(
-                obs_tensor, (self.lstm_hidden, self.lstm_cell)
-            )
-            lstm_out = lstm_out.squeeze(1)
-
             if self.step_count == 0:
+                # t=0: Use initial state, no prediction needed
                 z = self.ekf.z
             else:
-                # 维度处理：与 _kalman_filter 保持一致
-                lstm_out_proc = lstm_out.squeeze(0) if lstm_out.dim() > 1 else lstm_out
-                ekf_z_proc = self.ekf.z.squeeze(0) if self.ekf.z.dim() > 1 else self.ekf.z
+                # t>0: predict → update (LSTM already updated after previous step)
+                z_prev = self.ekf.z
 
-                trans_mean, trans_log_var = self.model.get_transition_dist(
-                    lstm_out_proc, ekf_z_proc
-                )
-                trans_cov = torch.diag(torch.exp(trans_log_var.squeeze(0)))
+                # Step 1: EKF Predict using PRIOR (only depends on z_prev, not y_t)
+                z_prev_proc = z_prev.squeeze(0) if z_prev.dim() > 1 else z_prev
+                prior_mean, prior_log_var = self.model.get_transition_prior(z_prev_proc)
+                prior_var = torch.exp(prior_log_var.squeeze(0))
+                trans_cov = torch.diag(prior_var)
 
-                z_pred, P_pred = self.ekf.predict(trans_mean, trans_cov)
+                # Compute transition Jacobian using autograd
+                F = self.model.compute_transition_jacobian(z_prev_proc)
 
+                z_pred, P_pred = self.ekf.predict(prior_mean, trans_cov, F)
+
+                # Step 2: EKF Update using current observation
                 obs_mean, obs_log_var = self.model.get_observation_dist(z_pred)
-                obs_cov = torch.diag(torch.exp(obs_log_var.squeeze(0)))
+                obs_var = torch.exp(obs_log_var.squeeze(0))
+                obs_cov = torch.diag(obs_var)
 
-                def obs_func(z):
-                    return self.model.get_observation_dist(z)[0]
-
-                H = compute_jacobian_numerical(obs_func, z_pred)
+                # Compute observation Jacobian using autograd
+                H = self.model.compute_observation_jacobian(z_pred)
 
                 z, _ = self.ekf.update(
                     z_pred, P_pred, obs_tensor.squeeze(0), obs_mean, obs_cov, H
                 )
+
+            # Step 3: Update LSTM AFTER EKF update (prepare for next step)
+            # This ensures LSTM hidden state encodes history up to current observation
+            _, (self.lstm_hidden, self.lstm_cell) = self.model.lstm(
+                obs_tensor, (self.lstm_hidden, self.lstm_cell)
+            )
 
         self.step_count += 1
 
@@ -1267,7 +1844,7 @@ if __name__ == "__main__":
     for i in range(10):
         feature = realtime.process_single(X_train[i])
         realtime_features.append(feature)
-        print(f"Step {i+1}: {feature[:3].round(4)}")
+        print(f"Step {i + 1}: {feature[:3].round(4)}")
 
     import os
 

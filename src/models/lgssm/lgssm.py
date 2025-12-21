@@ -70,6 +70,30 @@ class LGSSMConfig(BaseModel):
     Q_init_scale: float = 0.1  # Initial process noise scale
     R_init_scale: float = 0.1  # Initial observation noise scale
 
+    # Stability constraints
+    A_spectral_max: float = Field(
+        default=0.999,
+        ge=0.0,
+        lt=1.0,
+        description="Maximum spectral radius for A matrix (< 1 for stability)"
+    )
+    Q_log_min: float = Field(
+        default=-10.0,
+        description="Minimum log value for Q diagonal (exp(-10) ≈ 4.5e-5)"
+    )
+    Q_log_max: float = Field(
+        default=10.0,
+        description="Maximum log value for Q diagonal (exp(10) ≈ 22026)"
+    )
+    R_log_min: float = Field(
+        default=-10.0,
+        description="Minimum log value for R diagonal (exp(-10) ≈ 4.5e-5)"
+    )
+    R_log_max: float = Field(
+        default=10.0,
+        description="Maximum log value for R diagonal (exp(10) ≈ 22026)"
+    )
+
     # Data preprocessing
     use_scaler: bool = True  # Whether to use StandardScaler for input data
 
@@ -91,13 +115,16 @@ class LGSSMConfig(BaseModel):
 
 
 class LGSSM(nn.Module):
-    """Linear Gaussian State Space Model with variational inference.
+    """Linear Gaussian State Space Model for time series feature extraction.
 
     State space model:
         z_{t+1} = A @ z_t + w_t,  w_t ~ N(0, Q)
         y_t = C @ z_t + v_t,      v_t ~ N(0, R)
 
-    Parameters are learned through variational inference by maximizing the ELBO.
+    Parameters are learned by maximizing the marginal log-likelihood log p(y|θ),
+    which is computed exactly by the Kalman filter as the sum of innovation
+    likelihoods. For LGSSM, this is equivalent to the ELBO since the RTS
+    posterior equals the exact posterior.
     """
 
     def __init__(self, config: LGSSMConfig):
@@ -178,13 +205,69 @@ class LGSSM(nn.Module):
 
     @property
     def Q(self) -> torch.Tensor:
-        """Process noise covariance matrix (diagonal)."""
-        return torch.diag(torch.exp(self.Q_log_diag))
+        """Process noise covariance matrix (diagonal) with bounds protection."""
+        clamped_log = torch.clamp(
+            self.Q_log_diag, min=self.config.Q_log_min, max=self.config.Q_log_max
+        )
+        return torch.diag(torch.exp(clamped_log))
 
     @property
     def R(self) -> torch.Tensor:
-        """Observation noise covariance matrix (diagonal)."""
-        return torch.diag(torch.exp(self.R_log_diag))
+        """Observation noise covariance matrix (diagonal) with bounds protection."""
+        clamped_log = torch.clamp(
+            self.R_log_diag, min=self.config.R_log_min, max=self.config.R_log_max
+        )
+        return torch.diag(torch.exp(clamped_log))
+
+    def _project_A_stability(self) -> None:
+        """Project A matrix to ensure spectral radius < A_spectral_max.
+
+        This is called after each optimizer step to maintain stability.
+        For state space models, spectral radius < 1 ensures the system is stable
+        (bounded response to bounded inputs).
+
+        Complexity: O(state_dim³) for eigenvalue computation, acceptable for
+        typical state_dim values (5-20).
+
+        Handles edge cases:
+        - NaN/Inf in A: Reset to scaled identity matrix
+        - NaN/Inf eigenvalues: Reset to scaled identity matrix
+        """
+        with torch.no_grad():
+            # Check for NaN/Inf in A
+            if not torch.isfinite(self.A.data).all():
+                # Reset to stable scaled identity
+                self.A.data.copy_(
+                    torch.eye(
+                        self.config.state_dim,
+                        device=self.device,
+                        dtype=self.dtype
+                    ) * self.config.A_init_scale
+                )
+                return
+
+            # Compute eigenvalues
+            eigvals = torch.linalg.eigvals(self.A.data)
+            spectral_radius = torch.abs(eigvals).max().real.item()
+
+            # Check for NaN/Inf spectral radius
+            if not np.isfinite(spectral_radius):
+                # Reset to stable scaled identity
+                self.A.data.copy_(
+                    torch.eye(
+                        self.config.state_dim,
+                        device=self.device,
+                        dtype=self.dtype
+                    ) * self.config.A_init_scale
+                )
+                return
+
+            max_radius = self.config.A_spectral_max
+            if spectral_radius > max_radius:
+                # Scale A uniformly: A <- A * (max_radius / rho)
+                # This preserves the eigenvalue directions while shrinking magnitudes
+                scale = max_radius / spectral_radius
+                self.A.data.mul_(scale)
 
     def normalize(self, x: torch.Tensor, inplace: bool = False) -> torch.Tensor:
         """Normalize input data if scaler is enabled.
@@ -210,168 +293,22 @@ class LGSSM(nn.Module):
             return x * (self.scaler_std + 1e-8) + self.scaler_mean
         return x
 
-    def _compute_elbo_loop(
-        self,
-        y: torch.Tensor,
-        states: torch.Tensor,
-        covariances: torch.Tensor,
-        log_likelihood: torch.Tensor,
-    ) -> torch.Tensor:
-        """Original loop-based ELBO computation (kept for testing/comparison).
-
-        This is the reference implementation. The vectorized version compute_elbo()
-        should produce identical results with better performance.
-
-        Args:
-            y: Observations (T, obs_dim)
-            states: Filtered states from Kalman filter (T, state_dim)
-            covariances: Filtered covariances (T, state_dim, state_dim)
-            log_likelihood: Log likelihood from Kalman filter
-
-        Returns:
-            ELBO value (scalar)
-        """
-        T = y.shape[0]
-
-        # The log likelihood from Kalman filter already contains p(y|z)
-        # We use it directly as the reconstruction term
-        reconstruction_term = log_likelihood
-
-        # KL divergence between filtered posterior and prior
-        # For linear Gaussian SSM, this can be computed analytically
-        kl_divergence = 0.0
-
-        # Initial state KL: KL[q(z0)||p(z0)]
-        # Assume p(z0) = N(0, I)
-        z0 = states[0]
-        P0 = covariances[0]
-        kl_0 = 0.5 * (
-            torch.trace(P0)
-            + torch.dot(z0, z0)
-            - self.config.state_dim
-            - torch.logdet(P0)
-        )
-        kl_divergence += kl_0
-
-        # Transition KL: sum_t KL[q(z_t|z_{t-1})||p(z_t|z_{t-1})]
-        for t in range(1, T):
-            z_t = states[t]
-            z_prev = states[t - 1]
-            P_t = covariances[t]
-
-            # Mean of prior p(z_t|z_{t-1})
-            z_prior_mean = self.A @ z_prev
-
-            # KL divergence between two Gaussians
-            diff = z_t - z_prior_mean
-            kl_t = 0.5 * (
-                torch.trace(torch.linalg.solve(self.Q, P_t))
-                + torch.dot(diff, torch.linalg.solve(self.Q, diff))
-                - self.config.state_dim
-                + torch.logdet(self.Q)
-                - torch.logdet(P_t)
-            )
-            kl_divergence += kl_t
-
-        # ELBO = likelihood - KL
-        elbo = reconstruction_term - kl_divergence
-
-        return elbo / T  # Normalize by sequence length
-
-    def compute_elbo(
-        self,
-        y: torch.Tensor,
-        states: torch.Tensor,
-        covariances: torch.Tensor,
-        log_likelihood: torch.Tensor,
-    ) -> torch.Tensor:
-        """Compute Evidence Lower Bound (ELBO) for variational inference (vectorized).
-
-        ELBO = E_q[log p(y|z)] - KL[q(z)||p(z)]
-
-        This is the vectorized version that pre-computes Q inverse and uses
-        batch operations for better performance.
-
-        Args:
-            y: Observations (T, obs_dim)
-            states: Filtered states from Kalman filter (T, state_dim)
-            covariances: Filtered covariances (T, state_dim, state_dim)
-            log_likelihood: Log likelihood from Kalman filter
-
-        Returns:
-            ELBO value (scalar)
-        """
-        T = y.shape[0]
-        state_dim = self.config.state_dim
-
-        # The log likelihood from Kalman filter already contains p(y|z)
-        reconstruction_term = log_likelihood
-
-        # ===== Initial state KL: KL[q(z0)||p(z0)] =====
-        # Assume p(z0) = N(0, I)
-        z0 = states[0]
-        P0 = covariances[0]
-        kl_0 = 0.5 * (
-            torch.trace(P0)
-            + torch.dot(z0, z0)
-            - state_dim
-            - torch.logdet(P0)
-        )
-
-        # ===== Transition KL (vectorized): sum_t KL[q(z_t|z_{t-1})||p(z_t|z_{t-1})] =====
-        if T > 1:
-            # Pre-compute Q inverse and log determinant (only once)
-            Q_inv = torch.linalg.inv(self.Q)
-            log_det_Q = torch.logdet(self.Q)
-
-            # Vectorized computation for transitions (t=1 to T-1)
-            # states[:-1] shape: (T-1, state_dim) - previous states z_{t-1}
-            # states[1:] shape: (T-1, state_dim) - current states z_t
-            z_prior_means = states[:-1] @ self.A.T  # (T-1, state_dim)
-            diff = states[1:] - z_prior_means  # (T-1, state_dim)
-
-            # Trace terms: trace(Q_inv @ P_t) for each t
-            # Since both Q_inv and P_t are symmetric: trace(A @ B) = sum_ij A_ij * B_ij
-            trace_terms = torch.einsum("ij,tij->t", Q_inv, covariances[1:])  # (T-1,)
-
-            # Quadratic forms: diff^T @ Q_inv @ diff for each t
-            quad_forms = torch.einsum("ti,ij,tj->t", diff, Q_inv, diff)  # (T-1,)
-
-            # Log determinants of P_t using slogdet for numerical stability
-            _, log_det_P = torch.linalg.slogdet(covariances[1:])  # (T-1,)
-
-            # Total transition KL
-            T_minus_1 = T - 1
-            transition_kl = 0.5 * (
-                trace_terms.sum()
-                + quad_forms.sum()
-                - T_minus_1 * state_dim
-                + T_minus_1 * log_det_Q
-                - log_det_P.sum()
-            )
-        else:
-            transition_kl = 0.0
-
-        # Total KL divergence
-        kl_divergence = kl_0 + transition_kl
-
-        # ELBO = likelihood - KL
-        elbo = reconstruction_term - kl_divergence
-
-        return elbo / T  # Normalize by sequence length
-
     def forward(
         self, y: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward pass through the model using Kalman filtering.
 
+        For LGSSM, training uses the marginal log-likelihood log p(y|θ) directly
+        from the Kalman filter. This is mathematically equivalent to the ELBO
+        since the RTS posterior equals the exact posterior (KL divergence = 0).
+
         Args:
             y: Observations (T, obs_dim) or (batch, T, obs_dim)
 
         Returns:
-            states: Filtered states
-            covariances: Filtered covariances
-            log_likelihood: Log likelihood of observations
+            states: Filtered states (T, state_dim)
+            covariances: Filtered covariances (T, state_dim, state_dim)
+            log_likelihood: Marginal log p(y|θ) from innovation likelihood
         """
         # Handle batch dimension
         if y.dim() == 3:
@@ -407,19 +344,41 @@ class LGSSM(nn.Module):
         X_val: Optional[Union[np.ndarray, torch.Tensor, pd.DataFrame]] = None,
         verbose: bool = True,
     ) -> "LGSSM":
-        """Train the LGSSM model.
+        """Train the LGSSM model by maximizing log p(y|θ).
+
+        For Linear Gaussian SSM, the marginal log-likelihood log p(y|θ) is computed
+        exactly by the Kalman filter as the sum of innovation likelihoods. This is
+        mathematically equivalent to the ELBO since the RTS posterior equals the
+        exact posterior (KL divergence = 0).
 
         Args:
-            X_train: Training data (T, obs_dim)
-            X_val: Optional validation data
+            X_train: Training data (T, obs_dim). Must not contain NaN values.
+            X_val: Optional validation data. Must not contain NaN values.
             verbose: Whether to print training progress
 
         Returns:
             Self for method chaining
+
+        Raises:
+            ValueError: If training or validation data contains NaN values
         """
-        # Convert to tensor
+        # Convert to numpy first for NaN check (before tensor conversion)
         if isinstance(X_train, pd.DataFrame):
             X_train = X_train.values
+        if isinstance(X_train, torch.Tensor):
+            X_train_np = X_train.cpu().numpy()
+        else:
+            X_train_np = X_train
+
+        # Fail-fast: Training data must not contain NaN
+        if np.isnan(X_train_np).any():
+            nan_count = np.isnan(X_train_np).sum()
+            raise ValueError(
+                f"Training data contains {nan_count} NaN values. "
+                "Please impute or remove missing values before training."
+            )
+
+        # Convert to tensor
         if isinstance(X_train, np.ndarray):
             X_train = torch.from_numpy(X_train).to(self.dtype)
         X_train = X_train.to(self.device)
@@ -427,9 +386,24 @@ class LGSSM(nn.Module):
         if X_val is not None:
             if isinstance(X_val, pd.DataFrame):
                 X_val = X_val.values
+            if isinstance(X_val, torch.Tensor):
+                X_val_np = X_val.cpu().numpy()
+            else:
+                X_val_np = X_val
+
+            # Fail-fast: Validation data must not contain NaN
+            if np.isnan(X_val_np).any():
+                nan_count = np.isnan(X_val_np).sum()
+                raise ValueError(
+                    f"Validation data contains {nan_count} NaN values. "
+                    "Please impute or remove missing values before training."
+                )
+
             if isinstance(X_val, np.ndarray):
                 X_val = torch.from_numpy(X_val).to(self.dtype)
             X_val = X_val.to(self.device)
+
+        T_train = X_train.shape[0]
 
         # Build model if not already built
         if self.A is None:
@@ -438,7 +412,10 @@ class LGSSM(nn.Module):
         # Compute and store scaler parameters if enabled
         if self.config.use_scaler:
             self.scaler_mean = X_train.mean(dim=0)
-            self.scaler_std = X_train.std(dim=0)
+            # Use biased estimator (unbiased=False) for more stable normalization
+            # Add lower bound to prevent division by zero for constant features
+            self.scaler_std = X_train.std(dim=0, unbiased=False)
+            self.scaler_std = torch.clamp(self.scaler_std, min=1e-8)
 
         # Setup optimizer
         optimizer = Adam(
@@ -449,14 +426,14 @@ class LGSSM(nn.Module):
 
         scheduler = ReduceLROnPlateau(
             optimizer,
-            mode="max",  # Maximize ELBO
+            mode="max",  # Maximize log-likelihood
             patience=self.config.patience // 2,
             factor=0.5,
             min_lr=1e-6,
         )
 
         # Training loop
-        best_val_elbo = -float("inf")
+        best_val_ll = -float("inf")
         patience_counter = 0
         best_state_dict = None
 
@@ -465,12 +442,12 @@ class LGSSM(nn.Module):
             self.train()
             optimizer.zero_grad()
 
-            # Forward pass
-            states, covariances, log_likelihood = self(X_train)
+            # Forward pass - get log-likelihood from Kalman filter
+            _, _, log_likelihood = self(X_train)
 
-            # Compute ELBO loss (negative for minimization)
-            elbo = self.compute_elbo(X_train, states, covariances, log_likelihood)
-            loss = -elbo  # Minimize negative ELBO
+            # Normalize log-likelihood by sequence length for stable gradients
+            avg_ll = log_likelihood / T_train
+            loss = -avg_ll  # Minimize negative log-likelihood
 
             # Backward pass
             loss.backward()
@@ -483,25 +460,30 @@ class LGSSM(nn.Module):
 
             optimizer.step()
 
-            # Record training loss
-            self.history["loss"].append(-loss.item())
+            # Project A to ensure stability (spectral radius < A_spectral_max)
+            self._project_A_stability()
+
+            # Record training loss (as average log-likelihood per timestep)
+            self.history["loss"].append(avg_ll.item())
 
             # Validation step
             if X_val is not None:
+                T_val = X_val.shape[0]
                 self.eval()
                 with torch.no_grad():
-                    val_states, val_cov, val_ll = self(X_val)
-                    val_elbo = self.compute_elbo(X_val, val_states, val_cov, val_ll)
-                    self.history["val_loss"].append(val_elbo.item())
+                    _, _, val_ll = self(X_val)
+                    val_avg_ll = val_ll / T_val
+                    self.history["val_loss"].append(val_avg_ll.item())
 
                 # Learning rate scheduling
-                scheduler.step(val_elbo)
+                scheduler.step(val_avg_ll)
 
                 # Early stopping
-                if val_elbo > best_val_elbo + self.config.min_delta:
-                    best_val_elbo = val_elbo
+                if val_avg_ll > best_val_ll + self.config.min_delta:
+                    best_val_ll = val_avg_ll
                     patience_counter = 0
-                    best_state_dict = self.state_dict()
+                    # Deep copy to preserve weights (state_dict returns references)
+                    best_state_dict = {k: v.clone() for k, v in self.state_dict().items()}
                 else:
                     patience_counter += 1
 
@@ -512,9 +494,9 @@ class LGSSM(nn.Module):
 
             # Print progress
             if verbose and (epoch + 1) % 10 == 0:
-                msg = f"Epoch {epoch + 1}/{self.config.max_epochs} | ELBO: {-loss.item():.4f}"
+                msg = f"Epoch {epoch + 1}/{self.config.max_epochs} | LL: {avg_ll.item():.4f}"
                 if X_val is not None:
-                    msg += f" | Val ELBO: {val_elbo.item():.4f}"
+                    msg += f" | Val LL: {val_avg_ll.item():.4f}"
                 print(msg)
 
         # Restore best model if validation was used
@@ -594,13 +576,15 @@ class LGSSM(nn.Module):
 
         Returns:
             initial_state: Initial state (state_dim,) as zeros
-            initial_covariance: Initial covariance (state_dim, state_dim) as 0.1 * I
+            initial_covariance: Initial covariance (state_dim, state_dim) as I
+                (matching prior p(z0) = N(0, I))
         """
         if self.A is None:
             raise RuntimeError("Model not initialized. Call fit() first.")
 
         initial_state = np.zeros(self.config.state_dim)
-        initial_covariance = np.eye(self.config.state_dim) * 0.1
+        # P0 = I to match prior p(z0) = N(0, I) used in ELBO
+        initial_covariance = np.eye(self.config.state_dim)
 
         return initial_state, initial_covariance
 

@@ -196,15 +196,19 @@ class TestMemoryEfficiency:
         X = torch.randn(1, 300, 10)
 
         net.zero_grad()
-        result = net.forward_train(X, chunk_size=100, overlap=20)
+        result = net.forward_train_ekf(X, chunk_size=100, overlap=20)
 
         # 应该处理了多个 chunks
         assert result["num_chunks"] > 1
 
         # 梯度应该已经累积
+        # EKF 训练使用的网络：transition_prior, observation, initial_state params
+        # 不使用：transition_posterior (legacy), lstm (not used in EKF path)
+        unused_params = {"transition_posterior.", "lstm."}  # Not used in EKF training path
         for name, param in net.named_parameters():
-            if name == "initial_state_log_var":
-                continue
+            is_unused = any(name.startswith(prefix) for prefix in unused_params)
+            if is_unused:
+                continue  # Skip params not used in EKF training
             assert param.grad is not None, f"{name} should have gradient"
             # 梯度应该是多个 chunk 的累积结果
             # （虽然每个 chunk 已经用 1/T 缩放了）

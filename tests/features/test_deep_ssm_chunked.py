@@ -83,14 +83,19 @@ class TestForwardTrainGradientAccuracy:
 
         X = torch.randn(1, 200, 10)
 
-        # 运行 forward_train
+        # 运行 forward_train_ekf (EKF-based training path)
         net.zero_grad()
-        result = net.forward_train(X, chunk_size=128, overlap=32)
+        result = net.forward_train_ekf(X, chunk_size=128, overlap=32)
 
-        # 检查参数都有梯度（initial_state_log_var 除外，训练时不使用）
+        # EKF 训练使用的网络：transition_prior, observation, initial_state params
+        # 不使用：
+        # - transition_posterior (legacy posterior network, replaced by EKF update)
+        # - lstm (not used in EKF path - transition_prior only takes z_prev)
+        unused_params = {"transition_posterior.", "lstm."}  # Not used in EKF training path
         for name, param in net.named_parameters():
-            if name == "initial_state_log_var":
-                continue  # 训练时只用 initial_state_mean
+            is_unused = any(name.startswith(prefix) for prefix in unused_params)
+            if is_unused:
+                continue  # Skip params not used in EKF training
             assert param.grad is not None, f"Parameter {name} has no gradient"
             assert torch.isfinite(param.grad).all(), f"Parameter {name} has non-finite gradient"
 

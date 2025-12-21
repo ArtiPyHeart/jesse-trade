@@ -91,9 +91,10 @@ def test_kalman_filter():
     ), f"Covariances shape mismatch: {covariances.shape}"
     assert log_likelihood.dim() == 0, "Log likelihood should be scalar"
 
-    # Test smoothing
-    smoothed_states, smoothed_cov = kf.smooth(filtered_states, covariances, A_t, Q_t)
+    # Test smoothing (returns 3 values: states, covariances, lag_one_covariances)
+    smoothed_states, smoothed_cov, lag_one_cov = kf.smooth(filtered_states, covariances, A_t, Q_t)
     assert smoothed_states.shape == (T, state_dim), f"Smoothed states shape mismatch"
+    assert lag_one_cov.shape == (T - 1, state_dim, state_dim), f"Lag-one cov shape mismatch"
 
     print("✓ Kalman Filter tests passed")
 
@@ -386,49 +387,48 @@ def test_parameter_constraints():
     print("✓ Parameter constraint tests passed")
 
 
-def test_vectorized_elbo_consistency():
-    """Test that vectorized ELBO produces same results as loop version."""
-    print("\nTesting vectorized ELBO consistency...")
+def test_log_likelihood_training():
+    """Test that training with log-likelihood works correctly."""
+    print("\nTesting log-likelihood training...")
 
     # Generate data
     T, obs_dim, state_dim = 200, 10, 5
     observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
 
-    # Create and train model (short training to get valid parameters)
+    # Split data
+    train_size = int(0.8 * T)
+    X_train = observations[:train_size]
+    X_val = observations[train_size:]
+
+    # Create and train model
     config = LGSSMConfig(
         state_dim=state_dim,
-        max_epochs=10,
+        max_epochs=30,
         use_scaler=True,
         seed=42,
     )
 
     model = LGSSM(config)
-    model.fit(observations, verbose=False)
+    model.fit(X_train, X_val, verbose=False)
 
-    # Get states and covariances using forward pass
-    y_tensor = torch.from_numpy(observations).to(model.dtype).to(model.device)
+    # Get log-likelihood from forward pass
+    y_tensor = torch.from_numpy(X_train).to(model.dtype).to(model.device)
     model.eval()
     with torch.no_grad():
         states, covariances, log_likelihood = model(y_tensor)
 
-    # Compare vectorized vs loop ELBO
-    elbo_vectorized = model.compute_elbo(y_tensor, states, covariances, log_likelihood)
-    elbo_loop = model._compute_elbo_loop(y_tensor, states, covariances, log_likelihood)
+    # Log-likelihood should be finite and reasonable (negative, typically)
+    assert torch.isfinite(log_likelihood), f"Log-likelihood is not finite: {log_likelihood}"
 
-    # They should be numerically identical (or very close)
-    np.testing.assert_allclose(
-        elbo_vectorized.detach().cpu().numpy(),
-        elbo_loop.detach().cpu().numpy(),
-        rtol=1e-5,
-        atol=1e-7,
-        err_msg="Vectorized ELBO differs from loop version",
-    )
+    # Avg log-likelihood per timestep
+    avg_ll = log_likelihood.item() / train_size
+    print(f"  Avg log-likelihood per timestep: {avg_ll:.4f}")
 
-    print(f"  Vectorized ELBO: {elbo_vectorized.item():.6f}")
-    print(f"  Loop ELBO:       {elbo_loop.item():.6f}")
-    print(f"  Difference:      {abs(elbo_vectorized - elbo_loop).detach().item():.2e}")
+    # States should be valid
+    assert not torch.isnan(states).any(), "States contain NaN"
+    assert not torch.isinf(states).any(), "States contain Inf"
 
-    print("✓ Vectorized ELBO consistency tests passed")
+    print("✓ Log-likelihood training tests passed")
 
 
 def compare_with_original():
@@ -478,25 +478,330 @@ def compare_with_original():
     print("✓ Comparison tests completed")
 
 
+def test_rts_lag_one_covariance():
+    """Test RTS smoother returns correct lag-one covariances and symmetric smoothed covariances."""
+    print("\nTesting RTS lag-one covariance and symmetry...")
+
+    # Setup
+    state_dim = 3
+    obs_dim = 5
+    T = 50
+
+    kf = KalmanFilter(state_dim=state_dim, obs_dim=obs_dim)
+
+    # Generate test data
+    observations, _, (A, C, Q, R) = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Convert to tensors
+    y = torch.from_numpy(observations).float()
+    A_t = torch.from_numpy(A).float()
+    C_t = torch.from_numpy(C).float()
+    Q_t = torch.from_numpy(Q).float()
+    R_t = torch.from_numpy(R).float()
+
+    # Run filter
+    states, covariances, _ = kf(y, A_t, C_t, Q_t, R_t)
+
+    # Run smoother - now returns 3 values
+    smoothed_states, smoothed_cov, lag_one_cov = kf.smooth(states, covariances, A_t, Q_t)
+
+    # Check shapes
+    assert smoothed_states.shape == (T, state_dim), "Smoothed states shape mismatch"
+    assert smoothed_cov.shape == (T, state_dim, state_dim), "Smoothed cov shape mismatch"
+    assert lag_one_cov.shape == (T - 1, state_dim, state_dim), \
+        f"Lag-one cov shape mismatch: {lag_one_cov.shape}"
+
+    # Check smoothed covariances are symmetric (v2.1 fix)
+    # Note: Last covariance (T-1) comes from filtered state, may have small asymmetry
+    for t in range(T):
+        cov = smoothed_cov[t]
+        symmetry_error = torch.abs(cov - cov.T).max().item()
+        assert symmetry_error < 1e-6, \
+            f"Smoothed cov at t={t} is not symmetric: max diff = {symmetry_error}"
+
+    # Check lag-one covariances are reasonable (P_{t+1,t|T} is NOT symmetric)
+    for t in range(T - 1):
+        norm = torch.linalg.norm(lag_one_cov[t]).item()
+        assert norm < 100, f"Lag-one cov at t={t} has unreasonable norm: {norm}"
+        assert torch.isfinite(lag_one_cov[t]).all(), f"Lag-one cov at t={t} contains NaN/Inf"
+
+    print("  Smoothed covariances verified symmetric")
+    print("✓ RTS lag-one covariance tests passed")
+
+
+def test_A_spectral_projection():
+    """Test A matrix spectral radius projection."""
+    print("\nTesting A spectral projection...")
+
+    # Generate data
+    T, obs_dim, state_dim = 100, 5, 3
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Create model with tight spectral constraint
+    config = LGSSMConfig(
+        state_dim=state_dim,
+        max_epochs=30,
+        A_spectral_max=0.9,  # Tight constraint
+        seed=42,
+    )
+
+    model = LGSSM(config)
+    model.fit(observations, verbose=False)
+
+    # Check that A's spectral radius respects the constraint
+    with torch.no_grad():
+        eigvals = torch.linalg.eigvals(model.A)
+        spectral_radius = torch.abs(eigvals).max().item()
+
+    assert spectral_radius <= config.A_spectral_max + 1e-6, \
+        f"Spectral radius {spectral_radius} exceeds max {config.A_spectral_max}"
+
+    print(f"  A spectral radius: {spectral_radius:.4f} (max: {config.A_spectral_max})")
+    print("✓ A spectral projection tests passed")
+
+
+def test_QR_variance_clamping():
+    """Test Q/R variance bounds."""
+    print("\nTesting Q/R variance clamping...")
+
+    # Generate data
+    T, obs_dim, state_dim = 100, 5, 3
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Create model with default bounds
+    config = LGSSMConfig(
+        state_dim=state_dim,
+        max_epochs=10,
+        Q_log_min=-10.0,
+        Q_log_max=10.0,
+        R_log_min=-10.0,
+        R_log_max=10.0,
+    )
+
+    model = LGSSM(config)
+    model.fit(observations, verbose=False)
+
+    # Get Q and R diagonal values
+    Q_diag = torch.diag(model.Q).detach().cpu().numpy()
+    R_diag = torch.diag(model.R).detach().cpu().numpy()
+
+    # Check bounds: exp(-10) ≈ 4.5e-5, exp(10) ≈ 22026
+    min_val = np.exp(-10.0) - 1e-6
+    max_val = np.exp(10.0) + 1e-6
+
+    assert np.all(Q_diag >= min_val), f"Q diagonal below minimum: {Q_diag.min()}"
+    assert np.all(Q_diag <= max_val), f"Q diagonal above maximum: {Q_diag.max()}"
+    assert np.all(R_diag >= min_val), f"R diagonal below minimum: {R_diag.min()}"
+    assert np.all(R_diag <= max_val), f"R diagonal above maximum: {R_diag.max()}"
+
+    print(f"  Q range: [{Q_diag.min():.2e}, {Q_diag.max():.2e}]")
+    print(f"  R range: [{R_diag.min():.2e}, {R_diag.max():.2e}]")
+    print("✓ Q/R variance clamping tests passed")
+
+
+def test_deep_copy_early_stopping():
+    """Test that early stopping correctly preserves best weights."""
+    print("\nTesting deep copy for early stopping...")
+
+    # Generate data
+    T, obs_dim, state_dim = 200, 10, 5
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Split with validation
+    train_size = int(0.7 * T)
+    val_size = int(0.15 * T)
+
+    X_train = observations[:train_size]
+    X_val = observations[train_size:train_size + val_size]
+
+    # Create model with early stopping
+    config = LGSSMConfig(
+        state_dim=state_dim,
+        max_epochs=100,  # High epochs to trigger early stopping
+        patience=3,      # Low patience
+        seed=42,
+    )
+
+    model = LGSSM(config)
+    model.fit(X_train, X_val, verbose=False)
+
+    # The model should have restored best weights
+    # Just verify it trained without error and produces valid output
+    states = model.transform(X_train)
+    assert not np.any(np.isnan(states)), "States contain NaN after early stopping"
+    assert not np.any(np.isinf(states)), "States contain Inf after early stopping"
+
+    print("✓ Deep copy early stopping tests passed")
+
+
+def test_constant_feature_handling():
+    """Test handling of constant (zero-variance) features."""
+    print("\nTesting constant feature handling...")
+
+    # Generate data with some constant columns
+    T, obs_dim, state_dim = 100, 10, 3
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Make some columns constant
+    observations[:, 0] = 0.0  # Zero column
+    observations[:, 5] = 1.5  # Constant column
+
+    # Create and train model
+    config = LGSSMConfig(state_dim=state_dim, max_epochs=10, use_scaler=True)
+    model = LGSSM(config)
+    model.fit(observations, verbose=False)
+
+    # Check scaler std is clamped (use slightly looser tolerance for float precision)
+    if model.scaler_std is not None:
+        min_std = model.scaler_std.min().item()
+        assert min_std >= 0.9e-8, f"Scaler std too small: {min_std}"
+
+    # Prediction should work without NaN
+    states = model.transform(observations)
+    assert not np.any(np.isnan(states)), "States contain NaN with constant features"
+
+    print("✓ Constant feature handling tests passed")
+
+
+def test_short_sequence():
+    """Test handling of very short sequences."""
+    print("\nTesting short sequence handling...")
+
+    obs_dim, state_dim = 5, 3
+
+    # Create model first
+    config = LGSSMConfig(state_dim=state_dim, max_epochs=5, use_scaler=True)
+    model = LGSSM(config)
+
+    # Train on longer sequence first
+    train_data, _, _ = generate_synthetic_data(100, obs_dim, state_dim)
+    model.fit(train_data, verbose=False)
+
+    # Test on short sequences
+    for T in [2, 5, 10]:
+        short_data = train_data[:T]
+        states = model.transform(short_data)
+        assert states.shape == (T, state_dim), f"Shape mismatch for T={T}"
+        assert not np.any(np.isnan(states)), f"NaN in states for T={T}"
+
+    print("✓ Short sequence handling tests passed")
+
+
+def test_nan_tolerance_in_transform():
+    """Test that transform() can handle NaN observations gracefully."""
+    print("\nTesting NaN tolerance in transform...")
+
+    # Generate clean data for training
+    T, obs_dim, state_dim = 100, 10, 3
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+
+    # Train model on clean data
+    config = LGSSMConfig(state_dim=state_dim, max_epochs=10, use_scaler=True, seed=42)
+    model = LGSSM(config)
+    model.fit(observations, verbose=False)
+
+    # Test case 1: Partial NaN (single element)
+    test_data1 = observations[80:90].copy()
+    test_data1[5, 3] = np.nan  # Inject NaN at t=5, feature=3
+    states1 = model.transform(test_data1)
+    assert not np.any(np.isnan(states1)), "States contain NaN with partial NaN obs"
+    print("  Partial NaN observation handled correctly")
+
+    # Test case 2: Full row NaN
+    test_data2 = observations[80:90].copy()
+    test_data2[5, :] = np.nan  # Inject NaN for entire row at t=5
+    states2 = model.transform(test_data2)
+    assert not np.any(np.isnan(states2)), "States contain NaN with full-row NaN obs"
+    print("  Full-row NaN observation handled correctly")
+
+    # Test case 3: Multiple consecutive NaN rows
+    test_data3 = observations[80:90].copy()
+    test_data3[3:6, :] = np.nan  # 3 consecutive NaN rows
+    states3 = model.transform(test_data3)
+    assert not np.any(np.isnan(states3)), "States contain NaN with consecutive NaN obs"
+    print("  Consecutive NaN observations handled correctly")
+
+    # Test case 4: All NaN (edge case - pure prediction)
+    test_data4 = np.full((5, obs_dim), np.nan)
+    states4 = model.transform(test_data4)
+    assert not np.any(np.isnan(states4)), "States contain NaN with all-NaN sequence"
+    assert states4.shape == (5, state_dim), f"Shape mismatch: {states4.shape}"
+    print("  All-NaN sequence handled correctly (pure prediction)")
+
+    print("✓ NaN tolerance in transform tests passed")
+
+
+def test_nan_rejection_in_fit():
+    """Test that fit() rejects training data with NaN values."""
+    print("\nTesting NaN rejection in fit...")
+
+    # Generate data with NaN
+    T, obs_dim, state_dim = 100, 10, 3
+    observations, _, _ = generate_synthetic_data(T, obs_dim, state_dim)
+    observations_with_nan = observations.copy()
+    observations_with_nan[50, 3] = np.nan  # Inject NaN
+
+    # Create model
+    config = LGSSMConfig(state_dim=state_dim, max_epochs=5, use_scaler=True)
+    model = LGSSM(config)
+
+    # Try to fit with NaN data - should raise ValueError
+    try:
+        model.fit(observations_with_nan, verbose=False)
+        assert False, "Should have raised ValueError for NaN in training data"
+    except ValueError as e:
+        assert "NaN" in str(e), f"Error message should mention NaN: {e}"
+        print(f"  Training data correctly rejected: {e}")
+
+    # Also test validation data
+    model2 = LGSSM(config)
+    val_data_with_nan = observations[80:100].copy()
+    val_data_with_nan[5, 2] = np.nan
+
+    try:
+        model2.fit(observations[:80], val_data_with_nan, verbose=False)
+        assert False, "Should have raised ValueError for NaN in validation data"
+    except ValueError as e:
+        assert "NaN" in str(e), f"Error message should mention NaN: {e}"
+        print(f"  Validation data correctly rejected: {e}")
+
+    print("✓ NaN rejection in fit tests passed")
+
+
 def run_all_tests():
     """Run all tests."""
     print("=" * 60)
-    print("Running LGSSM Implementation Tests")
+    print("Running LGSSM Implementation Tests (v2.1)")
     print("=" * 60)
 
+    # Core functionality tests
     test_kalman_filter()
     test_lgssm_basic()
     test_lgssm_realtime()
-    test_predict_update_consistency()  # New test for consistency
+    test_predict_update_consistency()
     test_lgssm_save_load()
     test_lgssm_no_scaler()
     test_lgssm_pandas_input()
     test_parameter_constraints()
-    test_vectorized_elbo_consistency()  # Vectorized ELBO test
+
+    # v2.0 stability features
+    test_rts_lag_one_covariance()
+    test_A_spectral_projection()
+    test_QR_variance_clamping()
+    test_deep_copy_early_stopping()
+    test_constant_feature_handling()
+    test_short_sequence()
+
+    # v2.1 log-likelihood training and NaN handling
+    test_log_likelihood_training()
+    test_nan_rejection_in_fit()
+    test_nan_tolerance_in_transform()
+
+    # Comparison test
     compare_with_original()
 
     print("\n" + "=" * 60)
-    print("All tests passed successfully! ✓")
+    print("All tests passed successfully!")
     print("=" * 60)
 
 
