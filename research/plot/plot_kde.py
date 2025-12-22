@@ -6,7 +6,56 @@ from scipy.optimize import brentq
 from scipy.stats import gaussian_kde, norm
 
 
-def plot_kde(array_1d: np.ndarray, lag=1, multi_lag: bool = True):
+def process_sign_sequence(values: np.ndarray, compare_shift: int = -1) -> np.ndarray:
+    """
+    根据相邻值符号关系对序列做正负翻转。
+
+    compare_shift = -1: 与下一个值比较（shift(-1)）
+    compare_shift = 1: 与上一个值比较（shift(1)）
+    """
+    values = np.asarray(values)
+    assert values.ndim == 1, "values必须为一维数组"
+    assert compare_shift in (-1, 1), "compare_shift必须为-1或1"
+
+    processed = values.copy()
+    if values.size < 2:
+        return processed
+
+    if compare_shift == -1:
+        prod = values[:-1] * values[1:]
+        same_sign = prod > 0
+        diff_sign = prod < 0
+        idx_same = np.where(same_sign)[0]
+        idx_diff = np.where(diff_sign)[0]
+    else:
+        prod = values[1:] * values[:-1]
+        same_sign = prod > 0
+        diff_sign = prod < 0
+        idx_same = np.where(same_sign)[0] + 1
+        idx_diff = np.where(diff_sign)[0] + 1
+
+    processed[idx_same] = np.abs(values[idx_same])
+    processed[idx_diff] = -np.abs(values[idx_diff])
+    return processed
+
+
+def _standardize_returns(
+    returns: np.ndarray, apply_sign_sequence: bool, sign_shift: int
+) -> np.ndarray:
+    if apply_sign_sequence:
+        returns = process_sign_sequence(returns, compare_shift=sign_shift)
+    std = returns.std()
+    assert std > 0, "returns标准差必须大于0"
+    return (returns - returns.mean()) / std
+
+
+def plot_kde(
+    array_1d: np.ndarray,
+    lag=1,
+    multi_lag: bool = True,
+    apply_sign_sequence: bool = True,
+    sign_shift: int = -1,
+):
     """
     绘制收益率的核密度估计图，可选多重lag对比
 
@@ -19,13 +68,26 @@ def plot_kde(array_1d: np.ndarray, lag=1, multi_lag: bool = True):
         多重lag模式：最大lag值（将绘制lag 1到lag的所有峰度）
     multi_lag : bool, default=True
         是否绘制多重lag的峰度对比（从lag=1到lag=lag）
+    apply_sign_sequence : bool, default=True
+        是否应用相邻符号序列处理逻辑
+    sign_shift : int, default=-1
+        apply_sign_sequence=True时有效，-1对比下一个值，1对比上一个值
     """
+    array_1d = np.asarray(array_1d)
+    assert array_1d.ndim == 1, "array_1d必须为一维数组"
+    assert lag >= 1, "lag必须 >= 1"
+    assert array_1d.size > lag + 1, "array_1d长度必须大于lag+1"
+    assert np.all(np.isfinite(array_1d)), "array_1d必须为有限数值"
+    assert np.all(array_1d > 0), "array_1d必须为正数以计算对数收益率"
+    if apply_sign_sequence:
+        assert sign_shift in (-1, 1), "sign_shift必须为-1或1"
+
     plt.figure(figsize=(10, 6))
 
     if not multi_lag:
         # 原有的单一lag行为
         ret = np.log(array_1d[lag:]) - np.log(array_1d[:-lag])
-        standard = (ret - ret.mean()) / ret.std()
+        standard = _standardize_returns(ret, apply_sign_sequence, sign_shift)
         kurtosis = stats.kurtosis(standard, axis=None, fisher=False, nan_policy="omit")
 
         sns.kdeplot(standard, label=f"lag={lag}", color="blue")
@@ -48,7 +110,7 @@ def plot_kde(array_1d: np.ndarray, lag=1, multi_lag: bool = True):
         # 循环绘制不同lag的KDE
         for lag_i in range(1, lag + 1):
             ret = np.log(array_1d[lag_i:]) - np.log(array_1d[:-lag_i])
-            standard = (ret - ret.mean()) / ret.std()
+            standard = _standardize_returns(ret, apply_sign_sequence, sign_shift)
             kurtosis = stats.kurtosis(
                 standard, axis=None, fisher=False, nan_policy="omit"
             )
