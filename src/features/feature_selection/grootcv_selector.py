@@ -27,15 +27,18 @@ class GrootCVConfig(BaseModel):
 
     Attributes:
         objective: 任务类型 - "binary" (二分类), "rmse" (回归) 或 "auto" (自动检测)
-        cutoff: 特征选择阈值，默认为 1.0。
-                cutoff 越小筛选越严格，越大越宽松。
+        cutoff: 特征选择阈值，默认为 10.0。
+                cutoff 越大越宽松，越小越严格。
                 具体公式：特征被选中需要 importance >= shadow_max / cutoff
         n_folds: 交叉验证折数，默认 5
-        n_iter: 迭代次数，默认 5
+        n_iter: 迭代次数，默认 3（仅 repeated_kfold 模式有效）
+        cv_type: 交叉验证类型，默认 "time_series"（适合时序数据）
         silent: 是否静默模式，默认 True
-        fastshap: 是否使用 fasttreeshap 加速（需 NumPy<2），默认 False
+        fastshap: 是否使用 fasttreeshap 加速（需 NumPy<2），默认 True
         n_jobs: 并行数，0 表示使用 OpenMP 默认线程数
         lgbm_params: 自定义 LightGBM 参数，如 {"min_data_in_leaf": 20}
+        shap_max_samples: 计算 SHAP 的最大样本数（可选，下采样减少内存）
+        shap_batch_size: 计算 SHAP 的批大小（可选，分批减少峰值内存）
     """
 
     objective: Literal["binary", "rmse", "auto"] = Field(
@@ -43,12 +46,16 @@ class GrootCVConfig(BaseModel):
         description="任务类型: binary (分类), rmse (回归), auto (自动检测)",
     )
     cutoff: float = Field(
-        default=1.0,
+        default=10.0,
         gt=0,
-        description="特征选择阈值，越小越严格（importance >= shadow_max / cutoff）",
+        description="特征选择阈值，越大越宽松（importance >= shadow_max / cutoff）",
     )
     n_folds: int = Field(default=5, ge=2, le=10, description="交叉验证折数")
-    n_iter: int = Field(default=5, ge=1, le=20, description="迭代次数")
+    n_iter: int = Field(default=3, ge=1, le=20, description="迭代次数（仅 repeated_kfold 模式）")
+    cv_type: Literal["blocked_kfold", "time_series", "repeated_kfold"] = Field(
+        default="blocked_kfold",
+        description="交叉验证类型: blocked_kfold（默认，分块无重复）, time_series（扩展窗口）, repeated_kfold（随机分割）",
+    )
     silent: bool = Field(default=True, description="是否静默模式")
     fastshap: bool = Field(
         default=True, description="是否使用 fasttreeshap 加速（需 NumPy<2）"
@@ -56,6 +63,12 @@ class GrootCVConfig(BaseModel):
     n_jobs: int = Field(default=0, ge=0, description="并行数，0 表示使用 OpenMP 默认线程")
     lgbm_params: Optional[Dict[str, Any]] = Field(
         default=None, description="自定义 LightGBM 参数"
+    )
+    shap_max_samples: Optional[int] = Field(
+        default=None, ge=1, description="SHAP 采样上限（None 表示不采样）"
+    )
+    shap_batch_size: Optional[int] = Field(
+        default=None, ge=1, description="SHAP 分批大小（None 表示不分批）"
     )
 
 
@@ -222,11 +235,14 @@ class GrootCVSelector:
             cutoff=self.config.cutoff,
             n_folds=self.config.n_folds,
             n_iter=self.config.n_iter,
+            cv_type=self.config.cv_type,
             silent=self.config.silent or not self.verbose,
             fastshap=self.config.fastshap,
             n_jobs=self.config.n_jobs,
             lgbm_params=lgbm_params if lgbm_params else None,
             random_state=self.random_state,
+            shap_max_samples=self.config.shap_max_samples,
+            shap_batch_size=self.config.shap_batch_size,
         )
 
         # 6. 拟合

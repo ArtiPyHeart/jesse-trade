@@ -28,6 +28,7 @@ from research.model_pick.feature_utils import (
 )
 from research.model_pick.features import ALL_FEATS
 from research.model_pick.labeler import PipelineLabeler
+from src.features.feature_selection import GrootCVConfig
 from src.features.pipeline import FeaturePipeline
 
 # 配置日志系统
@@ -48,6 +49,8 @@ RESULTS_FILE = "feature_selection_results.csv"
 LOG_RETURN_LAGS = list(range(4, 8))  # 4, 5, 6, 7
 PRED_NEXT_STEPS = [1, 2, 3]
 LABEL_TYPES = ["hard", "direction"]
+GROOT_SHAP_MAX_SAMPLES = int(os.getenv("GROOT_SHAP_MAX_SAMPLES", "0")) or None
+GROOT_SHAP_BATCH_SIZE = int(os.getenv("GROOT_SHAP_BATCH_SIZE", "512")) or None
 
 
 class FeatureSelectionTracker:
@@ -228,11 +231,20 @@ def run_feature_selection(
         f"[特征筛选] 训练集大小: {train_x.shape[0]} 样本, {train_x.shape[1]} 特征"
     )
 
-    # 4. 特征筛选
-    selection_result = select_features(train_x, train_y)
+    # 4. 特征筛选（根据任务类型使用不同 cutoff）
+    # 分类任务 SHAP 值更 spiky，使用更大的 cutoff
+    cutoff = 12.0 if label_type == "hard" else 10.0
+    groot_config = GrootCVConfig(
+        cutoff=cutoff,
+        shap_max_samples=GROOT_SHAP_MAX_SAMPLES,
+        shap_batch_size=GROOT_SHAP_BATCH_SIZE,
+    )
+    selection_result = select_features(
+        train_x, train_y, cutoff=cutoff, groot_config=groot_config
+    )
     logger.info(
         f"[特征筛选] 完成: 从 {selection_result.n_total} 个特征中选择了 "
-        f"{selection_result.n_selected} 个"
+        f"{selection_result.n_selected} 个 (cutoff={cutoff})"
     )
 
     return (
@@ -288,6 +300,8 @@ if __name__ == "__main__":
     logger.info(f"  - pred_next_steps: {PRED_NEXT_STEPS}")
     logger.info(f"  - label_types: {LABEL_TYPES}")
     logger.info(f"  - 训练/测试分割日期: {TRAIN_TEST_SPLIT_DATE}")
+    logger.info(f"  - GrootCV shap_batch_size: {GROOT_SHAP_BATCH_SIZE}")
+    logger.info(f"  - GrootCV shap_max_samples: {GROOT_SHAP_MAX_SAMPLES}")
 
     pending_tasks = tracker.get_pending_tasks(
         LOG_RETURN_LAGS, PRED_NEXT_STEPS, LABEL_TYPES
@@ -335,8 +349,8 @@ if __name__ == "__main__":
             start_time = time.time()
 
             n_total, n_selected, selected_features = run_feature_selection(
-                global_features.copy(),
-                candles.copy(),
+                global_features,  # 不再复制，节省内存
+                candles,
                 lag,
                 pred,
                 label_type,

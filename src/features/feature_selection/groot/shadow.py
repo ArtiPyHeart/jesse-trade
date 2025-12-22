@@ -4,7 +4,7 @@ Shadow 特征生成模块
 创建 shadow features：复制所有特征并随机打乱，用于特征重要性对比。
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,7 +12,7 @@ import pandas as pd
 
 def create_shadow_features(
     X: pd.DataFrame,
-    random_state: int = None,
+    random_state: Optional[int] = None,
 ) -> Tuple[pd.DataFrame, List[str]]:
     """
     创建 shadow features：复制所有特征并随机打乱
@@ -33,13 +33,12 @@ def create_shadow_features(
         - 合并后的数据框（原始特征 + shadow 特征）
         - shadow 特征的列名列表
     """
-    if random_state is not None:
-        np.random.seed(random_state)
+    rng = np.random.default_rng(random_state)
 
     # 创建 shadow 特征：复制并打乱
     X_shadow = X.copy()
     for col in X_shadow.columns:
-        np.random.shuffle(X_shadow[col].values)
+        X_shadow[col] = rng.permutation(X_shadow[col].values)
 
     # 重命名 shadow 特征
     shadow_names = [f"ShadowVar{i + 1}" for i in range(X.shape[1])]

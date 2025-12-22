@@ -4,13 +4,14 @@ GrootCV 特征选择器核心实现
 基于 SHAP 值的特征选择方法，使用 shadow features 和交叉验证。
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
+import warnings
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection._base import SelectorMixin
-from sklearn.model_selection import RepeatedKFold
+from sklearn.model_selection import BaseCrossValidator, KFold, RepeatedKFold, TimeSeriesSplit
 from sklearn.utils.validation import _check_sample_weight, check_is_fitted
 from tqdm.auto import tqdm
 
@@ -32,7 +33,7 @@ class GrootCV(SelectorMixin, BaseEstimator):
 
     基于 SHAP 值的特征选择方法：
     1. 创建 Shadow Features：复制所有特征并随机打乱
-    2. 使用 RepeatedKFold 交叉验证训练 LightGBM
+    2. 使用交叉验证训练 LightGBM（默认 TimeSeriesSplit 避免时序数据泄露）
     3. 计算 SHAP 特征重要性
     4. 选择重要性超过 shadow 阈值的特征
 
@@ -46,7 +47,13 @@ class GrootCV(SelectorMixin, BaseEstimator):
     n_folds : int, default=5
         交叉验证折数
     n_iter : int, default=5
-        交叉验证重复次数
+        交叉验证重复次数（仅 repeated_kfold 模式有效）
+    cv_type : str, default="time_series"
+        交叉验证类型：
+        - "time_series": TimeSeriesSplit（默认，适合时序数据）
+        - "repeated_kfold": RepeatedKFold（随机分割）
+    folds : BaseCrossValidator, optional
+        自定义 CV splitter（优先级高于 cv_type）
     silent : bool, default=True
         是否静默模式
     fastshap : bool, default=False
@@ -57,6 +64,10 @@ class GrootCV(SelectorMixin, BaseEstimator):
         自定义 LightGBM 参数
     random_state : int, optional
         随机种子
+    shap_max_samples : int, optional
+        计算 SHAP 的最大样本数（可选，下采样减少内存）
+    shap_batch_size : int, optional
+        计算 SHAP 的批大小（可选，分批减少峰值内存）
 
     Attributes
     ----------
@@ -80,11 +91,15 @@ class GrootCV(SelectorMixin, BaseEstimator):
         cutoff: float = 1.0,
         n_folds: int = 5,
         n_iter: int = 5,
+        cv_type: Literal["blocked_kfold", "time_series", "repeated_kfold"] = "blocked_kfold",
+        folds: Optional[Union[BaseCrossValidator, Any]] = None,
         silent: bool = True,
         fastshap: bool = False,
         n_jobs: int = 0,
         lgbm_params: Optional[Dict[str, Any]] = None,
         random_state: Optional[int] = None,
+        shap_max_samples: Optional[int] = None,
+        shap_batch_size: Optional[int] = None,
     ):
         if cutoff <= 0:
             raise ValueError("cutoff 必须大于 0")
@@ -97,11 +112,15 @@ class GrootCV(SelectorMixin, BaseEstimator):
         self.cutoff = cutoff
         self.n_folds = n_folds
         self.n_iter = n_iter
+        self.cv_type = cv_type
+        self.folds = folds
         self.silent = silent
         self.fastshap = fastshap
         self.n_jobs = n_jobs
         self.lgbm_params = lgbm_params
         self.random_state = random_state
+        self.shap_max_samples = shap_max_samples
+        self.shap_batch_size = shap_batch_size
 
         # Fitted attributes
         self.feature_names_in_: Optional[np.ndarray] = None
@@ -194,12 +213,26 @@ class GrootCV(SelectorMixin, BaseEstimator):
             silent=self.silent,
         )
 
+        # 保存原始 objective 用于 SHAP 聚合（Issue #2）
+        # params["objective"] 可能被 set_lgb_parameters 修改（如 binary -> softmax）
+        original_objective = self.objective if self.objective else params["objective"]
+
+        # 获取 num_class 用于 SHAP 多分类处理（Issue #1）
+        num_class = params.get("num_class", 0)
+
         # 创建交叉验证分割器
-        cv = RepeatedKFold(
-            n_splits=self.n_folds,
-            n_repeats=self.n_iter,
-            random_state=self.random_state if self.random_state else 2652124,
-        )
+        if self.folds is not None:
+            cv = self.folds
+        elif self.cv_type == "blocked_kfold":
+            cv = KFold(n_splits=self.n_folds, shuffle=False)
+        elif self.cv_type == "time_series":
+            cv = TimeSeriesSplit(n_splits=self.n_folds)
+        else:
+            cv = RepeatedKFold(
+                n_splits=self.n_folds,
+                n_repeats=self.n_iter,
+                random_state=self.random_state if self.random_state else 2652124,
+            )
 
         # 初始化重要性 DataFrame
         importance_df = pd.DataFrame({"feature": X.columns})
@@ -224,13 +257,12 @@ class GrootCV(SelectorMixin, BaseEstimator):
                 weight=sample_weight,
             )
 
-            # 创建 shadow 特征
+            # 创建 shadow 特征（固定随机种子，保证可复现）
+            shadow_seed = None if self.random_state is None else self.random_state + fold_idx
             X_train_shadow, shadow_names = create_shadow_features(
-                X_train, random_state=self.random_state
+                X_train, random_state=shadow_seed
             )
-            X_val_shadow, _ = create_shadow_features(
-                X_val, random_state=self.random_state
-            )
+            X_val_shadow, _ = create_shadow_features(X_val, random_state=shadow_seed)
 
             # 训练模型
             model, _ = train_lgb_model(
@@ -242,16 +274,21 @@ class GrootCV(SelectorMixin, BaseEstimator):
                 weight_train=w_train,
                 weight_val=w_val,
                 num_boost_round=10000,
-                early_stopping_rounds=20,
+                early_stopping_rounds=50,  # 从 20 增加到 50
                 verbose_eval=0,
             )
 
-            # 计算 SHAP 重要性
+            # 计算 SHAP 重要性（Issue #1 & #2: 传入 num_class 和原始 objective）
+            shap_seed = None if self.random_state is None else self.random_state + fold_idx
             importance = compute_shap_importance(
                 X=X_train_shadow,
                 model=model,
-                objective=params["objective"],
+                objective=original_objective,
                 fastshap=self.fastshap,
+                num_class=num_class,
+                max_samples=self.shap_max_samples,
+                batch_size=self.shap_batch_size,
+                random_state=shap_seed,
             )
 
             # 归一化并合并
@@ -270,9 +307,16 @@ class GrootCV(SelectorMixin, BaseEstimator):
         real_df = importance_df[~importance_df["feature"].isin(shadow_names)]
         shadow_df = importance_df[importance_df["feature"].isin(shadow_names)]
 
-        # 计算 shadow 阈值
-        # 使用 shadow 特征的最大平均重要性 / cutoff
-        shadow_max = shadow_df[numeric_cols].max().mean()
+        # 计算 shadow 阈值（Issue #4: 只使用 mean_importance 列）
+        # 使用 shadow 特征的最大 mean_importance / cutoff
+        shadow_max = shadow_df["mean_importance"].max()
+        if not np.isfinite(shadow_max) or shadow_max <= 0:
+            warnings.warn(
+                "Shadow feature importance is non-finite or non-positive; "
+                "cutoff threshold set to 0. All non-negative features will be kept.",
+                RuntimeWarning,
+            )
+            shadow_max = 0.0
         cutoff_threshold = shadow_max / self.cutoff
 
         # 选择超过阈值的特征

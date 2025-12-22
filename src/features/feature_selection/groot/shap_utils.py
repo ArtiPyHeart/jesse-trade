@@ -5,7 +5,7 @@ SHAP 计算适配模块
 """
 
 import warnings
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import lightgbm as lgb
 import numpy as np
@@ -54,6 +54,10 @@ def compute_shap_importance(
     model: lgb.Booster,
     objective: str,
     fastshap: bool = False,
+    num_class: int = 0,
+    max_samples: Optional[int] = None,
+    batch_size: Optional[int] = None,
+    random_state: Optional[int] = None,
 ) -> Dict[str, float]:
     """
     计算 SHAP 特征重要性
@@ -68,6 +72,14 @@ def compute_shap_importance(
         LightGBM objective
     fastshap : bool, default=False
         是否使用 fasttreeshap
+    num_class : int, default=0
+        多分类任务的类别数量（用于旧版 SHAP 的 bias 处理）
+    max_samples : int, optional
+        SHAP 计算的最大样本数，超过则下采样
+    batch_size : int, optional
+        SHAP 分批计算的批大小
+    random_state : int, optional
+        采样随机种子
 
     Returns
     -------
@@ -76,33 +88,60 @@ def compute_shap_importance(
     """
     explainer = get_shap_explainer(model, fastshap=fastshap)
 
+    if max_samples is not None and len(X) > max_samples:
+        X = X.sample(n=max_samples, random_state=random_state)
+
     try:
-        shap_matrix = explainer.shap_values(X)
+        batch_size = None if batch_size is None or batch_size <= 0 else batch_size
+        n_rows = len(X)
+        n_features = X.shape[1]
+        new_shap = _is_new_shap_version()
+        if batch_size is None or batch_size >= n_rows:
+            shap_matrix = explainer.shap_values(X)
+            shap_imp = _aggregate_shap_values(
+                shap_matrix=shap_matrix,
+                objective=objective,
+                n_features=n_features,
+                new_shap=new_shap,
+                fastshap=fastshap,
+                num_class=num_class,
+            )
+        else:
+            shap_sum = None
+            for start in range(0, n_rows, batch_size):
+                X_batch = X.iloc[start : start + batch_size]
+                shap_matrix = explainer.shap_values(X_batch)
+                batch_imp = _aggregate_shap_values(
+                    shap_matrix=shap_matrix,
+                    objective=objective,
+                    n_features=n_features,
+                    new_shap=new_shap,
+                    fastshap=fastshap,
+                    num_class=num_class,
+                )
+                batch_weight = len(X_batch)
+                if shap_sum is None:
+                    shap_sum = np.asarray(batch_imp, dtype=np.float64) * batch_weight
+                else:
+                    shap_sum += np.asarray(batch_imp, dtype=np.float64) * batch_weight
+            shap_imp = shap_sum / n_rows
     except Exception as e:
         raise RuntimeError(f"SHAP 计算失败: {str(e)}")
-
-    # 检测 SHAP 版本
-    try:
-        from shap import __version__ as shap_version
-
-        major, minor = map(int, shap_version.split(".")[:2])
-        new_shap = (major, minor) >= (0, 45)
-    except Exception:
-        new_shap = False
-
-    # 计算重要性
-    shap_imp = _aggregate_shap_values(
-        shap_matrix=shap_matrix,
-        objective=objective,
-        n_features=X.shape[1],
-        new_shap=new_shap,
-        fastshap=fastshap,
-    )
 
     # 创建特征名到重要性的映射
     importance = dict(zip(X.columns, shap_imp))
 
     return importance
+
+
+def _is_new_shap_version() -> bool:
+    try:
+        from shap import __version__ as shap_version
+
+        major, minor = map(int, shap_version.split(".")[:2])
+        return (major, minor) >= (0, 45)
+    except Exception:
+        return False
 
 
 def _aggregate_shap_values(
@@ -111,6 +150,7 @@ def _aggregate_shap_values(
     n_features: int,
     new_shap: bool,
     fastshap: bool,
+    num_class: int = 0,
 ) -> np.ndarray:
     """
     聚合 SHAP 值计算特征重要性
@@ -127,6 +167,8 @@ def _aggregate_shap_values(
         是否是新版 SHAP (>=0.45)
     fastshap : bool
         是否使用 fasttreeshap
+    num_class : int, default=0
+        多分类任务的类别数量
 
     Returns
     -------
@@ -145,18 +187,33 @@ def _aggregate_shap_values(
     if new_shap:
         # SHAP >= 0.45：bias 在单独的属性中，不再作为列
         if is_multiclass:
-            # 多分类：shape = (n_samples, n_features, n_classes)
+            # 多分类：shape = (n_samples, n_features, n_classes) 或 list of arrays (old API)
+            if isinstance(shap_matrix, list):
+                shap_matrix = np.stack(shap_matrix, axis=2)
             return np.mean(np.abs(shap_matrix).sum(axis=2), axis=0)
         else:
             return np.mean(np.abs(shap_matrix), axis=0)
     else:
         # SHAP < 0.45：bias 作为最后一列
-        if is_multiclass:
-            # 需要移除每个类的 bias 列
-            # 旧版本多分类可能返回 list
+        if is_multiclass and num_class > 0:
+            # 旧版 SHAP 多分类: 可能是 list 或 2D array
             if isinstance(shap_matrix, list):
-                shap_matrix = shap_matrix[1]  # 取正类
-            return np.mean(np.abs(shap_matrix[:, :-1]), axis=0)
+                # list 每个元素 shape (n_samples, n_features + 1)
+                per_class = []
+                for class_matrix in shap_matrix:
+                    per_class.append(np.mean(np.abs(class_matrix[:, :-1]), axis=0))
+                return np.sum(per_class, axis=0)
+            # array 形状为 (n_samples, (n_features+1) * num_class)
+            bias_indices = list(
+                range(n_features, (n_features + 1) * num_class, n_features + 1)
+            )
+            shap_matrix = np.delete(shap_matrix, bias_indices, axis=1)
+            # 移除 bias 后，还需要移除最后一列（总 bias）
+            shap_imp = np.mean(np.abs(shap_matrix[:, :-1]), axis=0)
+            # 聚合所有类的重要性（每 n_features 列为一类）
+            if len(shap_imp) == n_features * num_class:
+                shap_imp = shap_imp.reshape(num_class, n_features).sum(axis=0)
+            return shap_imp
         else:
             # 二分类或回归
             if isinstance(shap_matrix, list):

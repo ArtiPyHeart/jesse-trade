@@ -63,9 +63,10 @@ class TestGrootCVConfig:
         """测试默认配置"""
         config = GrootCVConfig()
         assert config.objective == "auto"  # 默认改为 auto
-        assert config.cutoff == 1.0  # 改为 float
+        assert config.cutoff == 10.0  # 更宽松的默认值
         assert config.n_folds == 5
-        assert config.n_iter == 5
+        assert config.n_iter == 3  # 减少迭代次数以提高效率
+        assert config.cv_type == "blocked_kfold"  # 默认使用分块无重复 CV
         assert config.silent is True
         assert config.fastshap is True  # 默认启用 fasttreeshap 加速
 

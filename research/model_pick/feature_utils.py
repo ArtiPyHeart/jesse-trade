@@ -11,7 +11,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from src.features.dimensionality_reduction import ARDVAEConfig
-from src.features.feature_selection.grootcv_selector import GrootCVSelector
+from src.features.feature_selection.grootcv_selector import GrootCVConfig, GrootCVSelector
 from src.features.pipeline import PipelineConfig
 
 
@@ -126,7 +126,7 @@ def align_features_and_labels(
     # Step 2: 按 pred_next 进行 shift
     # feature[:-pred_next] 对应 label[pred_next:]
     # 即用当前特征预测未来第 pred_next 个标签
-    shifted_features = features_df.iloc[:-pred_next].copy()
+    shifted_features = features_df.iloc[:-pred_next]
     shifted_labels = label[pred_next:]
     shifted_timestamps = timestamps[:-pred_next]
 
@@ -162,18 +162,29 @@ def align_features_and_labels(
 def select_features(
     features_df: pd.DataFrame,
     labels: np.ndarray,
+    cutoff: float = 10.0,
+    groot_config: Optional[GrootCVConfig] = None,
 ) -> FeatureSelectionResult:
     """
     特征筛选（返回含 SSM 特征名）
 
+    使用 TimeSeriesSplit 交叉验证（避免时序数据泄露）进行特征选择。
+
     Args:
         features_df: 对齐后的特征 DataFrame
         labels: 对齐后的标签数组
+        cutoff: 特征选择阈值（越大越宽松）。
+                公式：importance >= shadow_max / cutoff
+                - cutoff=1.0: 严格模式，只选最重要的特征
+                - cutoff=10.0: 默认，选择有贡献的特征
+                - cutoff=12.0: 分类任务推荐（SHAP 值更 spiky）
+        groot_config: 可选的 GrootCVConfig，若提供则覆盖默认配置
 
     Returns:
         FeatureSelectionResult 包含筛选后的特征名称
     """
-    selector = GrootCVSelector(verbose=True)
+    config = groot_config or GrootCVConfig(cutoff=cutoff)
+    selector = GrootCVSelector(config=config, verbose=True)
     selector.fit(features_df, labels)
 
     # GrootCV 直接返回选中特征，无需通过 relevance_ > 0 筛选
