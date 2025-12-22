@@ -1,5 +1,3 @@
-import gc
-
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -23,7 +21,7 @@ def gmm_labeler_find_best_params(
         log_return_L = np.log(close_arr[lag_n:] / close_arr[:-lag_n])
         HL_diff = np.log(high_arr / low_arr)
 
-        X = np.column_stack([HL_diff, log_return_L, log_return])
+        X = np.column_stack([log_return_L, log_return, HL_diff])
 
         datelist = np.asarray(
             [pd.Timestamp(timestamp_to_time(i)) for i in candles[:, 0][lag_n:]]
@@ -38,9 +36,7 @@ def gmm_labeler_find_best_params(
                 n_components=2,
                 n_mix=3,
                 covariance_type="diag",
-                n_iter=1000,
-                # weights_prior=2,
-                means_weight=0.5,
+                n_iter=369,
                 random_state=trial.suggest_int("random_state", 0, 1000),
             )
             gmm.fit(X)
@@ -90,7 +86,7 @@ def gmm_labeler_find_best_params(
         # 如果所有trial都失败了，返回一个默认的random_state
         if verbose:
             print("Warning: All GMM trials failed, using default random_state=42")
-        return {"random_state": 42}
+        return {"random_state": 369}
 
     best_params = study.best_params
 
@@ -112,8 +108,7 @@ class GMMLabeler:
             n_components=2,
             n_mix=3,
             covariance_type="diag",
-            n_iter=1000,
-            means_weight=0.5,
+            n_iter=369,
             random_state=random_state,
         )
 
@@ -129,18 +124,21 @@ class GMMLabeler:
         self.log_return = np.log(close_arr[1:] / close_arr[:-1])[lag_n - 1 :]
         log_return_L = np.log(close_arr[lag_n:] / close_arr[:-lag_n])
         HL_diff = np.log(high_arr / low_arr)
-        X = np.column_stack([HL_diff, log_return_L, self.log_return])
+        X = np.column_stack([log_return_L, self.log_return, HL_diff])
 
         self.gmm_model.fit(X)
         self.latent_states_sequence = self.gmm_model.predict(X)  ### 硬标签
         self.state_probabilities = self.gmm_model.predict_proba(X)  ### 概率标签
 
-        state_0_return = (self.log_return * (self.latent_states_sequence == 0)).sum()
-        state_1_return = (self.log_return * (self.latent_states_sequence == 1)).sum()
+        # Label_b: assign each return to the previous state's label.
+        state_0_mask = np.append(0, (self.latent_states_sequence == 0)[:-1])
+        state_1_mask = np.append(0, (self.latent_states_sequence == 1)[:-1])
+        state_0_return = (self.log_return * state_0_mask).sum()
+        state_1_return = (self.log_return * state_1_mask).sum()
         if state_0_return > state_1_return:
-            self.buy_state = 0
-        else:
-            self.buy_state = 1
+            self.latent_states_sequence = 1 - self.latent_states_sequence
+            self.state_probabilities = self.state_probabilities[:, ::-1]
+        self.buy_state = 1
 
     def plot_label_on_candles(self):
         """
@@ -223,15 +221,17 @@ class GMMLabeler:
             }
         ).set_index("datelist")
 
-        for i in data["state"].unique():
-            ret = data[data["state"] == i]["logreturn"].sum()
-            count = data[data["state"] == i].shape[0]
+        for i in range(self.gmm_model.n_components):
+            state = self.latent_states_sequence == i
+            idx = np.append(0, state[:-1])
+            ret = data.logreturn.multiply(idx, axis=0).sum()
+            count = int(idx.sum())
             print(f"state {i} ({count}) return: {ret:.6%}")
 
         plt.figure(figsize=(20, 8))
         for i in range(self.gmm_model.n_components):
             state = self.latent_states_sequence == i
-            idx = np.append(0, state[1:])
+            idx = np.append(0, state[:-1])
             data[f"state {i}_return"] = data.logreturn.multiply(idx, axis=0)
             plt.plot(
                 np.exp(data[f"state {i}_return"].cumsum()),
