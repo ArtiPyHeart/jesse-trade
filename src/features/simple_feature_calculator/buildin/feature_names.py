@@ -150,6 +150,21 @@ BUILDIN_FEATURES = (
     + ["trendflex", "voss_0", "voss_1", "vwap", "williams_r"]
     + [f"cwt_w{w}_{i}" for w in [32, 64, 128, 256] for i in range(21)]
     + [f"vmd_w{w}_{i}" for w in [32, 64, 128, 256] for i in range(3)]
+    # Market Behavior Features
+    + [
+        "reverse_1v5",
+        "reverse_2v10",
+        "reverse_3v15",
+        "re_3",
+        "re_5",
+        "reverse_ma5",
+        "reverse_ma10",
+        "overbuy_high5",
+        "oversell_low5",
+        "hl_diff",
+        "hl_diff_ma5",
+        "over_volatility",
+    ]
 )
 
 if __name__ == "__main__":

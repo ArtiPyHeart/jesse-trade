@@ -63,3 +63,13 @@ from .swamicharts_stochastic import (
 from .td_sequential import td_sequential
 from .voss import voss
 from .wavelets.cls_cwt_swt import CWT_SWT
+from .market_behavior import (
+    excess_volatility,
+    hl_diff,
+    hl_diff_ma,
+    ma_deviation,
+    overbuy_distance,
+    oversell_distance,
+    return_accumulator,
+    reverse_momentum,
+)

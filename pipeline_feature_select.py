@@ -40,13 +40,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 固定时间范围
-TRAIN_TEST_SPLIT_DATE = "2025-05-31"
+TRAIN_TEST_SPLIT_DATE = "2025-06-01"
 CANDLE_START = "2022-08-01"
 CANDLE_END = "2025-07-01"
 RESULTS_FILE = "feature_selection_results.csv"
 
 # 搜索参数
-LOG_RETURN_LAGS = list(range(4, 8))  # 4, 5, 6, 7
+LOG_RETURN_LAGS = list(range(4, 10))
 PRED_NEXT_STEPS = [1, 2, 3]
 LABEL_TYPES = ["hard", "direction"]
 GROOT_SHAP_MAX_SAMPLES = int(os.getenv("GROOT_SHAP_MAX_SAMPLES", "0")) or None

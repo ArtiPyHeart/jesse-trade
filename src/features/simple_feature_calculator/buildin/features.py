@@ -56,6 +56,15 @@ from src.indicators.prod import (
     bar_high,
     bar_low,
     bar_close,
+    # Market Behavior indicators
+    excess_volatility,
+    hl_diff,
+    hl_diff_ma,
+    ma_deviation,
+    overbuy_distance,
+    oversell_distance,
+    return_accumulator,
+    reverse_momentum,
 )
 from src.indicators.prod.fti_rust import fti
 
@@ -734,3 +743,180 @@ def williams_r_feature(candles: np.ndarray, sequential: bool = True):
         return ta.willr(candles, sequential=sequential)
     else:
         return np.array([ta.willr(candles, sequential=sequential)])
+
+
+# ============================================================================
+# Market Behavior Features - 市场行为特征
+# ============================================================================
+
+
+@feature(
+    name="reverse_1v5",
+    params={"short_period": 1, "long_period": 5},
+    description="Reverse momentum 1v5",
+)
+def reverse_1v5_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    short_period: int = 1,
+    long_period: int = 5,
+):
+    """反转动量1v5"""
+    return reverse_momentum(
+        candles, short_period, long_period, sequential=sequential
+    )
+
+
+@feature(
+    name="reverse_2v10",
+    params={"short_period": 2, "long_period": 10},
+    description="Reverse momentum 2v10",
+)
+def reverse_2v10_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    short_period: int = 2,
+    long_period: int = 10,
+):
+    """反转动量2v10"""
+    return reverse_momentum(
+        candles, short_period, long_period, sequential=sequential
+    )
+
+
+@feature(
+    name="reverse_3v15",
+    params={"short_period": 3, "long_period": 15},
+    description="Reverse momentum 3v15",
+)
+def reverse_3v15_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    short_period: int = 3,
+    long_period: int = 15,
+):
+    """反转动量3v15"""
+    return reverse_momentum(
+        candles, short_period, long_period, sequential=sequential
+    )
+
+
+@feature(
+    name="re_3",
+    params={"period": 3},
+    description="Return accumulator 3",
+)
+def re_3_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    period: int = 3,
+):
+    """收益累加器3"""
+    return return_accumulator(candles, period, sequential=sequential)
+
+
+@feature(
+    name="re_5",
+    params={"period": 5},
+    description="Return accumulator 5",
+)
+def re_5_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    period: int = 5,
+):
+    """收益累加器5"""
+    return return_accumulator(candles, period, sequential=sequential)
+
+
+@feature(
+    name="reverse_ma5",
+    params={"period": 5},
+    description="MA deviation 5",
+)
+def reverse_ma5_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    period: int = 5,
+):
+    """均线偏离5"""
+    return ma_deviation(candles, period, sequential=sequential)
+
+
+@feature(
+    name="reverse_ma10",
+    params={"period": 10},
+    description="MA deviation 10",
+)
+def reverse_ma10_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    period: int = 10,
+):
+    """均线偏离10"""
+    return ma_deviation(candles, period, sequential=sequential)
+
+
+@feature(
+    name="overbuy_high5",
+    params={"period": 5},
+    description="Overbuy distance 5",
+)
+def overbuy_high5_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    period: int = 5,
+):
+    """超买距离5"""
+    return overbuy_distance(candles, period, sequential=sequential)
+
+
+@feature(
+    name="oversell_low5",
+    params={"period": 5},
+    description="Oversell distance 5",
+)
+def oversell_low5_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    period: int = 5,
+):
+    """超卖距离5"""
+    return oversell_distance(candles, period, sequential=sequential)
+
+
+@feature(
+    name="hl_diff",
+    description="High-Low difference",
+)
+def hl_diff_feature(candles: np.ndarray, sequential: bool = True):
+    """高低点差"""
+    return hl_diff(candles, sequential=sequential)
+
+
+@feature(
+    name="hl_diff_ma5",
+    params={"period": 5},
+    description="High-Low difference MA 5",
+)
+def hl_diff_ma5_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    period: int = 5,
+):
+    """波动幅度均线5"""
+    return hl_diff_ma(candles, period, sequential=sequential)
+
+
+@feature(
+    name="over_volatility",
+    params={"ma_period": 5},
+    description="Excess volatility",
+)
+def over_volatility_feature(
+    candles: np.ndarray,
+    sequential: bool = True,
+    ma_period: int = 5,
+):
+    """超额波动"""
+    return excess_volatility(candles, ma_period, sequential=sequential)
