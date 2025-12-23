@@ -1,3 +1,6 @@
+import gc
+from typing import Optional
+
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -98,12 +101,26 @@ def gmm_labeler_find_best_params(
 
 
 class GMMLabeler:
-    def __init__(self, candles: np.ndarray, lag_n: int, verbose: bool = True):
+    def __init__(
+        self,
+        candles: np.ndarray,
+        lag_n: int,
+        verbose: bool = True,
+        random_seed: Optional[int] = None,
+    ):
         self.lag_n = lag_n
 
-        random_state = gmm_labeler_find_best_params(candles, lag_n, verbose)[
-            "random_state"
-        ]
+        if random_seed is not None:
+            assert isinstance(random_seed, (int, np.integer)), (
+                f"random_seed must be int or np.integer, got {type(random_seed)}"
+            )
+            random_state = int(random_seed)
+        else:
+            random_state = gmm_labeler_find_best_params(candles, lag_n, verbose)[
+                "random_state"
+            ]
+
+        self.random_state = random_state
         self.gmm_model = GMMHMM(
             n_components=2,
             n_mix=3,

@@ -11,7 +11,10 @@ import pandas as pd
 from pydantic import BaseModel
 
 from src.features.dimensionality_reduction import ARDVAEConfig
-from src.features.feature_selection.grootcv_selector import GrootCVConfig, GrootCVSelector
+from src.features.feature_selection.grootcv_selector import (
+    GrootCVConfig,
+    GrootCVSelector,
+)
 from src.features.pipeline import PipelineConfig
 
 
@@ -167,8 +170,6 @@ def select_features(
 ) -> FeatureSelectionResult:
     """
     特征筛选（返回含 SSM 特征名）
-
-    使用 TimeSeriesSplit 交叉验证（避免时序数据泄露）进行特征选择。
 
     Args:
         features_df: 对齐后的特征 DataFrame
