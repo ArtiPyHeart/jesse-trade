@@ -6,6 +6,8 @@
 
 from typing import List, Optional
 
+import gc
+
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
@@ -191,8 +193,13 @@ def select_features(
     # GrootCV 直接返回选中特征，无需通过 relevance_ > 0 筛选
     selected = selector.selected_features_
 
-    return FeatureSelectionResult(
+    result = FeatureSelectionResult(
         selected_features=selected,
         n_total=len(selector.variables_),
         n_selected=len(selected),
     )
+
+    del selector
+    gc.collect()
+
+    return result

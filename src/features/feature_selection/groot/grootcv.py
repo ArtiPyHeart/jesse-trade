@@ -6,12 +6,18 @@ GrootCV 特征选择器核心实现
 
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
+import gc
 import warnings
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection._base import SelectorMixin
-from sklearn.model_selection import BaseCrossValidator, KFold, RepeatedKFold, TimeSeriesSplit
+from sklearn.model_selection import (
+    BaseCrossValidator,
+    KFold,
+    RepeatedKFold,
+    TimeSeriesSplit,
+)
 from sklearn.utils.validation import _check_sample_weight, check_is_fitted
 from tqdm.auto import tqdm
 
@@ -91,7 +97,9 @@ class GrootCV(SelectorMixin, BaseEstimator):
         cutoff: float = 1.0,
         n_folds: int = 5,
         n_iter: int = 5,
-        cv_type: Literal["blocked_kfold", "time_series", "repeated_kfold"] = "blocked_kfold",
+        cv_type: Literal[
+            "blocked_kfold", "time_series", "repeated_kfold"
+        ] = "blocked_kfold",
         folds: Optional[Union[BaseCrossValidator, Any]] = None,
         silent: bool = True,
         fastshap: bool = False,
@@ -258,7 +266,9 @@ class GrootCV(SelectorMixin, BaseEstimator):
             )
 
             # 创建 shadow 特征（固定随机种子，保证可复现）
-            shadow_seed = None if self.random_state is None else self.random_state + fold_idx
+            shadow_seed = (
+                None if self.random_state is None else self.random_state + fold_idx
+            )
             X_train_shadow, shadow_names = create_shadow_features(
                 X_train, random_state=shadow_seed
             )
@@ -277,9 +287,13 @@ class GrootCV(SelectorMixin, BaseEstimator):
                 early_stopping_rounds=50,  # 从 20 增加到 50
                 verbose_eval=0,
             )
+            if hasattr(model, "free_dataset"):
+                model.free_dataset()
 
             # 计算 SHAP 重要性（Issue #1 & #2: 传入 num_class 和原始 objective）
-            shap_seed = None if self.random_state is None else self.random_state + fold_idx
+            shap_seed = (
+                None if self.random_state is None else self.random_state + fold_idx
+            )
             importance = compute_shap_importance(
                 X=X_train_shadow,
                 model=model,
@@ -298,6 +312,21 @@ class GrootCV(SelectorMixin, BaseEstimator):
                 columns=["feature", f"fold_{fold_idx}"],
             )
             importance_df = importance_df.merge(fold_df, on="feature", how="outer")
+
+            del (
+                X_train,
+                X_val,
+                y_train,
+                y_val,
+                w_train,
+                w_val,
+                X_train_shadow,
+                X_val_shadow,
+                model,
+                importance,
+                fold_df,
+            )
+            gc.collect()
 
         # 计算平均重要性
         numeric_cols = importance_df.select_dtypes(include=[np.number]).columns

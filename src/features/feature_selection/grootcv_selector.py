@@ -46,12 +46,14 @@ class GrootCVConfig(BaseModel):
         description="任务类型: binary (分类), rmse (回归), auto (自动检测)",
     )
     cutoff: float = Field(
-        default=10.0,
+        default=3.0,
         gt=0,
         description="特征选择阈值，越大越宽松（importance >= shadow_max / cutoff）",
     )
     n_folds: int = Field(default=5, ge=2, le=10, description="交叉验证折数")
-    n_iter: int = Field(default=3, ge=1, le=20, description="迭代次数（仅 repeated_kfold 模式）")
+    n_iter: int = Field(
+        default=3, ge=1, le=20, description="迭代次数（仅 repeated_kfold 模式）"
+    )
     cv_type: Literal["blocked_kfold", "time_series", "repeated_kfold"] = Field(
         default="blocked_kfold",
         description="交叉验证类型: blocked_kfold（默认，分块无重复）, time_series（扩展窗口）, repeated_kfold（随机分割）",
@@ -60,7 +62,9 @@ class GrootCVConfig(BaseModel):
     fastshap: bool = Field(
         default=True, description="是否使用 fasttreeshap 加速（需 NumPy<2）"
     )
-    n_jobs: int = Field(default=0, ge=0, description="并行数，0 表示使用 OpenMP 默认线程")
+    n_jobs: int = Field(
+        default=0, ge=0, description="并行数，0 表示使用 OpenMP 默认线程"
+    )
     lgbm_params: Optional[Dict[str, Any]] = Field(
         default=None, description="自定义 LightGBM 参数"
     )

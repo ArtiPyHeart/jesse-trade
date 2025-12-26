@@ -216,6 +216,7 @@ def run_feature_selection(
             f"[特征筛选] 标签统计: 均值={np.mean(valid_labels):.6f}, "
             f"标准差={np.std(valid_labels):.6f}"
         )
+    del labeler
 
     # 2. 对齐全局特征与标签
     aligned_features, aligned_labels = align_features_and_labels(
@@ -232,8 +233,7 @@ def run_feature_selection(
     )
 
     # 4. 特征筛选（根据任务类型使用不同 cutoff）
-    # 分类任务 SHAP 值更 spiky，使用更大的 cutoff
-    cutoff = 12.0 if label_type == "hard" else 10.0
+    cutoff = 3 if label_type == "hard" else 2
     groot_config = GrootCVConfig(
         cutoff=cutoff,
         shap_max_samples=GROOT_SHAP_MAX_SAMPLES,
@@ -247,11 +247,16 @@ def run_feature_selection(
         f"{selection_result.n_selected} 个 (cutoff={cutoff})"
     )
 
-    return (
+    result = (
         selection_result.n_total,
         selection_result.n_selected,
         selection_result.selected_features,
     )
+
+    del aligned_features, aligned_labels, train_x, train_y, raw_label
+    gc.collect()
+
+    return result
 
 
 # ============================================================================
@@ -282,6 +287,18 @@ logger.info(f"配置特征数: {len(global_config.feature_names)} (含 SSM 特�
 logger.info("计算全局特征（训练 SSM 模型）...")
 global_features = global_pipeline.fit_transform(candles)
 logger.info(f"全局特征计算完成: {global_features.shape}")
+
+# 降低内存占用：确保特征为 float32
+if not (global_features.dtypes == np.float32).all():
+    logger.info("全局特征 dtype 非 float32，执行降精度以节省内存")
+    global_features = global_features.astype(np.float32)
+    gc.collect()
+
+# 释放 FeaturePipeline 内部缓存与模型占用
+if hasattr(global_pipeline, "_raw_calculator"):
+    global_pipeline._raw_calculator.clear_cache()
+del global_pipeline
+gc.collect()
 
 # 初始化追踪器
 tracker = FeatureSelectionTracker()
