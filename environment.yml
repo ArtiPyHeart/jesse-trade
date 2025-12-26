@@ -1,0 +1,23 @@
+name: jesse
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - lightgbm
+  - joblib
+  - tqdm
+  - pywavelets
+  - numba
+  - chardet
+  - pytorch
+  - safetensors
+  - pydantic>=2.0
+  - maturin>=1.0,<2.0
+  - pip:
+      - jesse
+      - giotto-ph

@@ -1,0 +1,19 @@
+name: jesse
+channels:
+  - conda-forge
+dependencies:
+  - pip
+  - black
+  - plotly
+  - nbformat
+  - ipywidgets
+  - fastparquet
+  - optuna
+  - matplotlib
+  - seaborn
+  - hmmlearn
+  - deap
+  - pip:
+      - optuna-integration[lightgbm]
+      - lightweight-charts
+      - fasttreeshap
