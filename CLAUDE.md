@@ -5,6 +5,7 @@
 - **生产标准**：维持生产就绪代码质量，提交前必须审查
 - **科学方法**：应用先进数学/物理概念于交易
 - **破坏性变更优先**：优先采用破坏性变更+变更后验证，减少技术债。除非用户明确要求，否则不考虑向后兼容
+- **中文回复**：回应用户时, 优先使用简体中文回答
 
 ## 项目结构
 - `src/`：生产代码（bars/features/indicators/utils）—— 生产代码仅从此导入
@@ -18,7 +19,7 @@
 ## 开发环境
 ```bash
 ./install.sh                         # 生产依赖
-pip install -r requirements-dev.txt  # 开发依赖
+./install.sh --dev                   # 开发依赖（在生产环境基础上增量安装）
 ruff check <file> && ruff format <file>  # 代码质量检查
 ```
 
