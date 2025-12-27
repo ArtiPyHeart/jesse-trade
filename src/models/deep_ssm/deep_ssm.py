@@ -170,6 +170,9 @@ class DeepSSMNet(nn.Module):
         self.initial_state_mean = nn.Parameter(torch.zeros(config.state_dim))
         self.initial_state_log_var = nn.Parameter(torch.zeros(config.state_dim))
 
+        self._transition_jacobian_fn = None
+        self._observation_jacobian_fn = None
+
         self._init_weights()
 
     def _init_weights(self):
@@ -310,16 +313,23 @@ class DeepSSMNet(nn.Module):
         self.transition_prior.eval()
 
         try:
-            # vmap(jacrev(fn)) computes per-sample Jacobians efficiently
-            # jacrev computes Jacobian using reverse-mode autodiff
-            jacobian_fn = jacrev(prior_mean_fn, argnums=0, has_aux=False)
-            F = vmap(jacobian_fn)(z_prev_detached)  # [batch, state_dim, state_dim]
+            if batch_size == 1:
+                if self._transition_jacobian_fn is None:
+                    self._transition_jacobian_fn = jacrev(
+                        prior_mean_fn, argnums=0, has_aux=False
+                    )
+                F = self._transition_jacobian_fn(z_prev_detached.squeeze(0))
+            else:
+                # vmap(jacrev(fn)) computes per-sample Jacobians efficiently
+                # jacrev computes Jacobian using reverse-mode autodiff
+                jacobian_fn = jacrev(prior_mean_fn, argnums=0, has_aux=False)
+                F = vmap(jacobian_fn)(z_prev_detached)  # [batch, state_dim, state_dim]
         finally:
             # Restore original training mode
             self.transition_prior.train(was_training)
 
         # Return [state_dim, state_dim] for batch_size=1 (backward compatibility)
-        return F.squeeze(0) if batch_size == 1 else F
+        return F
 
     def compute_observation_jacobian(
         self, z: torch.Tensor, create_graph: bool = False
@@ -365,15 +375,22 @@ class DeepSSMNet(nn.Module):
         self.observation.eval()
 
         try:
-            # vmap(jacrev(fn)) computes per-sample Jacobians efficiently
-            jacobian_fn = jacrev(obs_mean_fn, argnums=0, has_aux=False)
-            H = vmap(jacobian_fn)(z_detached)  # [batch, obs_dim, state_dim]
+            if batch_size == 1:
+                if self._observation_jacobian_fn is None:
+                    self._observation_jacobian_fn = jacrev(
+                        obs_mean_fn, argnums=0, has_aux=False
+                    )
+                H = self._observation_jacobian_fn(z_detached.squeeze(0))
+            else:
+                # vmap(jacrev(fn)) computes per-sample Jacobians efficiently
+                jacobian_fn = jacrev(obs_mean_fn, argnums=0, has_aux=False)
+                H = vmap(jacobian_fn)(z_detached)  # [batch, obs_dim, state_dim]
         finally:
             # Restore original training mode
             self.observation.train(was_training)
 
         # Return [obs_dim, state_dim] for batch_size=1 (backward compatibility)
-        return H.squeeze(0) if batch_size == 1 else H
+        return H
 
     def forward(
         self, observations: torch.Tensor, return_all_states: bool = False
