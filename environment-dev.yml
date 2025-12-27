@@ -3,6 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - pip
+  - numpy
   - black
   - plotly
   - nbformat
