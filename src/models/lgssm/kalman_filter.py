@@ -18,32 +18,28 @@ NUMERICAL_JITTER = 1e-6
 
 class KalmanFilter(nn.Module):
     """Standard Kalman Filter for linear systems.
-    
+
     Implements the prediction and update steps of the Kalman filter
     for the linear state space model:
         z_{t+1} = A @ z_t + w_t,  w_t ~ N(0, Q)
         y_t = C @ z_t + v_t,      v_t ~ N(0, R)
     """
-    
+
     def __init__(
         self,
         state_dim: int,
         obs_dim: int,
         device: torch.device = None,
-        dtype: torch.dtype = torch.float32
+        dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
         self.state_dim = state_dim
         self.obs_dim = obs_dim
-        self.device = device or torch.device('cpu')
+        self.device = device or torch.device("cpu")
         self.dtype = dtype
-        
+
     def predict(
-        self,
-        z: torch.Tensor,
-        P: torch.Tensor,
-        A: torch.Tensor,
-        Q: torch.Tensor
+        self, z: torch.Tensor, P: torch.Tensor, A: torch.Tensor, Q: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Prediction step of Kalman filter.
 
@@ -65,14 +61,14 @@ class KalmanFilter(nn.Module):
         P_pred = A @ P @ A.T + Q
 
         return z_pred, P_pred
-    
+
     def update(
         self,
         z_pred: torch.Tensor,
         P_pred: torch.Tensor,
         y: torch.Tensor,
         C: torch.Tensor,
-        R: torch.Tensor
+        R: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Update step of Kalman filter with NaN handling.
 
@@ -93,10 +89,30 @@ class KalmanFilter(nn.Module):
             P: Updated error covariance (or predicted covariance if NaN)
             K: Kalman gain (or None if NaN)
         """
+        z, P, K, _, _ = self._update_with_stats(z_pred, P_pred, y, C, R)
+        return z, P, K
+
+    def _update_with_stats(
+        self,
+        z_pred: torch.Tensor,
+        P_pred: torch.Tensor,
+        y: torch.Tensor,
+        C: torch.Tensor,
+        R: torch.Tensor,
+        state_eye: Optional[torch.Tensor] = None,
+        obs_jitter_eye: Optional[torch.Tensor] = None,
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:
+        """Update step with optional returned stats for log-likelihood reuse."""
         # Check for NaN in observation
         if torch.isnan(y).any():
             # Skip update step when observation is missing (NaN)
-            return z_pred, P_pred, None
+            return z_pred, P_pred, None, None, None
 
         # Innovation (prediction error)
         y_pred = C @ z_pred  # (obs_dim,)
@@ -104,9 +120,11 @@ class KalmanFilter(nn.Module):
 
         # Innovation covariance with jitter for numerical stability
         S = C @ P_pred @ C.T + R
-        S_stable = S + NUMERICAL_JITTER * torch.eye(
-            self.obs_dim, device=self.device, dtype=self.dtype
-        )
+        if obs_jitter_eye is None:
+            obs_jitter_eye = NUMERICAL_JITTER * torch.eye(
+                self.obs_dim, device=self.device, dtype=self.dtype
+            )
+        S_stable = S + obs_jitter_eye
 
         # Kalman gain: K = P_pred @ C^T @ S^{-1}
         # Computed as solve(S^T, (P_pred @ C^T)^T)^T for stability
@@ -117,11 +135,13 @@ class KalmanFilter(nn.Module):
 
         # Covariance update using Joseph form for numerical stability
         # P = (I - K @ C) @ P_pred @ (I - K @ C)^T + K @ R @ K^T
-        I_KC = torch.eye(self.state_dim, device=self.device, dtype=self.dtype) - K @ C
+        if state_eye is None:
+            state_eye = torch.eye(self.state_dim, device=self.device, dtype=self.dtype)
+        I_KC = state_eye - K @ C
         P = I_KC @ P_pred @ I_KC.T + K @ R @ K.T
 
-        return z, P, K
-    
+        return z, P, K, innovation, S_stable
+
     def forward(
         self,
         y: torch.Tensor,
@@ -130,10 +150,10 @@ class KalmanFilter(nn.Module):
         Q: torch.Tensor,
         R: torch.Tensor,
         z0: Optional[torch.Tensor] = None,
-        P0: Optional[torch.Tensor] = None
+        P0: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run full Kalman filter on a sequence.
-        
+
         Args:
             y: Observations (T, obs_dim)
             A: State transition matrix (state_dim, state_dim)
@@ -142,7 +162,7 @@ class KalmanFilter(nn.Module):
             R: Observation noise covariance (obs_dim, obs_dim)
             z0: Initial state (state_dim,)
             P0: Initial error covariance (state_dim, state_dim)
-            
+
         Returns:
             states: Filtered states (T, state_dim)
             covariances: Error covariances (T, state_dim, state_dim)
@@ -151,20 +171,27 @@ class KalmanFilter(nn.Module):
         T = y.shape[0]
         device = y.device
         dtype = y.dtype
-        
+
         # Initialize
         if z0 is None:
             z0 = torch.zeros(self.state_dim, device=device, dtype=dtype)
         if P0 is None:
             # P0 = I to match prior p(z0) = N(0, I) used in ELBO
             P0 = torch.eye(self.state_dim, device=device, dtype=dtype)
-            
+
         states = torch.zeros(T, self.state_dim, device=device, dtype=dtype)
-        covariances = torch.zeros(T, self.state_dim, self.state_dim, device=device, dtype=dtype)
+        covariances = torch.zeros(
+            T, self.state_dim, self.state_dim, device=device, dtype=dtype
+        )
 
         z = z0
         P = P0
         log_likelihood = torch.tensor(0.0, device=device, dtype=dtype)
+        state_eye = torch.eye(self.state_dim, device=device, dtype=dtype)
+        obs_jitter_eye = NUMERICAL_JITTER * torch.eye(
+            self.obs_dim, device=device, dtype=dtype
+        )
+        log_2pi = torch.log(torch.tensor(2.0 * torch.pi, device=device, dtype=dtype))
 
         # Filter through sequence - now includes first observation
         for t in range(T):
@@ -176,41 +203,40 @@ class KalmanFilter(nn.Module):
                 z_pred, P_pred = self.predict(z, P, A, Q)
 
             # Update with current observation
-            z, P, K = self.update(z_pred, P_pred, y[t], C, R)
+            z, P, K, innovation, S_stable = self._update_with_stats(
+                z_pred,
+                P_pred,
+                y[t],
+                C,
+                R,
+                state_eye=state_eye,
+                obs_jitter_eye=obs_jitter_eye,
+            )
 
             states[t] = z
             covariances[t] = P
 
             # Compute log likelihood contribution only if update was performed (K is not None)
             if K is not None:
-                y_pred = C @ z_pred
-                innovation = y[t] - y_pred
-                S = C @ P_pred @ C.T + R
-                # Add jitter for numerical stability (consistent with update step)
-                S_stable = S + NUMERICAL_JITTER * torch.eye(
-                    self.obs_dim, device=device, dtype=dtype
-                )
-
                 # Log likelihood: -0.5 * (log|S| + innovation' @ S^-1 @ innovation + k*log(2π))
                 _, log_det_S = torch.linalg.slogdet(S_stable)
                 quad_form = torch.matmul(
                     innovation.unsqueeze(0),
-                    torch.linalg.solve(S_stable, innovation.unsqueeze(-1))
+                    torch.linalg.solve(S_stable, innovation.unsqueeze(-1)),
                 ).squeeze()
                 log_likelihood += -0.5 * (
-                    log_det_S + quad_form
-                    + self.obs_dim * torch.log(torch.tensor(2.0 * torch.pi, device=device, dtype=dtype))
+                    log_det_S + quad_form + self.obs_dim * log_2pi
                 )
             # If K is None (NaN observation), we skip the log likelihood contribution for this time step
-            
+
         return states, covariances, log_likelihood
-    
+
     def smooth(
         self,
         states: torch.Tensor,
         covariances: torch.Tensor,
         A: torch.Tensor,
-        Q: torch.Tensor
+        Q: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Rauch-Tung-Striebel smoother with lag-one covariance computation.
 
@@ -307,7 +333,7 @@ class KalmanFilter(nn.Module):
         # Vectorized: lag_one[t] = smoothed_cov[t+1] @ J[t].T
         lag_one_covariances = torch.bmm(
             smoothed_covariances[1:],  # (T-1, state_dim, state_dim)
-            J.transpose(1, 2)          # (T-1, state_dim, state_dim)
+            J.transpose(1, 2),  # (T-1, state_dim, state_dim)
         )
 
         return smoothed_states, smoothed_covariances, lag_one_covariances
