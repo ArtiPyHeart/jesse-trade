@@ -1,30 +1,26 @@
 """
 Global PyTorch configuration for jesse-trade project.
 
-This module ensures PyTorch always uses CPU by default to avoid compatibility issues
-with MPS/CUDA and ensure consistent behavior across different platforms.
+This module keeps CPU as the default device while allowing explicit CUDA/MPS usage
+when a model chooses to accelerate training.
 """
 
 import os
 import warnings
 
 # Set environment variables before importing torch
-# Disable MPS (Apple Silicon GPU) to avoid safetensors compatibility issues
+# Allow MPS fallback to CPU for unsupported operators when MPS is used
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-os.environ["PYTORCH_MPS_ENABLED"] = "0"
-
-# Disable CUDA for consistent CPU-only behavior
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # Import torch after setting environment variables
 import torch
 
 
 def _configure_pytorch():
-    """Configure PyTorch to use CPU by default."""
+    """Configure PyTorch defaults while allowing explicit GPU usage."""
     # Force CPU device globally
-    if hasattr(torch, 'set_default_device'):
-        torch.set_default_device('cpu')
+    if hasattr(torch, "set_default_device"):
+        torch.set_default_device("cpu")
 
     # Set default tensor type
     torch.set_default_dtype(torch.float32)
@@ -32,17 +28,10 @@ def _configure_pytorch():
     # Note: torch.set_default_tensor_type is deprecated in PyTorch 2.1+
     # The set_default_device('cpu') above already ensures CPU tensors
 
-    # Disable GPU backends more thoroughly
-    if hasattr(torch, 'cuda'):
-        torch.cuda.is_available = lambda: False
-        torch.cuda.device_count = lambda: 0
-
-    if hasattr(torch.backends, 'mps'):
-        torch.backends.mps.is_available = lambda: False
-        torch.backends.mps.is_built = lambda: False
-
     # Log configuration
-    device = torch.get_default_device() if hasattr(torch, 'get_default_device') else 'cpu'
+    device = (
+        torch.get_default_device() if hasattr(torch, "get_default_device") else "cpu"
+    )
     print(f"PyTorch configured: device={device}, dtype={torch.get_default_dtype()}")
 
 
@@ -51,9 +40,11 @@ def get_device() -> str:
     Get the configured PyTorch device.
 
     Returns:
-        str: Always returns 'cpu' in this configuration.
+        str: Returns the default device string.
     """
-    return 'cpu'
+    if hasattr(torch, "get_default_device"):
+        return str(torch.get_default_device())
+    return "cpu"
 
 
 def get_torch_dtype(dtype_str: str = "float32") -> torch.dtype:

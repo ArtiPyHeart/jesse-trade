@@ -15,6 +15,7 @@ ARD-VAE (Automatic Relevance Determination Variational Autoencoder)
 
 import gc
 import json
+import warnings
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -27,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from safetensors.torch import load_file, save_file
 from torch.utils.data import DataLoader, TensorDataset
 
-from pytorch_config import get_device, get_torch_dtype
+from pytorch_config import get_torch_dtype
 
 
 class ARDVAEConfig(BaseModel):
@@ -104,8 +105,6 @@ class ARDVAEConfig(BaseModel):
     @model_validator(mode="after")
     def set_computed_fields(self) -> "ARDVAEConfig":
         """设置计算字段。"""
-        # 强制使用 CPU（遵循项目惯例）
-        object.__setattr__(self, "device", get_device())
         object.__setattr__(self, "torch_dtype", get_torch_dtype(self.dtype))
         return self
 
@@ -349,6 +348,34 @@ class ARDVAE:
                 extra = set(X.columns) - set(self._feature_names)
                 raise ValueError(f"Column mismatch. Missing: {missing}, Extra: {extra}")
 
+    def _cuda_available(self) -> bool:
+        """检测 CUDA 是否可用。"""
+        return torch.cuda.is_available()
+
+    def _mps_available(self) -> bool:
+        """检测 MPS 是否可用。"""
+        return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+    def _select_training_device(self) -> None:
+        """训练开始时选择可用设备，优先 CUDA -> MPS -> CPU。"""
+        if self._cuda_available():
+            selected = "cuda"
+        elif self._mps_available():
+            selected = "mps"
+        else:
+            selected = "cpu"
+            warnings.warn(
+                "ARDVAENet未检测到可用的 CUDA/MPS，回退到 CPU 训练。",
+                RuntimeWarning,
+            )
+
+        if selected == "mps" and self.config.torch_dtype == torch.float64:
+            warnings.warn("MPS 不支持 float64，已降级为 float32。", RuntimeWarning)
+            object.__setattr__(self.config, "dtype", "float32")
+            object.__setattr__(self.config, "torch_dtype", torch.float32)
+
+        self.device = selected
+
     def _fit_scaler(self, X: np.ndarray) -> np.ndarray:
         """拟合并应用标准化。"""
         if not self.config.use_scaler:
@@ -580,6 +607,9 @@ class ARDVAE:
         # 验证输入
         self._validate_input(X, is_training=True)
         self._feature_names = list(X.columns)
+
+        # 训练开始时选择设备（优先 CUDA/MPS）
+        self._select_training_device()
 
         # 标准化并创建张量（只创建一次，复用于训练和 active dim 计算）
         X_scaled = self._fit_scaler(X.values)
