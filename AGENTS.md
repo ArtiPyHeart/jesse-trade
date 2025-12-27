@@ -19,6 +19,7 @@
 
 ## 运行入口
 - 通过 `strategies/` 下策略启动 Jesse 后运行, 不能直接用 Python 执行
+- 从 jesse 获取真实 candles 的程序/脚本/测试必须在项目根目录运行, 需要读取 .env 配置, 在其他目录会导致配置无法识别而失败
 
 ## Jesse K 线规范
 - 格式: 6 列 NumPy 数组 `[timestamp, open, close, high, low, volume]`

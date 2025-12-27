@@ -86,5 +86,6 @@ Question: Is this numerically stable?"
 - **MCP服务依赖**：auggie/context7/chrome-devtools/mcp-shell-server等服务不可用时，立即停止并提示用户配置，不要绕过
 - 开发时用 context7 MCP 查看最新文档
 - WebFetch失败时可用chrome devtools MCP（优先headless模式）
+- 从 jesse 获取真实 candles 的程序/脚本/测试必须在项目根目录运行，需读取 .env 配置，否则会导致配置无法识别而失败
 - 策略间保持独立，避免交叉依赖
 - 功能实现后必须单元测试
