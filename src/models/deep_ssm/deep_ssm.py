@@ -814,6 +814,10 @@ class DeepSSMNet(nn.Module):
 
         # Identity matrix for EKF update
         I_state = torch.eye(state_dim, device=device, dtype=dtype)
+        jitter_eye = self.config.ekf_jitter * torch.eye(
+            obs_dim, device=device, dtype=dtype
+        )
+        state_diag_idx = torch.arange(state_dim, device=device)
 
         total_loss_value = 0.0
         num_chunks = 0
@@ -907,10 +911,7 @@ class DeepSSMNet(nn.Module):
                         + R
                     )
                     # Add jitter for numerical stability
-                    jitter = self.config.ekf_jitter * torch.eye(
-                        obs_dim, device=device, dtype=dtype
-                    )
-                    S = S + jitter
+                    S = S + jitter_eye
 
                     # Kalman gain K = P_pred @ H.T @ inv(S)
                     # Use solve for stability: solve(S, H @ P_pred.T).T
@@ -952,8 +953,7 @@ class DeepSSMNet(nn.Module):
                     )
                     # Update diagonal in-place
                     P_update = P_update.clone()
-                    for i in range(state_dim):
-                        P_update[:, i, i] = P_diag_clamped[:, i]
+                    P_update[:, state_diag_idx, state_diag_idx] = P_diag_clamped
 
                     # Update state and covariance
                     z_chunk = z_update
