@@ -71,6 +71,11 @@ class ModelTuning:
             max_depth = trial.suggest_int("max_depth", 4, 8)
             max_leaves = 2**max_depth
             num_leaves = trial.suggest_int("num_leaves", 16, min(256, max_leaves))
+            bagging_freq = trial.suggest_categorical("bagging_freq", [0, 1])
+            if bagging_freq == 1:
+                bagging_fraction = trial.suggest_float("bagging_fraction", 0.7, 1.0)
+            else:
+                bagging_fraction = 1.0
 
             params = {
                 "objective": "binary",
@@ -88,9 +93,9 @@ class ModelTuning:
                 "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 500),
                 "lambda_l1": trial.suggest_float("lambda_l1", 0.0, 5.0),
                 "lambda_l2": trial.suggest_float("lambda_l2", 0.0, 100.0),
-                "feature_fraction": 1.0,
-                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.7, 1.0),
-                "bagging_freq": trial.suggest_categorical("bagging_freq", [0, 1]),
+                "feature_fraction": trial.suggest_float("feature_fraction", 0.7, 1.0),
+                "bagging_fraction": bagging_fraction,
+                "bagging_freq": bagging_freq,
                 "feature_pre_filter": False,
             }
 
@@ -128,6 +133,8 @@ class ModelTuning:
             "verbose": -1,
             **study.best_params,
         }
+        if params.get("bagging_freq", 0) == 0:
+            params.setdefault("bagging_fraction", 1.0)
         best_value = study.best_value
 
         del study
@@ -178,6 +185,11 @@ class ModelTuning:
             max_depth = trial.suggest_int("max_depth", 4, 8)
             max_leaves = 2**max_depth
             num_leaves = trial.suggest_int("num_leaves", 16, min(256, max_leaves))
+            bagging_freq = trial.suggest_categorical("bagging_freq", [0, 1])
+            if bagging_freq == 1:
+                bagging_fraction = trial.suggest_float("bagging_fraction", 0.7, 1.0)
+            else:
+                bagging_fraction = 1.0
 
             params = {
                 "objective": "regression",
@@ -194,9 +206,9 @@ class ModelTuning:
                 "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 500),
                 "lambda_l1": trial.suggest_float("lambda_l1", 0.0, 5.0),
                 "lambda_l2": trial.suggest_float("lambda_l2", 0.0, 100.0),
-                "feature_fraction": 1.0,
-                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.7, 1.0),
-                "bagging_freq": trial.suggest_categorical("bagging_freq", [0, 1]),
+                "feature_fraction": trial.suggest_float("feature_fraction", 0.7, 1.0),
+                "bagging_fraction": bagging_fraction,
+                "bagging_freq": bagging_freq,
                 "feature_pre_filter": False,
             }
 
@@ -234,6 +246,8 @@ class ModelTuning:
             "verbose": -1,
             **study.best_params,
         }
+        if params.get("bagging_freq", 0) == 0:
+            params.setdefault("bagging_fraction", 1.0)
         best_value = study.best_value
 
         del study
