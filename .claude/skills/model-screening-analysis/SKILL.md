@@ -1,4 +1,9 @@
-# Claude SKILL: 模型快速筛选与质量评估
+---
+name: model-screening-analysis
+description: Rapidly evaluates ML model quality through confidence slice sampling. Analyzes model predictions on test sets and generates prioritized quality reports. Use when screening 10-50 models, assessing prediction stability, evaluating boundary confidence regions, or creating model selection recommendations.
+---
+
+# 模型快速筛选与质量评估
 
 ## 任务概述
 在进行完整的置信度切片分析之前，通过抽样检查每个模型的关键切片图片，快速评估模型质量和稳定性，生成优先级排序报告，帮助交易员确定分析顺序。
@@ -78,7 +83,7 @@ temp/
 
 **关键理解**：我们关注的是**曲线整体形态**，而不是相对于零轴的波动。
 
-**辅助判断方法**（与 CONFIDENCE_SLICE_ANALYSIS_SKILL 对齐）：
+**辅助判断方法**（与 confidence-slice-analysis 对齐）：
 > 想象用一条线性回归直线拟合曲线，通过斜率辅助判断：
 > - 斜率大幅 > 0 → 整体上升趋势（good）
 > - 斜率大幅 < 0 → 整体下降趋势（reverse）
@@ -363,7 +368,7 @@ C. 弱趋势型（需关注）：
         ↓
    用户决定分析顺序
         ↓
-置信度切片分析（CONFIDENCE_SLICE_ANALYSIS_SKILL）
+置信度切片分析（confidence-slice-analysis）
         ↓
    配置过滤器
 ```

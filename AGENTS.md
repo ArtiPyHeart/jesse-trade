@@ -15,7 +15,7 @@
 - `research/`: 离线研究实验 (不要在生产导入)
 - `extern/`: 参考资料 (不要在生产导入)
 - `tests/`: pytest 测试
-- `skills/`: Claude 专用 SKILL 文档 (定义任务流程与标准)
+- `.claude/skills/`: Claude 专用 SKILL 文档 (定义任务流程与标准)
 
 ## 运行入口
 - 通过 `strategies/` 下策略启动 Jesse 后运行, 不能直接用 Python 执行
@@ -50,7 +50,7 @@
 
 ### Rust 高性能指标
 - 快速使用: `import _rust_indicators` (已实现 VMD/NRBO, 50-100x 加速)
-- 开发集成: 阅读 `skills/RUST_INDICATORS_SKILL.md`
+- 开发集成: 阅读 `.claude/skills/rust-indicators-development/SKILL.md`
 
 ## 编码规范
 - 内部函数使用 `_` 前缀
@@ -66,11 +66,12 @@
   - `ruff format <file_or_dir>`
 
 ## SKILL 文档使用
-- 触发条件: 用户提及相关任务时主动读取对应 SKILL
+- 位置: `.claude/skills/` (Claude Code 标准位置)
+- 触发条件: 用户提及相关任务时自动加载对应 SKILL
 - 现有 SKILL:
-  - `skills/MODEL_SCREENING_SKILL.md`
-  - `skills/CONFIDENCE_SLICE_ANALYSIS_SKILL.md`
-  - `skills/RUST_INDICATORS_SKILL.md`
+  - `model-screening-analysis`: 模型快速筛选与质量评估
+  - `confidence-slice-analysis`: 置信度切片分析与过滤器配置
+  - `rust-indicators-development`: Rust 高性能指标开发与集成
 - 使用原则: 严格遵循 SKILL 的决策准则、输出格式和沟通方式
 
 ## 开发工具

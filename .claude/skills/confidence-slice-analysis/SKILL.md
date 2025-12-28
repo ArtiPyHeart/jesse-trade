@@ -1,4 +1,9 @@
-# Claude SKILL: 置信度切片分析与过滤器配置
+---
+name: confidence-slice-analysis
+description: Analyzes ML model confidence slices and configures prediction filters to calibrate trading behavior. Evaluates profit curves by confidence regions and generates filter configurations. Use when analyzing confidence-based trading filters, calibrating model predictions, or generating filter rules from confidence slice charts.
+---
+
+# 置信度切片分析与过滤器配置
 
 ## 任务概述
 分析ML模型的置信度切片图表，根据曲线形态配置过滤器以校准模型的多空交易行为。通过双重验证机制确保判定准确性。

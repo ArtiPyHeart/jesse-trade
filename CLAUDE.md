@@ -10,12 +10,12 @@
 
 ## 项目结构
 - `src/`：生产代码（bars/features/indicators/utils）—— 生产代码仅从此导入
-- `rust_indicators/`：Rust高性能指标（VMD/NRBO，50-100x加速），详见 `skills/RUST_INDICATORS_SKILL.md`
+- `rust_indicators/`：Rust高性能指标（VMD/NRBO，50-100x加速）
 - `strategies/`：Jesse策略（每策略独立目录）—— **项目运行入口**，需启动jesse后运行
 - `research/`：离线研究实验（勿在生产导入）
 - `extern/`：参考资料（勿导入）
 - `tests/`：pytest测试（文件名用`test_`前缀）
-- `skills/`：Claude专用SKILL文档，用户提及相关任务时主动读取
+- `.claude/skills/`：Claude专用SKILL文档，用户提及相关任务时自动加载
 
 ## 开发环境
 ```bash
@@ -54,10 +54,10 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 - 简单测试用`if __name__ == "__main__"`，复杂测试放`tests/`
 - EasyLanguage角度→Python弧度：用`src/utils/math_tools.py`
 
-## SKILL文档
-- `MODEL_SCREENING_SKILL.md`：模型快速筛选与质量评估
-- `CONFIDENCE_SLICE_ANALYSIS_SKILL.md`：置信度切片分析与过滤器配置
-- `RUST_INDICATORS_SKILL.md`：Rust高性能指标开发与集成
+## SKILL文档（位于 `.claude/skills/`）
+- `model-screening-analysis`：模型快速筛选与质量评估
+- `confidence-slice-analysis`：置信度切片分析与过滤器配置
+- `rust-indicators-development`：Rust高性能指标开发与集成
 
 ## 开发工具
 

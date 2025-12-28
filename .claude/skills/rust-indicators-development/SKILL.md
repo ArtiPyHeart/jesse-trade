@@ -1,8 +1,12 @@
-# Rust高性能指标开发SKILL
+---
+name: rust-indicators-development
+description: Develops and integrates Rust high-performance indicators using PyO3, Maturin, and FFI bindings. Use when optimizing Python code with Rust, building numeric computation kernels, achieving 50-100x performance improvements, or debugging Rust-Python integration issues.
+---
+
+# Rust 高性能指标开发
 
 ## 技术栈
-- Rust 1.74+ | PyO3 0.26 | numpy 0.26 | ndarray 0.15 | rustfft 6.2 | maturin 1.0+
-- **警告**: ndarray必须0.15，升级到0.16会与numpy 0.26冲突
+- Rust 1.74+ | PyO3 | numpy | ndarray | rustfft | maturin 1.0+
 
 ## 快速开始
 ```bash
@@ -105,4 +109,6 @@ print(f"Numba: {numba_time:.4f}s | Rust: {rust_time:.4f}s | 加速比: {numba_ti
 | 类型错误 | `dc=bool(DC)` 显式转换 |
 | 数值不对齐 | 检查参数类型、对比中间结果 |
 
-参考: `rust_indicators/README.md` | [PyO3文档](https://pyo3.rs)
+## 参考资源
+- `rust_indicators/README.md`
+- [PyO3文档](https://pyo3.rs)
