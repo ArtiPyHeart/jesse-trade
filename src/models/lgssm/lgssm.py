@@ -75,23 +75,21 @@ class LGSSMConfig(BaseModel):
         default=0.999,
         ge=0.0,
         lt=1.0,
-        description="Maximum spectral radius for A matrix (< 1 for stability)"
+        description="Maximum spectral radius for A matrix (< 1 for stability)",
     )
     Q_log_min: float = Field(
         default=-10.0,
-        description="Minimum log value for Q diagonal (exp(-10) ≈ 4.5e-5)"
+        description="Minimum log value for Q diagonal (exp(-10) ≈ 4.5e-5)",
     )
     Q_log_max: float = Field(
-        default=10.0,
-        description="Maximum log value for Q diagonal (exp(10) ≈ 22026)"
+        default=10.0, description="Maximum log value for Q diagonal (exp(10) ≈ 22026)"
     )
     R_log_min: float = Field(
         default=-10.0,
-        description="Minimum log value for R diagonal (exp(-10) ≈ 4.5e-5)"
+        description="Minimum log value for R diagonal (exp(-10) ≈ 4.5e-5)",
     )
     R_log_max: float = Field(
-        default=10.0,
-        description="Maximum log value for R diagonal (exp(10) ≈ 22026)"
+        default=10.0, description="Maximum log value for R diagonal (exp(10) ≈ 22026)"
     )
 
     # Data preprocessing
@@ -239,10 +237,9 @@ class LGSSM(nn.Module):
                 # Reset to stable scaled identity
                 self.A.data.copy_(
                     torch.eye(
-                        self.config.state_dim,
-                        device=self.device,
-                        dtype=self.dtype
-                    ) * self.config.A_init_scale
+                        self.config.state_dim, device=self.device, dtype=self.dtype
+                    )
+                    * self.config.A_init_scale
                 )
                 return
 
@@ -255,10 +252,9 @@ class LGSSM(nn.Module):
                 # Reset to stable scaled identity
                 self.A.data.copy_(
                     torch.eye(
-                        self.config.state_dim,
-                        device=self.device,
-                        dtype=self.dtype
-                    ) * self.config.A_init_scale
+                        self.config.state_dim, device=self.device, dtype=self.dtype
+                    )
+                    * self.config.A_init_scale
                 )
                 return
 
@@ -337,6 +333,29 @@ class LGSSM(nn.Module):
         )
 
         return states, covariances, log_likelihood
+
+    def _forward_log_likelihood(
+        self, y: torch.Tensor, assume_no_nan: bool = False
+    ) -> torch.Tensor:
+        """Fast path: compute log-likelihood only."""
+        if y.dim() == 3:
+            batch_size = y.shape[0]
+            ll_list = []
+            for i in range(batch_size):
+                ll_list.append(
+                    self._forward_log_likelihood(y[i], assume_no_nan=assume_no_nan)
+                )
+            return torch.stack(ll_list)
+
+        y_normalized = self.normalize(y)
+        return self.kalman_filter.log_likelihood(
+            y_normalized,
+            self.A,
+            self.C,
+            self.Q,
+            self.R,
+            assume_no_nan=assume_no_nan,
+        )
 
     def fit(
         self,
@@ -442,8 +461,8 @@ class LGSSM(nn.Module):
             self.train()
             optimizer.zero_grad()
 
-            # Forward pass - get log-likelihood from Kalman filter
-            _, _, log_likelihood = self(X_train)
+            # Forward pass - log-likelihood only for training
+            log_likelihood = self._forward_log_likelihood(X_train, assume_no_nan=True)
 
             # Normalize log-likelihood by sequence length for stable gradients
             avg_ll = log_likelihood / T_train
@@ -471,7 +490,7 @@ class LGSSM(nn.Module):
                 T_val = X_val.shape[0]
                 self.eval()
                 with torch.no_grad():
-                    _, _, val_ll = self(X_val)
+                    val_ll = self._forward_log_likelihood(X_val, assume_no_nan=True)
                     val_avg_ll = val_ll / T_val
                     self.history["val_loss"].append(val_avg_ll.item())
 
@@ -483,7 +502,9 @@ class LGSSM(nn.Module):
                     best_val_ll = val_avg_ll
                     patience_counter = 0
                     # Deep copy to preserve weights (state_dict returns references)
-                    best_state_dict = {k: v.clone() for k, v in self.state_dict().items()}
+                    best_state_dict = {
+                        k: v.clone() for k, v in self.state_dict().items()
+                    }
                 else:
                     patience_counter += 1
 
@@ -521,7 +542,11 @@ class LGSSM(nn.Module):
         X: Union[np.ndarray, torch.Tensor, pd.DataFrame],
         return_covariance: bool = False,
         return_final_state: bool = False,
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> Union[
+        np.ndarray,
+        Tuple[np.ndarray, np.ndarray],
+        Tuple[np.ndarray, np.ndarray, np.ndarray],
+    ]:
         """Transform input observations to state features.
 
         Args:

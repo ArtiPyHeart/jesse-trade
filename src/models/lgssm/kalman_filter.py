@@ -101,6 +101,7 @@ class KalmanFilter(nn.Module):
         R: torch.Tensor,
         state_eye: Optional[torch.Tensor] = None,
         obs_jitter_eye: Optional[torch.Tensor] = None,
+        assume_no_nan: bool = False,
     ) -> Tuple[
         torch.Tensor,
         torch.Tensor,
@@ -110,7 +111,7 @@ class KalmanFilter(nn.Module):
     ]:
         """Update step with optional returned stats for log-likelihood reuse."""
         # Check for NaN in observation
-        if torch.isnan(y).any():
+        if not assume_no_nan and torch.isnan(y).any():
             # Skip update step when observation is missing (NaN)
             return z_pred, P_pred, None, None, None
 
@@ -151,6 +152,7 @@ class KalmanFilter(nn.Module):
         R: torch.Tensor,
         z0: Optional[torch.Tensor] = None,
         P0: Optional[torch.Tensor] = None,
+        assume_no_nan: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run full Kalman filter on a sequence.
 
@@ -162,6 +164,7 @@ class KalmanFilter(nn.Module):
             R: Observation noise covariance (obs_dim, obs_dim)
             z0: Initial state (state_dim,)
             P0: Initial error covariance (state_dim, state_dim)
+            assume_no_nan: Skip NaN checks in update step if True
 
         Returns:
             states: Filtered states (T, state_dim)
@@ -211,6 +214,7 @@ class KalmanFilter(nn.Module):
                 R,
                 state_eye=state_eye,
                 obs_jitter_eye=obs_jitter_eye,
+                assume_no_nan=assume_no_nan,
             )
 
             states[t] = z
@@ -230,6 +234,74 @@ class KalmanFilter(nn.Module):
             # If K is None (NaN observation), we skip the log likelihood contribution for this time step
 
         return states, covariances, log_likelihood
+
+    def log_likelihood(
+        self,
+        y: torch.Tensor,
+        A: torch.Tensor,
+        C: torch.Tensor,
+        Q: torch.Tensor,
+        R: torch.Tensor,
+        z0: Optional[torch.Tensor] = None,
+        P0: Optional[torch.Tensor] = None,
+        assume_no_nan: bool = False,
+    ) -> torch.Tensor:
+        """Compute log likelihood only (no state/covariance allocation)."""
+        T = y.shape[0]
+        device = y.device
+        dtype = y.dtype
+
+        # Initialize
+        if z0 is None:
+            z0 = torch.zeros(self.state_dim, device=device, dtype=dtype)
+        if P0 is None:
+            # P0 = I to match prior p(z0) = N(0, I) used in ELBO
+            P0 = torch.eye(self.state_dim, device=device, dtype=dtype)
+
+        z = z0
+        P = P0
+        log_likelihood = torch.tensor(0.0, device=device, dtype=dtype)
+        state_eye = torch.eye(self.state_dim, device=device, dtype=dtype)
+        obs_jitter_eye = NUMERICAL_JITTER * torch.eye(
+            self.obs_dim, device=device, dtype=dtype
+        )
+        log_2pi = torch.log(torch.tensor(2.0 * torch.pi, device=device, dtype=dtype))
+
+        # Filter through sequence - now includes first observation
+        for t in range(T):
+            if t == 0:
+                # For the first observation, use initial state as prediction
+                z_pred, P_pred = z0, P0
+            else:
+                # Predict from previous state
+                z_pred, P_pred = self.predict(z, P, A, Q)
+
+            # Update with current observation
+            z, P, K, innovation, S_stable = self._update_with_stats(
+                z_pred,
+                P_pred,
+                y[t],
+                C,
+                R,
+                state_eye=state_eye,
+                obs_jitter_eye=obs_jitter_eye,
+                assume_no_nan=assume_no_nan,
+            )
+
+            # Compute log likelihood contribution only if update was performed (K is not None)
+            if K is not None:
+                # Log likelihood: -0.5 * (log|S| + innovation' @ S^-1 @ innovation + k*log(2π))
+                _, log_det_S = torch.linalg.slogdet(S_stable)
+                quad_form = torch.matmul(
+                    innovation.unsqueeze(0),
+                    torch.linalg.solve(S_stable, innovation.unsqueeze(-1)),
+                ).squeeze()
+                log_likelihood += -0.5 * (
+                    log_det_S + quad_form + self.obs_dim * log_2pi
+                )
+            # If K is None (NaN observation), we skip the log likelihood contribution for this time step
+
+        return log_likelihood
 
     def smooth(
         self,
