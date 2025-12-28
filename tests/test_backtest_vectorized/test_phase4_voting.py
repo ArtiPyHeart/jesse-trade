@@ -21,7 +21,7 @@ ROOT_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
 # 导入被测函数
-from backtest_vectorized_no_jesse import _parse_model_n_value, aggregate_votes
+from backtest_no_jesse import _parse_model_n_value, aggregate_votes
 
 
 class TestParseModelNValue:
@@ -112,7 +112,7 @@ class TestAggregateVotesAlignment:
         # - N2 模型在 t-2 时刻预测的是 t 的方向
         predictions = {
             "c_L5_N1": [1, -1, 1, 1, -1],  # N1 预测序列
-            "c_L5_N2": [1, 1, -1, 1, 1],   # N2 预测序列
+            "c_L5_N2": [1, 1, -1, 1, 1],  # N2 预测序列
         }
         models = ["c_L5_N1", "c_L5_N2"]
 
@@ -348,10 +348,7 @@ class TestAggregateVotesSignalDistribution:
 
         predictions = {
             "c_L5_N1": base_signal.copy(),
-            "c_L5_N2": [
-                s if random.random() > noise_rate else -s
-                for s in base_signal
-            ],
+            "c_L5_N2": [s if random.random() > noise_rate else -s for s in base_signal],
         }
         models = ["c_L5_N1", "c_L5_N2"]
 

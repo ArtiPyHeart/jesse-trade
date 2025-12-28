@@ -40,7 +40,7 @@ class TestEndToEndSmallData:
         trading = trading_candles  # 全部 trading
 
         # 导入回测模块
-        from backtest_vectorized_no_jesse import (
+        from backtest_no_jesse import (
             generate_all_fusion_bars_with_split,
             compute_features_vectorized,
             predict_all_models,
@@ -124,9 +124,7 @@ class TestEndToEndSmallData:
             bt.close_position(final_ts, final_price, reason="force_close")
 
         # Phase 6: Metrics
-        metrics = BacktestAnalyzer.calculate_metrics(
-            bt.trades, bt.equity_curve, 10000
-        )
+        metrics = BacktestAnalyzer.calculate_metrics(bt.trades, bt.equity_curve, 10000)
 
         # 验证指标存在
         assert "total_return" in metrics
@@ -147,7 +145,7 @@ class TestEndToEndSmallData:
         warmup = warmup_candles  # 40000 根 warmup
         trading = trading_candles  # 全部 trading
 
-        from backtest_vectorized_no_jesse import (
+        from backtest_no_jesse import (
             generate_all_fusion_bars_with_split,
         )
 
@@ -176,7 +174,7 @@ class TestDataFlow:
         warmup = warmup_candles  # 40000 根 warmup
         trading = trading_candles  # 全部 trading
 
-        from backtest_vectorized_no_jesse import (
+        from backtest_no_jesse import (
             generate_all_fusion_bars_with_split,
             compute_features_vectorized,
         )
@@ -216,7 +214,7 @@ class TestDataFlow:
         warmup = warmup_candles  # 40000 根 warmup
         trading = trading_candles  # 全部 trading
 
-        from backtest_vectorized_no_jesse import (
+        from backtest_no_jesse import (
             generate_all_fusion_bars_with_split,
             compute_features_vectorized,
             predict_all_models,
@@ -264,7 +262,7 @@ class TestResultValidity:
         """测试权益曲线长度合理"""
         warmup_candles, trading_candles = jesse_candles
 
-        from backtest_vectorized_no_jesse import (
+        from backtest_no_jesse import (
             FastBacktester,
         )
 
@@ -279,7 +277,7 @@ class TestResultValidity:
 
     def test_trades_record_complete(self, jesse_candles):
         """测试交易记录完整"""
-        from backtest_vectorized_no_jesse import FastBacktester
+        from backtest_no_jesse import FastBacktester
 
         bt = FastBacktester(10000, 0.0004, leverage=1)
 
@@ -296,14 +294,22 @@ class TestResultValidity:
 
     def test_metrics_keys_complete(self, jesse_candles):
         """测试指标键完整"""
-        from backtest_vectorized_no_jesse import (
+        from backtest_no_jesse import (
             BacktestAnalyzer,
             EquityPoint,
             Trade,
         )
 
         trades = [
-            Trade(timestamp=1000, action="close_long", price=51000, qty=0.1, fee=2, pnl=100, balance=10100),
+            Trade(
+                timestamp=1000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+                balance=10100,
+            ),
         ]
         equity_curve = [
             EquityPoint(timestamp=1000, equity=10000, benchmark_equity=10000),
@@ -345,7 +351,7 @@ class TestSignalDistribution:
         warmup = warmup_candles  # 40000 根 warmup
         trading = trading_candles  # 全部 trading
 
-        from backtest_vectorized_no_jesse import (
+        from backtest_no_jesse import (
             generate_all_fusion_bars_with_split,
             compute_features_vectorized,
             predict_all_models,
@@ -380,7 +386,9 @@ class TestSignalDistribution:
         short_count = signals.count("short")
         flat_count = signals.count("flat")
 
-        print(f"\n[Signal] Long: {long_count}, Short: {short_count}, Flat: {flat_count}")
+        print(
+            f"\n[Signal] Long: {long_count}, Short: {short_count}, Flat: {flat_count}"
+        )
 
         # 至少应该有一些信号 (不全是 flat)
         assert long_count > 0 or short_count > 0, "No trading signals generated"

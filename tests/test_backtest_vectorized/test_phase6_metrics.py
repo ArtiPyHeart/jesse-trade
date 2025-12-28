@@ -24,7 +24,7 @@ ROOT_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
 # 导入被测类
-from backtest_vectorized_no_jesse import (
+from backtest_no_jesse import (
     BacktestAnalyzer,
     EquityPoint,
     Trade,
@@ -206,9 +206,23 @@ class TestWinRateCalculation:
         """测试 50% 胜率"""
         trades = [
             Trade(timestamp=1000, action="open_long", price=50000, qty=0.1, fee=2),
-            Trade(timestamp=2000, action="close_long", price=51000, qty=0.1, fee=2, pnl=100),
+            Trade(
+                timestamp=2000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
             Trade(timestamp=3000, action="open_short", price=51000, qty=0.1, fee=2),
-            Trade(timestamp=4000, action="close_short", price=52000, qty=0.1, fee=2, pnl=-100),
+            Trade(
+                timestamp=4000,
+                action="close_short",
+                price=52000,
+                qty=0.1,
+                fee=2,
+                pnl=-100,
+            ),
         ]
 
         equity_curve = [
@@ -227,8 +241,22 @@ class TestWinRateCalculation:
     def test_win_rate_100_percent(self):
         """测试 100% 胜率"""
         trades = [
-            Trade(timestamp=1000, action="close_long", price=51000, qty=0.1, fee=2, pnl=100),
-            Trade(timestamp=2000, action="close_short", price=49000, qty=0.1, fee=2, pnl=100),
+            Trade(
+                timestamp=1000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
+            Trade(
+                timestamp=2000,
+                action="close_short",
+                price=49000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
         ]
 
         equity_curve = [
@@ -244,8 +272,22 @@ class TestWinRateCalculation:
     def test_win_rate_0_percent(self):
         """测试 0% 胜率"""
         trades = [
-            Trade(timestamp=1000, action="close_long", price=49000, qty=0.1, fee=2, pnl=-100),
-            Trade(timestamp=2000, action="close_short", price=51000, qty=0.1, fee=2, pnl=-100),
+            Trade(
+                timestamp=1000,
+                action="close_long",
+                price=49000,
+                qty=0.1,
+                fee=2,
+                pnl=-100,
+            ),
+            Trade(
+                timestamp=2000,
+                action="close_short",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=-100,
+            ),
         ]
 
         equity_curve = [
@@ -261,8 +303,17 @@ class TestWinRateCalculation:
     def test_win_rate_excludes_open_trades(self):
         """测试胜率计算排除开仓交易"""
         trades = [
-            Trade(timestamp=1000, action="open_long", price=50000, qty=0.1, fee=2, pnl=0),
-            Trade(timestamp=2000, action="close_long", price=51000, qty=0.1, fee=2, pnl=100),
+            Trade(
+                timestamp=1000, action="open_long", price=50000, qty=0.1, fee=2, pnl=0
+            ),
+            Trade(
+                timestamp=2000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
         ]
 
         equity_curve = [
@@ -285,8 +336,12 @@ class TestCalmarRatioCalculation:
         equity_curve = [
             EquityPoint(timestamp=1000, equity=10000, benchmark_equity=10000),
             EquityPoint(timestamp=2000, equity=12000, benchmark_equity=10000),  # 峰值
-            EquityPoint(timestamp=3000, equity=10000, benchmark_equity=10000),  # 回撤 -16.67%
-            EquityPoint(timestamp=4000, equity=15000, benchmark_equity=10000),  # 收益 50%
+            EquityPoint(
+                timestamp=3000, equity=10000, benchmark_equity=10000
+            ),  # 回撤 -16.67%
+            EquityPoint(
+                timestamp=4000, equity=15000, benchmark_equity=10000
+            ),  # 收益 50%
         ]
 
         metrics = BacktestAnalyzer.calculate_metrics([], equity_curve, starting_balance)
@@ -317,9 +372,30 @@ class TestProfitFactorCalculation:
     def test_profit_factor(self):
         """测试盈亏比: sum(wins) / |sum(losses)|"""
         trades = [
-            Trade(timestamp=1000, action="close_long", price=51000, qty=0.1, fee=2, pnl=200),
-            Trade(timestamp=2000, action="close_short", price=52000, qty=0.1, fee=2, pnl=-100),
-            Trade(timestamp=3000, action="close_long", price=51000, qty=0.1, fee=2, pnl=100),
+            Trade(
+                timestamp=1000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=200,
+            ),
+            Trade(
+                timestamp=2000,
+                action="close_short",
+                price=52000,
+                qty=0.1,
+                fee=2,
+                pnl=-100,
+            ),
+            Trade(
+                timestamp=3000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
         ]
 
         equity_curve = [
@@ -336,8 +412,22 @@ class TestProfitFactorCalculation:
     def test_profit_factor_no_losses(self):
         """测试无亏损时盈亏比为 0"""
         trades = [
-            Trade(timestamp=1000, action="close_long", price=51000, qty=0.1, fee=2, pnl=100),
-            Trade(timestamp=2000, action="close_short", price=49000, qty=0.1, fee=2, pnl=100),
+            Trade(
+                timestamp=1000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
+            Trade(
+                timestamp=2000,
+                action="close_short",
+                price=49000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
         ]
 
         equity_curve = [
@@ -356,10 +446,38 @@ class TestAvgWinLossCalculation:
     def test_avg_win_and_loss(self):
         """测试平均盈亏"""
         trades = [
-            Trade(timestamp=1000, action="close_long", price=51000, qty=0.1, fee=2, pnl=100),
-            Trade(timestamp=2000, action="close_short", price=52000, qty=0.1, fee=2, pnl=-50),
-            Trade(timestamp=3000, action="close_long", price=51000, qty=0.1, fee=2, pnl=200),
-            Trade(timestamp=4000, action="close_short", price=52000, qty=0.1, fee=2, pnl=-100),
+            Trade(
+                timestamp=1000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=100,
+            ),
+            Trade(
+                timestamp=2000,
+                action="close_short",
+                price=52000,
+                qty=0.1,
+                fee=2,
+                pnl=-50,
+            ),
+            Trade(
+                timestamp=3000,
+                action="close_long",
+                price=51000,
+                qty=0.1,
+                fee=2,
+                pnl=200,
+            ),
+            Trade(
+                timestamp=4000,
+                action="close_short",
+                price=52000,
+                qty=0.1,
+                fee=2,
+                pnl=-100,
+            ),
         ]
 
         equity_curve = [

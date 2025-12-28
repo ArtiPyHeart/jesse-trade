@@ -27,9 +27,9 @@ class TestFusionBarGeneration:
         fusion_bars = demo_bar.get_fusion_bars()
 
         # 压缩效果: fusion bar 数量应显著少于原始 K 线
-        assert len(fusion_bars) < len(small_candles), (
-            f"Fusion bars ({len(fusion_bars)}) should be less than candles ({len(small_candles)})"
-        )
+        assert len(fusion_bars) < len(
+            small_candles
+        ), f"Fusion bars ({len(fusion_bars)}) should be less than candles ({len(small_candles)})"
 
         # 压缩比例通常在 5%-50% 之间
         compression_ratio = len(fusion_bars) / len(small_candles)
@@ -48,14 +48,14 @@ class TestFusionBarGeneration:
         fusion_bars = demo_bar.get_fusion_bars()
 
         # 6 列格式
-        assert fusion_bars.shape[1] == 6, (
-            f"Expected 6 columns, got {fusion_bars.shape[1]}"
-        )
+        assert (
+            fusion_bars.shape[1] == 6
+        ), f"Expected 6 columns, got {fusion_bars.shape[1]}"
 
         # 数据类型为 float64
-        assert fusion_bars.dtype == np.float64, (
-            f"Expected float64, got {fusion_bars.dtype}"
-        )
+        assert (
+            fusion_bars.dtype == np.float64
+        ), f"Expected float64, got {fusion_bars.dtype}"
 
     def test_fusion_bar_timestamps_monotonic(self, small_candles):
         """
@@ -97,14 +97,14 @@ class TestFusionBarGeneration:
         lows = fusion_bars[:, 4]
 
         # High >= max(open, close)
-        assert np.all(highs >= np.maximum(opens, closes)), (
-            "High must be >= max(open, close)"
-        )
+        assert np.all(
+            highs >= np.maximum(opens, closes)
+        ), "High must be >= max(open, close)"
 
         # Low <= min(open, close)
-        assert np.all(lows <= np.minimum(opens, closes)), (
-            "Low must be <= min(open, close)"
-        )
+        assert np.all(
+            lows <= np.minimum(opens, closes)
+        ), "Low must be <= min(open, close)"
 
         # High >= Low
         assert np.all(highs >= lows), "High must be >= Low"
@@ -202,9 +202,9 @@ class TestThresholdCalculation:
         # 第一个阈值（微小波动）应该被 clip
         # 计算: abs(100.001 - 100) * (100.01 - 99.99) / 100.001 ≈ 0.00002
         # 这远小于 clip_r=0.01，应该被设为 0
-        assert thresholds[0] == 0, (
-            f"Small threshold {thresholds[0]} should be clipped to 0"
-        )
+        assert (
+            thresholds[0] == 0
+        ), f"Small threshold {thresholds[0]} should be clipped to 0"
 
 
 class TestWarmupTradingSplit:
@@ -214,7 +214,7 @@ class TestWarmupTradingSplit:
         """
         验证基本边界分割正确性
         """
-        from backtest_vectorized_no_jesse import generate_all_fusion_bars_with_split
+        from backtest_no_jesse import generate_all_fusion_bars_with_split
 
         warmup_candles, trading_candles = jesse_candles
 
@@ -226,19 +226,19 @@ class TestWarmupTradingSplit:
         warmup_last_ts = warmup_candles[-1, 0]
 
         # 1. warmup 最后一根 fusion bar 的时间戳 <= warmup 最后一根 candle 时间戳
-        assert fusion_bars[warmup_len - 1, 0] <= warmup_last_ts, (
-            f"Warmup last fusion bar {fusion_bars[warmup_len - 1, 0]} > warmup last candle {warmup_last_ts}"
-        )
+        assert (
+            fusion_bars[warmup_len - 1, 0] <= warmup_last_ts
+        ), f"Warmup last fusion bar {fusion_bars[warmup_len - 1, 0]} > warmup last candle {warmup_last_ts}"
 
         # 2. trading 第一根 fusion bar 的时间戳 > warmup 最后一根 candle 时间戳
-        assert fusion_bars[warmup_len, 0] > warmup_last_ts, (
-            f"Trading first fusion bar {fusion_bars[warmup_len, 0]} <= warmup last candle {warmup_last_ts}"
-        )
+        assert (
+            fusion_bars[warmup_len, 0] > warmup_last_ts
+        ), f"Trading first fusion bar {fusion_bars[warmup_len, 0]} <= warmup last candle {warmup_last_ts}"
 
         # 3. warmup_len 在合理范围内
-        assert 0 < warmup_len < len(fusion_bars), (
-            f"warmup_len {warmup_len} out of range [1, {len(fusion_bars) - 1}]"
-        )
+        assert (
+            0 < warmup_len < len(fusion_bars)
+        ), f"warmup_len {warmup_len} out of range [1, {len(fusion_bars) - 1}]"
 
         print("\nSplit result:")
         print(f"  - Warmup fusion bars: {warmup_len}")
@@ -254,7 +254,7 @@ class TestWarmupTradingSplit:
         - 所有 warmup fusion bars 的时间戳 <= warmup 最后 candle 时间戳
         - 所有 trading fusion bars 的时间戳 > warmup 最后 candle 时间戳
         """
-        from backtest_vectorized_no_jesse import generate_all_fusion_bars_with_split
+        from backtest_no_jesse import generate_all_fusion_bars_with_split
 
         warmup_candles, trading_candles = jesse_candles
 
@@ -266,15 +266,15 @@ class TestWarmupTradingSplit:
 
         # 所有 warmup bars 的时间戳都 <= warmup_last_ts
         warmup_bars = fusion_bars[:warmup_len]
-        assert np.all(warmup_bars[:, 0] <= warmup_last_ts), (
-            "Some warmup fusion bars have timestamp > warmup last candle"
-        )
+        assert np.all(
+            warmup_bars[:, 0] <= warmup_last_ts
+        ), "Some warmup fusion bars have timestamp > warmup last candle"
 
         # 所有 trading bars 的时间戳都 > warmup_last_ts
         trading_bars = fusion_bars[warmup_len:]
-        assert np.all(trading_bars[:, 0] > warmup_last_ts), (
-            "Some trading fusion bars have timestamp <= warmup last candle"
-        )
+        assert np.all(
+            trading_bars[:, 0] > warmup_last_ts
+        ), "Some trading fusion bars have timestamp <= warmup last candle"
 
     def test_no_fusion_bar_loss(self, jesse_candles):
         """
@@ -282,7 +282,7 @@ class TestWarmupTradingSplit:
 
         预期: 单独生成和分割生成的 fusion bar 数量一致
         """
-        from backtest_vectorized_no_jesse import generate_all_fusion_bars_with_split
+        from backtest_no_jesse import generate_all_fusion_bars_with_split
 
         warmup_candles, trading_candles = jesse_candles
 
@@ -298,9 +298,9 @@ class TestWarmupTradingSplit:
         expected_fusion_bars = demo_bar.get_fusion_bars()
 
         # 数量一致
-        assert len(fusion_bars) == len(expected_fusion_bars), (
-            f"Mismatch: split={len(fusion_bars)}, direct={len(expected_fusion_bars)}"
-        )
+        assert len(fusion_bars) == len(
+            expected_fusion_bars
+        ), f"Mismatch: split={len(fusion_bars)}, direct={len(expected_fusion_bars)}"
 
         # 内容一致
         np.testing.assert_array_equal(
@@ -360,9 +360,9 @@ class TestEdgeCases:
         print(f"10 candles with large swings → {len(fusion_bars_10)} fusion bars")
 
         # 10 根有大波动的 candle 应该能生成至少 1 个 fusion bar
-        assert len(fusion_bars_10) >= 1, (
-            "Expected at least 1 fusion bar from 10 candles"
-        )
+        assert (
+            len(fusion_bars_10) >= 1
+        ), "Expected at least 1 fusion bar from 10 candles"
 
     def test_single_candle_no_crash(self):
         """
@@ -377,9 +377,9 @@ class TestEdgeCases:
         fusion_bars = demo_bar.get_fusion_bars()
 
         # 单根 candle 可能生成 0 或 1 个 fusion bar
-        assert len(fusion_bars) <= 1, (
-            f"Too many fusion bars from single candle: {len(fusion_bars)}"
-        )
+        assert (
+            len(fusion_bars) <= 1
+        ), f"Too many fusion bars from single candle: {len(fusion_bars)}"
 
     def test_max_bars_limit(self):
         """
@@ -402,9 +402,9 @@ class TestEdgeCases:
         demo_bar.update_with_candles(candles)
         fusion_bars = demo_bar.get_fusion_bars()
 
-        assert len(fusion_bars) <= max_bars, (
-            f"Fusion bars ({len(fusion_bars)}) exceeds max_bars ({max_bars})"
-        )
+        assert (
+            len(fusion_bars) <= max_bars
+        ), f"Fusion bars ({len(fusion_bars)}) exceeds max_bars ({max_bars})"
 
     def test_stateful_behavior(self, small_candles):
         """

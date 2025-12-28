@@ -23,7 +23,7 @@ ROOT_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
 # 导入被测类
-from backtest_vectorized_no_jesse import (
+from backtest_no_jesse import (
     FastBacktester,
     Position,
     Trade,
@@ -309,7 +309,9 @@ class TestStopLoss:
         stop_loss_price = entry_price * (1 + STOP_LOSS_RATIO_NO_LEVERAGE / 3)
         # stop_loss_price ≈ 50000 * (1 + 0.05/3) ≈ 50833.33
 
-        bt.open_short(timestamp=1000, price=entry_price, stop_loss_price=stop_loss_price)
+        bt.open_short(
+            timestamp=1000, price=entry_price, stop_loss_price=stop_loss_price
+        )
 
         # Bar: high 触及止损价
         triggered = bt.check_stop_loss(
@@ -328,7 +330,9 @@ class TestStopLoss:
         entry_price = 50000
         stop_loss_price = 51000
 
-        bt.open_short(timestamp=1000, price=entry_price, stop_loss_price=stop_loss_price)
+        bt.open_short(
+            timestamp=1000, price=entry_price, stop_loss_price=stop_loss_price
+        )
 
         # Bar: high 未触及止损价
         triggered = bt.check_stop_loss(
@@ -342,7 +346,9 @@ class TestStopLoss:
         """测试无仓位时检查止损返回 False"""
         bt = FastBacktester(10000, 0.0004, 1)
 
-        triggered = bt.check_stop_loss(timestamp=1000, high=51000, low=49000, close=50000)
+        triggered = bt.check_stop_loss(
+            timestamp=1000, high=51000, low=49000, close=50000
+        )
 
         assert not triggered
 
@@ -379,7 +385,9 @@ class TestEntryBarStopLoss:
         entry_price = 50000
         stop_loss_price = 51000
 
-        bt.open_short(timestamp=1000, price=entry_price, stop_loss_price=stop_loss_price)
+        bt.open_short(
+            timestamp=1000, price=entry_price, stop_loss_price=stop_loss_price
+        )
 
         # 同 bar 的 high 跳空高于止损价
         triggered = bt.check_stop_loss(
