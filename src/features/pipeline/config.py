@@ -83,6 +83,9 @@ class PipelineConfig(BaseModel):
     # 运行时配置
     verbose: bool = False
 
+    # 持久化：用于固定 SimpleFeatureCalculator 的特征顺序
+    calculator_feature_order: Optional[List[str]] = None
+
     # 元信息
     version: str = "2.0.0"
 
@@ -97,6 +100,7 @@ class PipelineConfig(BaseModel):
     def parse_and_validate(self) -> "PipelineConfig":
         """解析特征并验证配置"""
         self._parse_features()
+        self._ensure_calculator_feature_order()
         self._validate()
         return self
 
@@ -150,6 +154,31 @@ class PipelineConfig(BaseModel):
                 f"Must be one of {valid_reducer_types}"
             )
 
+    def _ensure_calculator_feature_order(self) -> None:
+        computed_order: List[str] = []
+        seen = set()
+
+        for name in self._raw_features:
+            if name not in seen:
+                computed_order.append(name)
+                seen.add(name)
+
+        if self._ssm_types:
+            for name in self.ssm_input_features:
+                if name not in seen:
+                    computed_order.append(name)
+                    seen.add(name)
+
+        if self.calculator_feature_order is None:
+            self.calculator_feature_order = computed_order
+            return
+
+        if self.calculator_feature_order != computed_order:
+            raise ValueError(
+                "calculator_feature_order mismatch with current configuration. "
+                "Rebuild the pipeline with consistent settings."
+            )
+
     @property
     def raw_feature_names(self) -> List[str]:
         """一阶特征名称（直接输出到结果）"""
@@ -174,10 +203,10 @@ class PipelineConfig(BaseModel):
         - 一阶特征（直接输出）
         - SSM 输入特征（如果需要 SSM）
         """
-        features = set(self._raw_features)
-        if self._ssm_types:
-            features.update(self.ssm_input_features)
-        return list(features)
+        if self.calculator_feature_order is None:
+            raise ValueError("calculator_feature_order not initialized.")
+
+        return self.calculator_feature_order.copy()
 
     def save(self, path: str) -> None:
         """
@@ -202,6 +231,7 @@ class PipelineConfig(BaseModel):
             "dimension_reducer_config": reducer_config_dict,
             "verbose": self.verbose,
             "version": self.version,
+            "calculator_feature_order": self.calculator_feature_order,
         }
 
         with open(path, "w") as f:
@@ -225,6 +255,12 @@ class PipelineConfig(BaseModel):
         config_dict.pop("_raw_features", None)
         config_dict.pop("_ssm_features", None)
         config_dict.pop("_ssm_types", None)
+
+        if "calculator_feature_order" not in config_dict:
+            raise ValueError(
+                "Missing calculator_feature_order in config. "
+                "Delete old pipelines and retrain."
+            )
 
         # 反序列化 dimension_reducer_config
         reducer_config_dict = config_dict.get("dimension_reducer_config")
@@ -254,6 +290,11 @@ class PipelineConfig(BaseModel):
             "dimension_reducer_config": self.dimension_reducer_config,
             "verbose": self.verbose,
             "version": self.version,
+            "calculator_feature_order": (
+                self.calculator_feature_order.copy()
+                if self.calculator_feature_order is not None
+                else None
+            ),
         }
         config_dict.update(kwargs)
         return PipelineConfig(**config_dict)

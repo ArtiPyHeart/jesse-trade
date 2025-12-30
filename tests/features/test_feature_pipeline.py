@@ -4,6 +4,7 @@ FeaturePipeline 单元测试
 测试 FeaturePipeline 的三种使用模式和持久化功能。
 """
 
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -48,9 +49,9 @@ def make_jesse_candles(n_samples: int, seed: int = 42) -> np.ndarray:
     # 生成成交量
     volumes = np.random.rand(n_samples) * 1000 + 100
 
-    return np.column_stack([
-        timestamps, open_prices, close_prices, high_prices, low_prices, volumes
-    ])
+    return np.column_stack(
+        [timestamps, open_prices, close_prices, high_prices, low_prices, volumes]
+    )
 
 
 class TestPipelineConfig:
@@ -67,9 +68,7 @@ class TestPipelineConfig:
 
     def test_custom_config_raw_features_only(self):
         """测试只有一阶特征的配置"""
-        config = PipelineConfig(
-            feature_names=["rsi", "macd", "atr"]
-        )
+        config = PipelineConfig(feature_names=["rsi", "macd", "atr"])
 
         assert config.raw_feature_names == ["rsi", "macd", "atr"]
         assert config.ssm_feature_names == []
@@ -77,9 +76,7 @@ class TestPipelineConfig:
 
     def test_custom_config_ssm_features_only(self):
         """测试只有 SSM 特征的配置"""
-        config = PipelineConfig(
-            feature_names=["deep_ssm_0", "deep_ssm_1", "lg_ssm_0"]
-        )
+        config = PipelineConfig(feature_names=["deep_ssm_0", "deep_ssm_1", "lg_ssm_0"])
 
         assert config.raw_feature_names == []
         assert config.ssm_feature_names == ["deep_ssm_0", "deep_ssm_1", "lg_ssm_0"]
@@ -87,9 +84,7 @@ class TestPipelineConfig:
 
     def test_custom_config_mixed_features(self):
         """测试混合特征的配置"""
-        config = PipelineConfig(
-            feature_names=["deep_ssm_0", "rsi", "lg_ssm_1", "macd"]
-        )
+        config = PipelineConfig(feature_names=["deep_ssm_0", "rsi", "lg_ssm_1", "macd"])
 
         assert config.raw_feature_names == ["rsi", "macd"]
         assert config.ssm_feature_names == ["deep_ssm_0", "lg_ssm_1"]
@@ -97,23 +92,60 @@ class TestPipelineConfig:
 
     def test_all_calculator_features_with_ssm(self):
         """测试带 SSM 时的 all_calculator_features"""
-        config = PipelineConfig(
-            feature_names=["deep_ssm_0", "rsi"]
-        )
+        config = PipelineConfig(feature_names=["deep_ssm_0", "rsi"])
 
         # 应该包含 rsi 和所有 ssm_input_features
         calc_features = set(config.all_calculator_features)
         assert "rsi" in calc_features
         assert "frac_o_o1_diff" in calc_features  # SSM 输入特征之一
 
+    def test_all_calculator_features_order(self):
+        """测试 all_calculator_features 的稳定顺序"""
+        config = PipelineConfig(
+            feature_names=["rsi", "macd", "deep_ssm_0"],
+            ssm_input_features=["frac_a", "frac_b"],
+            ssm_state_dim=5,
+        )
+
+        assert config.all_calculator_features == ["rsi", "macd", "frac_a", "frac_b"]
+
     def test_all_calculator_features_without_ssm(self):
         """测试不带 SSM 时的 all_calculator_features"""
-        config = PipelineConfig(
-            feature_names=["rsi", "macd"]
-        )
+        config = PipelineConfig(feature_names=["rsi", "macd"])
 
         # 只包含原始特征，不包含 SSM 输入特征
         assert set(config.all_calculator_features) == {"rsi", "macd"}
+
+    def test_calculator_feature_order_persistence(self, tmp_path: Path):
+        """测试 calculator_feature_order 持久化"""
+        config = PipelineConfig(
+            feature_names=["rsi", "macd", "deep_ssm_0"],
+            ssm_input_features=["frac_a", "frac_b"],
+            ssm_state_dim=5,
+        )
+        config_path = tmp_path / "pipeline_config.json"
+        config.save(str(config_path))
+
+        loaded = PipelineConfig.load(str(config_path))
+
+        assert loaded.calculator_feature_order == ["rsi", "macd", "frac_a", "frac_b"]
+
+    def test_load_requires_calculator_feature_order(self, tmp_path: Path):
+        """测试缺少 calculator_feature_order 时加载失败"""
+        config = PipelineConfig(
+            feature_names=["rsi", "deep_ssm_0"],
+            ssm_input_features=["frac_a"],
+            ssm_state_dim=5,
+        )
+        config_path = tmp_path / "pipeline_config.json"
+        config.save(str(config_path))
+
+        data = json.loads(config_path.read_text())
+        data.pop("calculator_feature_order", None)
+        config_path.write_text(json.dumps(data))
+
+        with pytest.raises(ValueError, match="calculator_feature_order"):
+            PipelineConfig.load(str(config_path))
 
     def test_invalid_ssm_index(self):
         """测试无效的 SSM 索引"""
@@ -200,9 +232,7 @@ class TestFeaturePipelineBasic:
 
     def test_get_all_feature_names(self):
         """测试 get_all_feature_names 方法"""
-        config = PipelineConfig(
-            feature_names=["deep_ssm_0", "rsi", "lg_ssm_1"]
-        )
+        config = PipelineConfig(feature_names=["deep_ssm_0", "rsi", "lg_ssm_1"])
         pipeline = FeaturePipeline(config=config)
 
         names = pipeline.get_all_feature_names()
@@ -546,8 +576,12 @@ class TestFeaturePipelineEndToEnd:
         # 配置：请求所有 SSM 特征
         config = PipelineConfig(
             feature_names=[
-                "deep_ssm_0", "deep_ssm_1", "deep_ssm_2",
-                "lg_ssm_0", "lg_ssm_1", "lg_ssm_2",
+                "deep_ssm_0",
+                "deep_ssm_1",
+                "deep_ssm_2",
+                "lg_ssm_0",
+                "lg_ssm_1",
+                "lg_ssm_2",
             ],
             ssm_state_dim=3,
             ssm_input_features=list(feature_data.columns),
@@ -764,7 +798,9 @@ class TestFeaturePipelineDimensionReduction:
         result = pipeline.inference(candles)
 
         # 验证 dimension reducer 被调用
-        assert mock_reducer.transform.called, "Dimension reducer should be called in inference"
+        assert mock_reducer.transform.called, (
+            "Dimension reducer should be called in inference"
+        )
 
         # 验证结果列名
         assert "reduced_0" in result.columns
@@ -889,9 +925,7 @@ class TestFeaturePipelineNoSSM:
     @pytest.fixture
     def raw_only_config(self) -> PipelineConfig:
         """只有原始特征的配置（无 SSM）"""
-        return PipelineConfig(
-            feature_names=["rsi", "macd", "atr"]
-        )
+        return PipelineConfig(feature_names=["rsi", "macd", "atr"])
 
     def test_config_no_ssm(self, raw_only_config):
         """验证无 SSM 配置正确解析"""
@@ -1119,7 +1153,9 @@ class TestShareRawCalculator:
             verbose=False,
         )
 
-    def test_share_raw_calculator_from_basic(self, raw_only_config, raw_only_config_subset):
+    def test_share_raw_calculator_from_basic(
+        self, raw_only_config, raw_only_config_subset
+    ):
         """基本共享功能测试"""
         source_pipeline = FeaturePipeline(config=raw_only_config)
         target_pipeline = FeaturePipeline(config=raw_only_config_subset)
@@ -1136,7 +1172,9 @@ class TestShareRawCalculator:
         # 验证是同一个 calculator
         assert source_pipeline._raw_calculator is target_pipeline._raw_calculator
 
-    def test_share_raw_calculator_chain_call(self, raw_only_config, raw_only_config_subset):
+    def test_share_raw_calculator_chain_call(
+        self, raw_only_config, raw_only_config_subset
+    ):
         """链式调用测试"""
         source_pipeline = FeaturePipeline(config=raw_only_config)
         target_pipeline = FeaturePipeline(config=raw_only_config_subset)

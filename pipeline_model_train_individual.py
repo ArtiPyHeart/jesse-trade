@@ -20,10 +20,12 @@ import logging
 import multiprocessing
 import os
 import random
+import shutil
 import time
 import warnings
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -63,7 +65,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # ============================================================
 # 固定参数配置
 # ============================================================
-MODEL_DIR = Path("./strategies/BinanceBtcDemoBarV2/models")
+MODEL_DIR = Path("./strategies/BinanceBtcDemoBar/models")
 TRAIN_TEST_SPLIT_DATE = "2025-06-01"
 CANDLE_START = "2022-08-01"
 CANDLE_END = "2025-07-01"
@@ -80,11 +82,100 @@ REDUCER_CONFIG = ARDVAEConfig(
     seed=GLOBAL_SEED,
 )
 
+_GLOBAL_SSM_PIPELINE: Optional[FeaturePipeline] = None
+
 
 def get_model_name(log_return_lag: int, pred_next: int, label_type: str) -> str:
     """生成模型名称"""
     model_type = "c" if label_type == "hard" else "r"
     return f"{model_type}_L{log_return_lag}_N{pred_next}"
+
+
+def _is_ssm_cache_compatible(
+    target: FeaturePipeline,
+    cache: FeaturePipeline,
+    model_name: str,
+) -> bool:
+    if not cache.is_fitted:
+        logger.warning(f"[{model_name}] SSM 缓存未训练，跳过复用")
+        return False
+
+    if target.config.ssm_input_features != cache.config.ssm_input_features:
+        logger.warning(
+            f"[{model_name}] SSM 缓存输入特征不一致，跳过复用 "
+            f"(target={len(target.config.ssm_input_features)}, "
+            f"cache={len(cache.config.ssm_input_features)})"
+        )
+        return False
+
+    if target.config.ssm_state_dim != cache.config.ssm_state_dim:
+        logger.warning(
+            f"[{model_name}] SSM 缓存 state_dim 不一致，跳过复用 "
+            f"(target={target.config.ssm_state_dim}, "
+            f"cache={cache.config.ssm_state_dim})"
+        )
+        return False
+
+    return True
+
+
+def _maybe_reuse_cached_ssm(pipeline: FeaturePipeline, model_name: str) -> bool:
+    cache = _GLOBAL_SSM_PIPELINE
+    if not pipeline.config.ssm_types or cache is None:
+        return False
+
+    if not _is_ssm_cache_compatible(pipeline, cache, model_name):
+        return False
+
+    reusable_types = [
+        ssm_type
+        for ssm_type in pipeline.config.ssm_types
+        if ssm_type in cache.ssm_processors
+    ]
+    if not reusable_types:
+        return False
+
+    pipeline.copy_ssm_from(cache, ssm_types=reusable_types)
+    logger.info(f"[{model_name}] 复用已训练 SSM: {reusable_types}")
+    return True
+
+
+def _maybe_cache_ssm_pipeline(pipeline: FeaturePipeline, model_name: str) -> None:
+    global _GLOBAL_SSM_PIPELINE
+
+    if not pipeline.config.ssm_types or not pipeline.is_fitted:
+        return
+
+    if _GLOBAL_SSM_PIPELINE is None:
+        _GLOBAL_SSM_PIPELINE = pipeline
+        logger.info(f"[{model_name}] 缓存已训练 SSM 以便后续复用")
+        return
+
+    cache = _GLOBAL_SSM_PIPELINE
+    if not _is_ssm_cache_compatible(pipeline, cache, model_name):
+        return
+
+    missing_types = [
+        ssm_type
+        for ssm_type in pipeline.config.ssm_types
+        if ssm_type not in cache.ssm_processors
+    ]
+    if not missing_types:
+        return
+
+    cache.copy_ssm_from(pipeline, ssm_types=missing_types)
+    logger.info(f"[{model_name}] 更新 SSM 缓存，新增类型: {missing_types}")
+
+
+def _reset_pipeline_dir(pipeline_path: Path, model_name: str) -> None:
+    if not pipeline_path.exists():
+        return
+
+    logger.warning(f"[{model_name}] 发现旧 Pipeline，将覆盖并清理: {pipeline_path}")
+    if pipeline_path.is_dir():
+        shutil.rmtree(pipeline_path)
+    else:
+        pipeline_path.unlink()
 
 
 class ModelTrainTracker:
@@ -235,7 +326,9 @@ def build_individual_pipeline(
         reducer_config=REDUCER_CONFIG,
     )
     pipeline = FeaturePipeline(config)
+    _maybe_reuse_cached_ssm(pipeline, model_name)
     reduced_features = pipeline.fit_transform(candles)
+    _maybe_cache_ssm_pipeline(pipeline, model_name)
 
     logger.info(f"[{model_name}] 降维后特征维度: {reduced_features.shape}")
 
@@ -379,26 +472,19 @@ def train_model_with_individual_pipeline(
     )
     logger.info(f"[{model_name}] 输入特征数: {len(selected_features)}")
 
-    # 1. 检查是否已有 Pipeline
+    # 1. 始终重建 Pipeline（避免加载残留产物）
     pipeline_path = MODEL_DIR / model_name
-    if pipeline_path.exists():
-        logger.info(f"[{model_name}] 发现已存在的 Pipeline: {pipeline_path}")
-        logger.info(f"[{model_name}] 加载已有 Pipeline...")
-        pipeline = FeaturePipeline.load(str(MODEL_DIR), model_name)
-        reduced_features = pipeline.transform(candles)
-        logger.info(
-            f"[{model_name}] 使用已有 Pipeline，降维后特征维度: {reduced_features.shape}"
-        )
-    else:
-        # 2. 构建独立 FeaturePipeline
-        pipeline, reduced_features = build_individual_pipeline(
-            candles, selected_features, model_name
-        )
+    _reset_pipeline_dir(pipeline_path, model_name)
 
-        # 3. 保存 Pipeline
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        pipeline.save(str(MODEL_DIR), model_name)
-        logger.info(f"[{model_name}] Pipeline 已保存到: {pipeline_path}")
+    # 2. 构建独立 FeaturePipeline
+    pipeline, reduced_features = build_individual_pipeline(
+        candles, selected_features, model_name
+    )
+
+    # 3. 保存 Pipeline
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    pipeline.save(str(MODEL_DIR), model_name)
+    logger.info(f"[{model_name}] Pipeline 已保存到: {pipeline_path}")
 
     n_reduced_features = reduced_features.shape[1]
 
@@ -574,7 +660,7 @@ if __name__ == "__main__":
         pending_tasks, 1
     ):
         model_name = get_model_name(lag, pred_next, label_type)
-        model_path = MODEL_DIR / model_name / f"model_{model_name}.txt"
+        model_path = MODEL_DIR / f"model_{model_name}.txt"
 
         # 显示进度
         overall_progress = completed_tasks + task_idx

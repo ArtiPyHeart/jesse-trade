@@ -102,7 +102,10 @@ class TestReparameterizationTrick:
 
     def test_reparameterize_mean_correct(self):
         """重参数化采样的均值应接近 mu，容差基于 CLT"""
-        from src.features.dimensionality_reduction.ard_vae import ARDVAEConfig, ARDVAENet
+        from src.features.dimensionality_reduction.ard_vae import (
+            ARDVAEConfig,
+            ARDVAENet,
+        )
 
         seed_everything(42)
 
@@ -130,12 +133,16 @@ class TestReparameterizationTrick:
         tol = z_score * stderr
 
         diff = torch.abs(sample_mean - mu.squeeze())
-        assert (diff < tol).all(), \
+        assert (diff < tol).all(), (
             f"Sample mean {sample_mean} differs from mu {mu.squeeze()} by {diff}, tol={tol}"
+        )
 
     def test_reparameterize_variance_correct(self):
         """重参数化采样的方差应接近 exp(log_var)，容差基于统计原理"""
-        from src.features.dimensionality_reduction.ard_vae import ARDVAEConfig, ARDVAENet
+        from src.features.dimensionality_reduction.ard_vae import (
+            ARDVAEConfig,
+            ARDVAENet,
+        )
 
         seed_everything(42)
 
@@ -163,12 +170,16 @@ class TestReparameterizationTrick:
         tol = z_score * se_var
 
         diff = torch.abs(sample_var - expected_var.squeeze())
-        assert (diff < tol).all(), \
+        assert (diff < tol).all(), (
             f"Sample var {sample_var} differs from expected {expected_var.squeeze()} by {diff}, tol={tol}"
+        )
 
     def test_reparameterize_eval_mode(self):
         """评估模式下应直接返回均值"""
-        from src.features.dimensionality_reduction.ard_vae import ARDVAEConfig, ARDVAENet
+        from src.features.dimensionality_reduction.ard_vae import (
+            ARDVAEConfig,
+            ARDVAENet,
+        )
 
         config = ARDVAEConfig(input_dim=10, max_latent_dim=4)
         net = ARDVAENet(config)
@@ -355,9 +366,7 @@ class TestSaveLoad:
         result_after = loaded.transform(df)
 
         # 数值应完全一致
-        np.testing.assert_allclose(
-            result_before.values, result_after.values, rtol=1e-5
-        )
+        np.testing.assert_allclose(result_before.values, result_after.values, rtol=1e-5)
 
     def test_save_load_preserves_metadata(self):
         """save/load 后元数据应一致"""
@@ -438,7 +447,9 @@ class TestScalerIntegration:
         X = np.random.randn(100, 10) * 5 + 3
         df = pd.DataFrame(X, columns=[f"f{i}" for i in range(10)])
 
-        config = ARDVAEConfig(max_latent_dim=8, max_epochs=15, use_scaler=False, seed=42)
+        config = ARDVAEConfig(
+            max_latent_dim=8, max_epochs=15, use_scaler=False, seed=42
+        )
         ard_vae = ARDVAE(config)
         ard_vae.fit(df, verbose=False)
 
@@ -512,9 +523,7 @@ class TestEdgeCases:
         from src.features.dimensionality_reduction import ARDVAE, ARDVAEConfig
 
         np.random.seed(42)
-        df = pd.DataFrame(
-            np.random.randn(30, 10), columns=[f"f{i}" for i in range(10)]
-        )
+        df = pd.DataFrame(np.random.randn(30, 10), columns=[f"f{i}" for i in range(10)])
 
         config = ARDVAEConfig(max_latent_dim=8, max_epochs=10, batch_size=64, seed=42)
         ard_vae = ARDVAE(config)
@@ -552,7 +561,9 @@ class TestCodexIssuesFixes:
 
         # kl_per_dim 应该是正数数组
         assert len(ard_vae.kl_per_dim) == 16
-        assert (ard_vae.kl_per_dim >= 0).all(), "KL contributions should be non-negative"
+        assert (ard_vae.kl_per_dim >= 0).all(), (
+            "KL contributions should be non-negative"
+        )
 
         # active_dims 应该基于 kl_per_dim 选择
         importance = ard_vae.get_dimension_importance()
@@ -667,8 +678,9 @@ class TestKLNumericalCorrectness:
             # KL_j = 0.5 * (alpha_j * (mu_j^2 + var_j) - log(var_j) - 1 - log(alpha_j))
             kl = 0.5 * (alpha * (mu.pow(2) + var) - log_var - 1 - log_alpha)
 
-            assert torch.allclose(kl, torch.zeros_like(kl), atol=1e-5), \
+            assert torch.allclose(kl, torch.zeros_like(kl), atol=1e-5), (
                 f"KL should be 0 at optimal point, got {kl}"
+            )
 
     def test_kl_analytic_gradients(self):
         """验证 autograd 与闭式解一致"""
@@ -694,12 +706,15 @@ class TestKLNumericalCorrectness:
         # ∂KL/∂log_alpha = 0.5 * (alpha*(mu^2+var) - 1), summed over batch
         expected_grad_log_alpha = 0.5 * (alpha * (mu.pow(2) + var) - 1).sum(dim=0)
 
-        assert torch.allclose(mu.grad, expected_grad_mu, rtol=1e-4), \
+        assert torch.allclose(mu.grad, expected_grad_mu, rtol=1e-4), (
             "Gradient w.r.t. mu mismatch"
-        assert torch.allclose(log_var.grad, expected_grad_log_var, rtol=1e-4), \
+        )
+        assert torch.allclose(log_var.grad, expected_grad_log_var, rtol=1e-4), (
             "Gradient w.r.t. log_var mismatch"
-        assert torch.allclose(log_alpha.grad, expected_grad_log_alpha, rtol=1e-4), \
+        )
+        assert torch.allclose(log_alpha.grad, expected_grad_log_alpha, rtol=1e-4), (
             "Gradient w.r.t. log_alpha mismatch"
+        )
 
     def test_kl_monte_carlo_matches_analytic(self):
         """采样估计 KL 应与解析公式一致，容差基于 CLT 置信区间"""
@@ -737,8 +752,9 @@ class TestKLNumericalCorrectness:
 
         # 使用统计计算的容差而非硬编码
         diff = torch.abs(kl_mc - kl_analytic.squeeze())
-        assert (diff < tol).all(), \
+        assert (diff < tol).all(), (
             f"MC KL {kl_mc} differs from Analytic {kl_analytic.squeeze()} by {diff}, tol={tol}"
+        )
 
     def test_kl_extreme_values_stable(self):
         """mu, log_var, log_alpha 在极值范围内保持数值稳定"""
@@ -757,10 +773,12 @@ class TestKLNumericalCorrectness:
 
             kl = 0.5 * (alpha * (mu.pow(2) + var) - log_var - 1 - log_alpha)
 
-            assert torch.isfinite(kl).all(), \
+            assert torch.isfinite(kl).all(), (
                 f"KL contains non-finite values at range [{low}, {high}]"
-            assert (kl >= -1e-5).all(), \
+            )
+            assert (kl >= -1e-5).all(), (
                 f"KL became negative at range [{low}, {high}]: min={kl.min()}"
+            )
 
     def test_kl_boundary_conditions(self):
         """参数化测试 KL 在各种边界条件下的行为"""
@@ -775,15 +793,30 @@ class TestKLNumericalCorrectness:
             # Case 3: 极大 |mu|
             ("large_mu", torch.full((2, 4), 50.0), torch.zeros(2, 4), torch.zeros(4)),
             # Case 4: 极小 alpha (接近 0)
-            ("tiny_alpha", torch.zeros(2, 4), torch.zeros(2, 4), torch.full((4,), -10.0)),
+            (
+                "tiny_alpha",
+                torch.zeros(2, 4),
+                torch.zeros(2, 4),
+                torch.full((4,), -10.0),
+            ),
             # Case 5: 极大 alpha
-            ("large_alpha", torch.zeros(2, 4), torch.zeros(2, 4), torch.full((4,), 10.0)),
+            (
+                "large_alpha",
+                torch.zeros(2, 4),
+                torch.zeros(2, 4),
+                torch.full((4,), 10.0),
+            ),
             # Case 6: 单维度
             ("single_dim", torch.randn(5, 1), torch.randn(5, 1), torch.randn(1)),
             # Case 7: 大 batch
             ("large_batch", torch.randn(1000, 8), torch.randn(1000, 8), torch.randn(8)),
             # Case 8: 混合极值
-            ("mixed_extreme", torch.tensor([[100.0, -100.0]]), torch.tensor([[5.0, -5.0]]), torch.tensor([5.0, -5.0])),
+            (
+                "mixed_extreme",
+                torch.tensor([[100.0, -100.0]]),
+                torch.tensor([[5.0, -5.0]]),
+                torch.tensor([5.0, -5.0]),
+            ),
         ]
 
         for desc, mu, log_var, log_alpha in boundary_cases:
@@ -793,16 +826,17 @@ class TestKLNumericalCorrectness:
             kl = 0.5 * (alpha * (mu.pow(2) + var) - log_var - 1 - log_alpha)
 
             # 断言 1: KL 始终有限 (无 NaN/inf)
-            assert torch.isfinite(kl).all(), \
+            assert torch.isfinite(kl).all(), (
                 f"[{desc}] KL contains non-finite values: {kl}"
+            )
 
             # 断言 2: KL 非负 (允许微小数值误差)
-            assert (kl >= -1e-5).all(), \
-                f"[{desc}] KL became negative: min={kl.min()}"
+            assert (kl >= -1e-5).all(), f"[{desc}] KL became negative: min={kl.min()}"
 
             # 断言 3: 形状正确
-            assert kl.shape == mu.shape, \
+            assert kl.shape == mu.shape, (
                 f"[{desc}] Shape mismatch: kl={kl.shape}, mu={mu.shape}"
+            )
 
 
 class TestELBOInvariants:
@@ -825,7 +859,9 @@ class TestELBOInvariants:
 
         # 真实边际似然
         marginal_var = 1.0 / alpha + sigma_sq
-        log_p_x = -0.5 * (x.pow(2) / marginal_var + torch.log(torch.tensor(2 * np.pi * marginal_var)))
+        log_p_x = -0.5 * (
+            x.pow(2) / marginal_var + torch.log(torch.tensor(2 * np.pi * marginal_var))
+        )
 
         # 测试多个任意 q(z)
         for _ in range(20):
@@ -836,15 +872,20 @@ class TestELBOInvariants:
             # E_q[log p(x|z)] = -0.5 * (E[(x-z)^2]/sigma^2 + log(2*pi*sigma^2))
             #                 = -0.5 * ((x-q_mu)^2 + q_var)/sigma^2 + log(2*pi*sigma^2))
             expected_sq_error = (x - q_mu).pow(2) + q_var
-            log_likelihood_term = -0.5 * (expected_sq_error / sigma_sq + np.log(2 * np.pi * sigma_sq))
+            log_likelihood_term = -0.5 * (
+                expected_sq_error / sigma_sq + np.log(2 * np.pi * sigma_sq)
+            )
 
             # KL(q || p) where p = N(0, 1/alpha)
-            kl = 0.5 * (alpha * (q_mu.pow(2) + q_var) - torch.log(q_var) - 1 + np.log(alpha))
+            kl = 0.5 * (
+                alpha * (q_mu.pow(2) + q_var) - torch.log(q_var) - 1 + np.log(alpha)
+            )
 
             elbo = log_likelihood_term - kl
 
-            assert elbo <= log_p_x + 1e-5, \
+            assert elbo <= log_p_x + 1e-5, (
                 f"ELBO {elbo.item():.4f} > log p(x) {log_p_x.item():.4f}"
+            )
 
     def test_prior_matching_on_uninformative_data(self):
         """纯噪声数据上，encoder 应收敛到接近先验（多 seed 统计）"""
@@ -868,7 +909,7 @@ class TestELBOInvariants:
                 max_latent_dim=8,
                 max_epochs=100,  # 多训练几轮
                 kl_threshold=0.01,
-                seed=seed
+                seed=seed,
             )
             ard_vae = ARDVAE(config)
             ard_vae.fit(df, verbose=False)
@@ -877,8 +918,9 @@ class TestELBOInvariants:
 
         # 中位数应该 <= max_latent_dim（无信息数据上理论上应更稀疏）
         median_components = np.median(n_components_results)
-        assert median_components <= 8, \
+        assert median_components <= 8, (
             f"Expected median few active dims on noise, got {median_components} (results: {n_components_results})"
+        )
 
 
 class TestARDSparsityMechanism:
@@ -909,10 +951,7 @@ class TestARDSparsityMechanism:
             df = pd.DataFrame(X, columns=[f"f{i}" for i in range(n_features)])
 
             config = ARDVAEConfig(
-                max_latent_dim=16,
-                max_epochs=100,
-                kl_threshold=0.05,
-                seed=seed
+                max_latent_dim=16, max_epochs=100, kl_threshold=0.05, seed=seed
             )
             ard_vae = ARDVAE(config)
             ard_vae.fit(df, verbose=False)
@@ -925,18 +964,22 @@ class TestARDSparsityMechanism:
             inactive_dims = list(all_dims - set(ard_vae.active_dims))
             if len(inactive_dims) > 0:
                 kl_inactive = ard_vae.kl_per_dim[inactive_dims]
-                kl_separation_results.append(np.median(kl_active) > np.median(kl_inactive) * 2)
+                kl_separation_results.append(
+                    np.median(kl_active) > np.median(kl_inactive) * 2
+                )
             else:
                 kl_separation_results.append(True)
 
         # 中位数应接近 k_true
         median_active = np.median(n_active_results)
-        assert k_true - 2 <= median_active <= k_true + 4, \
+        assert k_true - 2 <= median_active <= k_true + 4, (
             f"Expected median ~{k_true} active dims, got {median_active} (results: {n_active_results})"
+        )
 
         # 多数运行应有 KL 分离
-        assert sum(kl_separation_results) >= len(seeds) // 2 + 1, \
+        assert sum(kl_separation_results) >= len(seeds) // 2 + 1, (
             f"KL separation failed in majority: {kl_separation_results}"
+        )
 
     def test_alpha_only_optimization(self):
         """固定 mu, var，只优化 log_alpha，应收敛到理论最优"""
@@ -964,8 +1007,9 @@ class TestARDSparsityMechanism:
         alpha_optimal = 1.0 / (mu.pow(2) + var)
         alpha_learned = torch.exp(log_alpha.detach())
 
-        assert torch.allclose(alpha_learned, alpha_optimal.squeeze(), rtol=0.1), \
+        assert torch.allclose(alpha_learned, alpha_optimal.squeeze(), rtol=0.1), (
             f"Learned alpha {alpha_learned} != optimal {alpha_optimal}"
+        )
 
     def test_inactive_dims_negligible_for_reconstruction(self):
         """将 inactive dims 置零，重建损失变化应远小于置零 active dims"""
@@ -1008,21 +1052,26 @@ class TestARDSparsityMechanism:
             mu_zero_inactive[:, inactive_dims] = 0
             with torch.no_grad():
                 x_recon_zero_inactive = ard_vae.model.decode(mu_zero_inactive)
-            recon_loss_zero_inactive = ((X_tensor - x_recon_zero_inactive) ** 2).mean().item()
+            recon_loss_zero_inactive = (
+                ((X_tensor - x_recon_zero_inactive) ** 2).mean().item()
+            )
 
             # 置零 active dims
             mu_zero_active = mu.clone()
             mu_zero_active[:, active_dims] = 0
             with torch.no_grad():
                 x_recon_zero_active = ard_vae.model.decode(mu_zero_active)
-            recon_loss_zero_active = ((X_tensor - x_recon_zero_active) ** 2).mean().item()
+            recon_loss_zero_active = (
+                ((X_tensor - x_recon_zero_active) ** 2).mean().item()
+            )
 
             # 置零 inactive 的损失增加应远小于置零 active
             delta_inactive = abs(recon_loss_zero_inactive - recon_loss_full)
             delta_active = abs(recon_loss_zero_active - recon_loss_full)
 
-            assert delta_inactive < delta_active, \
+            assert delta_inactive < delta_active, (
                 f"Zeroing inactive ({delta_inactive:.4f}) should hurt less than active ({delta_active:.4f})"
+            )
 
 
 class TestGradientStability:
@@ -1030,7 +1079,10 @@ class TestGradientStability:
 
     def test_reparameterization_gradient_flow(self):
         """验证重参数化的梯度流正确"""
-        from src.features.dimensionality_reduction.ard_vae import ARDVAEConfig, ARDVAENet
+        from src.features.dimensionality_reduction.ard_vae import (
+            ARDVAEConfig,
+            ARDVAENet,
+        )
 
         torch.manual_seed(42)
 
@@ -1050,8 +1102,7 @@ class TestGradientStability:
 
         # ∂z/∂mu = 1
         z.sum().backward(retain_graph=True)
-        assert torch.allclose(mu.grad, torch.ones_like(mu)), \
-            "∂z/∂mu should be 1"
+        assert torch.allclose(mu.grad, torch.ones_like(mu)), "∂z/∂mu should be 1"
 
         # ∂z/∂log_var = 0.5 * std * eps
         mu.grad.zero_()
@@ -1059,21 +1110,22 @@ class TestGradientStability:
         z = mu + torch.exp(0.5 * log_var) * eps
         z.sum().backward()
         expected_grad_log_var = 0.5 * torch.exp(0.5 * log_var) * eps
-        assert torch.allclose(log_var.grad, expected_grad_log_var, rtol=1e-4), \
+        assert torch.allclose(log_var.grad, expected_grad_log_var, rtol=1e-4), (
             "∂z/∂log_var should be 0.5 * std * eps"
+        )
 
     def test_full_loss_finite_diff_gradients(self):
         """小网络上，autograd 与数值梯度一致（使用 float64 提高精度）"""
-        from src.features.dimensionality_reduction.ard_vae import ARDVAEConfig, ARDVAENet
+        from src.features.dimensionality_reduction.ard_vae import (
+            ARDVAEConfig,
+            ARDVAENet,
+        )
 
         seed_everything(42)
 
         # 创建网络并转换为 float64 提高数值精度
         config = ARDVAEConfig(
-            input_dim=5,
-            max_latent_dim=3,
-            encoder_hidden=(8,),
-            decoder_hidden=(8,)
+            input_dim=5, max_latent_dim=3, encoder_hidden=(8,), decoder_hidden=(8,)
         )
         net = ARDVAENet(config)
         net = net.double()  # 转换为 float64
@@ -1116,8 +1168,9 @@ class TestGradientStability:
         fd_grad = (loss_plus - loss_minus) / (2 * eps)
 
         # float64 下应有更高精度
-        assert abs(autograd_grad - fd_grad) < 1e-4, \
+        assert abs(autograd_grad - fd_grad) < 1e-4, (
             f"Autograd {autograd_grad:.8f} != FD {fd_grad:.8f}, diff={abs(autograd_grad - fd_grad):.2e}"
+        )
 
     def test_no_nan_explosion_on_random_init(self):
         """高方差初始化下运行几步，loss/grad 保持有限"""
@@ -1127,14 +1180,13 @@ class TestGradientStability:
 
         # 高方差数据
         df = pd.DataFrame(
-            np.random.randn(50, 15) * 10,
-            columns=[f"f{i}" for i in range(15)]
+            np.random.randn(50, 15) * 10, columns=[f"f{i}" for i in range(15)]
         )
 
         config = ARDVAEConfig(
             max_latent_dim=8,
             max_epochs=5,  # 只运行几步
-            seed=42
+            seed=42,
         )
         ard_vae = ARDVAE(config)
 
@@ -1143,20 +1195,21 @@ class TestGradientStability:
 
         # 检查模型参数有限
         for name, param in ard_vae.model.named_parameters():
-            assert torch.isfinite(param).all(), \
+            assert torch.isfinite(param).all(), (
                 f"Parameter {name} contains non-finite values"
+            )
 
     def test_kl_gradient_separation(self):
         """KL 对 decoder 参数梯度应为 0，recon 对 log_alpha 梯度应为 0"""
-        from src.features.dimensionality_reduction.ard_vae import ARDVAEConfig, ARDVAENet
+        from src.features.dimensionality_reduction.ard_vae import (
+            ARDVAEConfig,
+            ARDVAENet,
+        )
 
         torch.manual_seed(42)
 
         config = ARDVAEConfig(
-            input_dim=10,
-            max_latent_dim=4,
-            encoder_hidden=(16,),
-            decoder_hidden=(16,)
+            input_dim=10, max_latent_dim=4, encoder_hidden=(16,), decoder_hidden=(16,)
         )
         net = ARDVAENet(config)
         net.train()
@@ -1181,16 +1234,18 @@ class TestGradientStability:
 
         for name, param in net.decoder.named_parameters():
             if param.grad is not None:
-                assert torch.allclose(param.grad, torch.zeros_like(param.grad), atol=1e-6), \
-                    f"KL should not affect decoder param {name}"
+                assert torch.allclose(
+                    param.grad, torch.zeros_like(param.grad), atol=1e-6
+                ), f"KL should not affect decoder param {name}"
 
         # Recon backward: log_alpha 梯度应为 0
         net.zero_grad()
         recon_loss.backward()
 
         if net.log_alpha.grad is not None:
-            assert torch.allclose(net.log_alpha.grad, torch.zeros_like(net.log_alpha.grad), atol=1e-6), \
-                "Recon loss should not affect log_alpha"
+            assert torch.allclose(
+                net.log_alpha.grad, torch.zeros_like(net.log_alpha.grad), atol=1e-6
+            ), "Recon loss should not affect log_alpha"
 
 
 class TestRepresentationQuality:
@@ -1219,11 +1274,7 @@ class TestRepresentationQuality:
 
             df = pd.DataFrame(X, columns=[f"f{i}" for i in range(n_features)])
 
-            config = ARDVAEConfig(
-                max_latent_dim=8,
-                max_epochs=100,
-                seed=seed
-            )
+            config = ARDVAEConfig(max_latent_dim=8, max_epochs=100, seed=seed)
             ard_vae = ARDVAE(config)
             ard_vae.fit(df, verbose=False)
 
@@ -1243,8 +1294,9 @@ class TestRepresentationQuality:
 
         # 中位数应 > 0.5
         median_best_corr = np.median(best_corr_per_run)
-        assert median_best_corr > 0.5, \
+        assert median_best_corr > 0.5, (
             f"Median best correlation should > 0.5, got {median_best_corr:.3f} (results: {best_corr_per_run})"
+        )
 
     def test_latent_aligns_with_pca(self):
         """active latent 应与 top-k PCs 有一定对齐"""
@@ -1264,11 +1316,7 @@ class TestRepresentationQuality:
 
         df = pd.DataFrame(X, columns=[f"f{i}" for i in range(n_features)])
 
-        config = ARDVAEConfig(
-            max_latent_dim=12,
-            max_epochs=80,
-            seed=42
-        )
+        config = ARDVAEConfig(max_latent_dim=12, max_epochs=80, seed=42)
         ard_vae = ARDVAE(config)
         ard_vae.fit(df, verbose=False)
 
@@ -1281,6 +1329,7 @@ class TestRepresentationQuality:
         # 计算 latent 与 PCA 的解释方差
         # 用线性回归: X_pca ~ X_latent
         from sklearn.linear_model import LinearRegression
+
         reg = LinearRegression()
         reg.fit(X_latent, X_pca)
         X_pca_pred = reg.predict(X_latent)
@@ -1291,8 +1340,7 @@ class TestRepresentationQuality:
         r2 = 1 - ss_res / ss_tot
 
         # latent 应该能解释大部分 PCA 方差
-        assert r2 > 0.3, \
-            f"Latent should explain PCA variance, R^2 = {r2:.3f}"
+        assert r2 > 0.3, f"Latent should explain PCA variance, R^2 = {r2:.3f}"
 
 
 if __name__ == "__main__":

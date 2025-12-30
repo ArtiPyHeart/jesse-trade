@@ -346,7 +346,14 @@ class ARDVAE:
             if list(X.columns) != self._feature_names:
                 missing = set(self._feature_names) - set(X.columns)
                 extra = set(X.columns) - set(self._feature_names)
-                raise ValueError(f"Column mismatch. Missing: {missing}, Extra: {extra}")
+                if missing or extra:
+                    raise ValueError(
+                        f"Column mismatch. Missing: {missing}, Extra: {extra}"
+                    )
+                raise ValueError(
+                    "Column order mismatch. Ensure input columns follow the training "
+                    "order."
+                )
 
     def _cuda_available(self) -> bool:
         """检测 CUDA 是否可用。"""

@@ -19,6 +19,7 @@ import logging
 import multiprocessing
 import os
 import random
+import shutil
 import time
 import warnings
 from datetime import datetime
@@ -79,6 +80,17 @@ REDUCER_CONFIG = ARDVAEConfig(
     patience=15,
     seed=GLOBAL_SEED,
 )
+
+
+def _reset_pipeline_dir(pipeline_path: Path) -> None:
+    if not pipeline_path.exists():
+        return
+
+    logger.warning(f"发现旧 Pipeline，将覆盖并清理: {pipeline_path}")
+    if pipeline_path.is_dir():
+        shutil.rmtree(pipeline_path)
+    else:
+        pipeline_path.unlink()
 
 
 class ModelTrainTracker:
@@ -516,26 +528,19 @@ if __name__ == "__main__":
     all_features = collect_all_features_from_csv(df_selection)
     logger.info(f"收集到 {len(all_features)} 个唯一特征")
 
-    # 4. 检查 Pipeline 是否已存在
+    # 4. 始终重建 Pipeline（避免加载残留产物）
     pipeline_path = MODEL_DIR / PIPELINE_NAME
-    if pipeline_path.exists():
-        logger.info(f"发现已存在的 Pipeline: {pipeline_path}")
-        logger.info("加载已有 Pipeline...")
-        unified_pipeline = FeaturePipeline.load(str(MODEL_DIR), PIPELINE_NAME)
-        logger.info("使用已有 Pipeline 计算降维后特征...")
-        reduced_features = unified_pipeline.transform(candles)
-    else:
-        # 5. 构建统一 Pipeline（SSM + ARDVAE）
-        logger.info("\n构建统一 FeaturePipeline（SSM + ARDVAE 降维）...")
-        unified_pipeline, reduced_features = build_unified_pipeline(
-            candles, all_features
-        )
-        logger.info(f"降维后特征维度: {reduced_features.shape}")
+    _reset_pipeline_dir(pipeline_path)
 
-        # 6. 保存 Pipeline
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        unified_pipeline.save(str(MODEL_DIR), PIPELINE_NAME)
-        logger.info(f"Pipeline 已保存到: {pipeline_path}")
+    # 5. 构建统一 Pipeline（SSM + ARDVAE）
+    logger.info("\n构建统一 FeaturePipeline（SSM + ARDVAE 降维）...")
+    unified_pipeline, reduced_features = build_unified_pipeline(candles, all_features)
+    logger.info(f"降维后特征维度: {reduced_features.shape}")
+
+    # 6. 保存 Pipeline
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    unified_pipeline.save(str(MODEL_DIR), PIPELINE_NAME)
+    logger.info(f"Pipeline 已保存到: {pipeline_path}")
 
     # 7. 初始化 tracker，获取待完成任务
     tracker = ModelTrainTracker()
