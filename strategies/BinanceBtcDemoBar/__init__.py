@@ -11,7 +11,10 @@ from joblib.parallel import register_parallel_backend
 
 from src.bars.fusion.demo import DemoBar
 from src.features.pipeline import FeaturePipeline
-from .models.config import model_name_to_params, LGBMContainer
+from .models.config import (
+    model_name_to_params,
+    LGBMContainer,
+)
 
 # joblib设置
 # ① 主线程启动时就建好进程池
@@ -27,23 +30,25 @@ POSITION_SIZE_RATIO = 0.95
 
 # FeaturePipeline 设置
 MODEL_DIR = Path(__file__).parent / "models"
-PIPELINE_NAME = "global_pipeline"
 # FeaturePipeline 推理要求足够历史长度以避免 NaN
 MIN_FUSION_BARS = 512
 
-# 模型与特征设置
+# 模型设置
 MODELS = [
     "c_L6_N1",
     "r_L5_N2",
 ]
 
 
-class BinanceBtcDemoBarV2(Strategy):
+class BinanceBtcDemoBar(Strategy):
     def __init__(self):
         super().__init__()
         self.bar_container = DemoBar(max_bars=3500, threshold=1.399)
-        self.feature_pipeline = FeaturePipeline.load(str(MODEL_DIR), PIPELINE_NAME)
-        self._pipeline_warmed = False
+        self._pipelines = {
+            model_name: FeaturePipeline.load(str(MODEL_DIR), model_name)
+            for model_name in MODELS
+        }
+        self._pipelines_warmed = {model_name: False for model_name in MODELS}
 
         self._init_models()
 
@@ -76,44 +81,45 @@ class BinanceBtcDemoBarV2(Strategy):
         return self.bar_container.get_fusion_bars()
 
     ############################ 机器学习模型 ############################
-    def _ensure_pipeline_ready(self) -> bool:
-        if self._pipeline_warmed:
+    def _ensure_pipelines_ready(self) -> bool:
+        if all(self._pipelines_warmed.values()):
             return True
 
         fusion_bars = self.fusion_bar
         if len(fusion_bars) < MIN_FUSION_BARS or len(fusion_bars) < 2:
             return False
 
-        self.feature_pipeline.warmup_ssm(fusion_bars[:-1])
-        self._pipeline_warmed = True
+        warmup_bars = fusion_bars[:-1]
+        for model_name, pipeline in self._pipelines.items():
+            if not self._pipelines_warmed[model_name]:
+                pipeline.warmup_ssm(warmup_bars)
+                self._pipelines_warmed[model_name] = True
         return True
 
-    @property
-    @cached
-    def df_all_features(self) -> pd.DataFrame:
-        assert self._ensure_pipeline_ready(), "Feature pipeline not warmed up."
-        return self.feature_pipeline.inference(self.fusion_bar)
+    def _get_model_features(
+        self, model_name: str, model_container: LGBMContainer
+    ) -> pd.DataFrame:
+        pipeline = self._pipelines[model_name]
+        df_features = pipeline.inference(self.fusion_bar)
+        expected_columns = model_container.model.feature_name()
+        if df_features.shape[1] != len(expected_columns):
+            raise ValueError(
+                f"Feature count mismatch for {model_container.MODEL_NAME}: "
+                f"pipeline={df_features.shape[1]}, model={len(expected_columns)}"
+            )
+        if list(df_features.columns) != expected_columns:
+            return df_features.set_axis(expected_columns, axis=1, copy=False)
+        return df_features
 
     @property
     @cached
     def votes(self) -> list[int]:
+        assert self._ensure_pipelines_ready(), "Feature pipelines not warmed up."
         preds = []
-        df_features = self.df_all_features
         for m in MODELS:
             mc: LGBMContainer = getattr(self, f"model_{m}")
-            expected_columns = mc.model.feature_name()
-            if df_features.shape[1] != len(expected_columns):
-                raise ValueError(
-                    f"Feature count mismatch for {mc.MODEL_NAME}: "
-                    f"pipeline={df_features.shape[1]}, model={len(expected_columns)}"
-                )
-            if list(df_features.columns) != expected_columns:
-                df_features_aligned = df_features.set_axis(
-                    expected_columns, axis=1, copy=False
-                )
-            else:
-                df_features_aligned = df_features
-            preds.append(mc.final_predict(df_features_aligned))
+            df_features = self._get_model_features(m, mc)
+            preds.append(mc.final_predict(df_features))
         return preds
 
     @property
@@ -125,12 +131,12 @@ class BinanceBtcDemoBarV2(Strategy):
         return all([v == -1 for v in self.votes])
 
     def should_long(self) -> bool:
-        if not self.should_trade_bar or not self._ensure_pipeline_ready():
+        if not self.should_trade_bar or not self._ensure_pipelines_ready():
             return False
         return self.model_shows_long
 
     def should_short(self) -> bool:
-        if not self.should_trade_bar or not self._ensure_pipeline_ready():
+        if not self.should_trade_bar or not self._ensure_pipelines_ready():
             return False
         return self.model_shows_short
 
@@ -161,7 +167,7 @@ class BinanceBtcDemoBarV2(Strategy):
         self.stop_loss = qty, entry_price * (1 + self.loss_ratio_with_leverage)
 
     def update_position(self):
-        if not self.should_trade_bar or not self._ensure_pipeline_ready():
+        if not self.should_trade_bar or not self._ensure_pipelines_ready():
             return
         # 更新仓位
         if self.is_long:
