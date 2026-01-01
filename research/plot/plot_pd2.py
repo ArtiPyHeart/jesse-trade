@@ -3,7 +3,6 @@ import numpy as np
 import seaborn as sns
 from scipy import stats
 
-from .plot_kde import _standardize_returns, process_sign_sequence
 
 # 现代化调色板（高对比度，深浅背景均适用）
 COLORS = [
@@ -15,6 +14,49 @@ COLORS = [
     "#00F5D4",  # 青色
     "#F72585",  # 玫红
 ]
+
+
+def process_sign_sequence(values: np.ndarray, compare_shift: int = -1) -> np.ndarray:
+    """
+    根据相邻值符号关系对序列做正负翻转。
+
+    compare_shift = -1: 与下一个值比较（shift(-1)）
+    compare_shift = 1: 与上一个值比较（shift(1)）
+    """
+    values = np.asarray(values)
+    assert values.ndim == 1, "values必须为一维数组"
+    assert compare_shift in (-1, 1), "compare_shift必须为-1或1"
+
+    processed = values.copy()
+    if values.size < 2:
+        return processed
+
+    if compare_shift == -1:
+        prod = values[:-1] * values[1:]
+        same_sign = prod > 0
+        diff_sign = prod < 0
+        idx_same = np.where(same_sign)[0]
+        idx_diff = np.where(diff_sign)[0]
+    else:
+        prod = values[1:] * values[:-1]
+        same_sign = prod > 0
+        diff_sign = prod < 0
+        idx_same = np.where(same_sign)[0] + 1
+        idx_diff = np.where(diff_sign)[0] + 1
+
+    processed[idx_same] = np.abs(values[idx_same])
+    processed[idx_diff] = -np.abs(values[idx_diff])
+    return processed
+
+
+def _standardize_returns(
+    returns: np.ndarray, apply_sign_sequence: bool, sign_shift: int
+) -> np.ndarray:
+    if apply_sign_sequence:
+        returns = process_sign_sequence(returns, compare_shift=sign_shift)
+    std = returns.std()
+    assert std > 0, "returns标准差必须大于0"
+    return (returns - returns.mean()) / std
 
 
 def plot_pd2(
@@ -103,7 +145,9 @@ def plot_pd2(
     # 坐标轴设置
     ax.set_xlim(-5, 5)
     ax.set_xticks(range(-5, 6))
-    ax.set_xlabel("Standardized Returns", fontsize=13, color=text_color, fontweight="medium")
+    ax.set_xlabel(
+        "Standardized Returns", fontsize=13, color=text_color, fontweight="medium"
+    )
     ax.set_ylabel("Density", fontsize=13, color=text_color, fontweight="medium")
     ax.tick_params(colors=text_color, labelsize=11)
 
