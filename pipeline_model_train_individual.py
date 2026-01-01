@@ -660,7 +660,6 @@ if __name__ == "__main__":
         pending_tasks, 1
     ):
         model_name = get_model_name(lag, pred_next, label_type)
-        model_path = MODEL_DIR / f"model_{model_name}.txt"
 
         # 显示进度
         overall_progress = completed_tasks + task_idx

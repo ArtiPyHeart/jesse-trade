@@ -12,12 +12,10 @@
 注意: 这些测试需要连接数据库和加载模型，可能需要较长时间。
 """
 
-import json
 import sys
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 
 # 添加项目根目录到 Python 路径
@@ -26,12 +24,21 @@ sys.path.insert(0, str(ROOT_DIR))
 
 # 测试用模型列表 (来自 strategies/BinanceBtcDemoBarV2/models/config.py)
 TEST_MODELS = ["c_L6_N1", "r_L5_N2"]
+PIPELINE_DIR = ROOT_DIR / "strategies/BinanceBtcDemoBarV2/models"
+PIPELINE_NAME = "global_pipeline"
+
+
+@pytest.fixture(scope="module")
+def global_pipeline():
+    from src.features.pipeline import FeaturePipeline
+
+    return FeaturePipeline.load(str(PIPELINE_DIR), PIPELINE_NAME)
 
 
 class TestEndToEndSmallData:
     """端到端小数据测试"""
 
-    def test_complete_pipeline_no_error(self, jesse_candles):
+    def test_complete_pipeline_no_error(self, jesse_candles, global_pipeline):
         """测试完整流程无报错"""
         warmup_candles, trading_candles = jesse_candles
 
@@ -49,17 +56,6 @@ class TestEndToEndSmallData:
             BacktestAnalyzer,
         )
 
-        # 加载特征信息
-        feature_info_path = (
-            ROOT_DIR
-            / "strategies"
-            / "BinanceBtcDemoBarV2"
-            / "models"
-            / "feature_info.json"
-        )
-        with open(feature_info_path) as f:
-            feature_info = json.load(f)
-
         # Phase 1: Fusion Bars
         fusion_bars, warmup_fusion_bars_len = generate_all_fusion_bars_with_split(
             warmup, trading, max_bars=-1
@@ -71,15 +67,15 @@ class TestEndToEndSmallData:
         df_features = compute_features_vectorized(
             fusion_bars,
             warmup_fusion_bars_len,
-            feature_info,
-            TEST_MODELS,
+            global_pipeline,
+            pipeline_label=PIPELINE_NAME,
         )
         trading_bars_count = len(fusion_bars) - warmup_fusion_bars_len
         assert len(df_features) == trading_bars_count
         assert not df_features.empty
 
         # Phase 3: Predictions
-        predictions = predict_all_models(df_features, TEST_MODELS, feature_info)
+        predictions = predict_all_models(df_features, TEST_MODELS)
         for model in TEST_MODELS:
             assert model in predictions
             assert len(predictions[model]) == len(df_features)
@@ -166,7 +162,7 @@ class TestEndToEndSmallData:
 class TestDataFlow:
     """测试数据流完整性"""
 
-    def test_fusion_bars_to_features_length(self, jesse_candles):
+    def test_fusion_bars_to_features_length(self, jesse_candles, global_pipeline):
         """测试 fusion bars 到 features 的长度对应"""
         warmup_candles, trading_candles = jesse_candles
 
@@ -179,16 +175,6 @@ class TestDataFlow:
             compute_features_vectorized,
         )
 
-        feature_info_path = (
-            ROOT_DIR
-            / "strategies"
-            / "BinanceBtcDemoBarV2"
-            / "models"
-            / "feature_info.json"
-        )
-        with open(feature_info_path) as f:
-            feature_info = json.load(f)
-
         fusion_bars, warmup_len = generate_all_fusion_bars_with_split(
             warmup, trading, max_bars=-1
         )
@@ -197,8 +183,8 @@ class TestDataFlow:
         df_features = compute_features_vectorized(
             fusion_bars,
             warmup_len,
-            feature_info,
-            TEST_MODELS,
+            global_pipeline,
+            pipeline_label=PIPELINE_NAME,
         )
 
         # 特征数量 == trading fusion bars 数量
@@ -206,7 +192,7 @@ class TestDataFlow:
         print(f"\n[DataFlow] Trading bars: {trading_bars_count}")
         print(f"[DataFlow] Features rows: {len(df_features)}")
 
-    def test_predictions_to_signals_length(self, jesse_candles):
+    def test_predictions_to_signals_length(self, jesse_candles, global_pipeline):
         """测试预测到信号的长度对应"""
         warmup_candles, trading_candles = jesse_candles
 
@@ -221,16 +207,6 @@ class TestDataFlow:
             aggregate_votes,
         )
 
-        feature_info_path = (
-            ROOT_DIR
-            / "strategies"
-            / "BinanceBtcDemoBarV2"
-            / "models"
-            / "feature_info.json"
-        )
-        with open(feature_info_path) as f:
-            feature_info = json.load(f)
-
         fusion_bars, warmup_len = generate_all_fusion_bars_with_split(
             warmup, trading, max_bars=-1
         )
@@ -238,11 +214,11 @@ class TestDataFlow:
         df_features = compute_features_vectorized(
             fusion_bars,
             warmup_len,
-            feature_info,
-            TEST_MODELS,
+            global_pipeline,
+            pipeline_label=PIPELINE_NAME,
         )
 
-        predictions = predict_all_models(df_features, TEST_MODELS, feature_info)
+        predictions = predict_all_models(df_features, TEST_MODELS)
         signals = aggregate_votes(predictions, TEST_MODELS)
 
         # signals 长度 == features 长度
@@ -343,7 +319,7 @@ class TestResultValidity:
 class TestSignalDistribution:
     """测试信号分布"""
 
-    def test_signals_have_variety(self, jesse_candles):
+    def test_signals_have_variety(self, jesse_candles, global_pipeline):
         """测试信号有多样性 (不全是同一个方向)"""
         warmup_candles, trading_candles = jesse_candles
 
@@ -358,16 +334,6 @@ class TestSignalDistribution:
             aggregate_votes,
         )
 
-        feature_info_path = (
-            ROOT_DIR
-            / "strategies"
-            / "BinanceBtcDemoBarV2"
-            / "models"
-            / "feature_info.json"
-        )
-        with open(feature_info_path) as f:
-            feature_info = json.load(f)
-
         fusion_bars, warmup_len = generate_all_fusion_bars_with_split(
             warmup, trading, max_bars=-1
         )
@@ -375,11 +341,11 @@ class TestSignalDistribution:
         df_features = compute_features_vectorized(
             fusion_bars,
             warmup_len,
-            feature_info,
-            TEST_MODELS,
+            global_pipeline,
+            pipeline_label=PIPELINE_NAME,
         )
 
-        predictions = predict_all_models(df_features, TEST_MODELS, feature_info)
+        predictions = predict_all_models(df_features, TEST_MODELS)
         signals = aggregate_votes(predictions, TEST_MODELS)
 
         long_count = signals.count("long")

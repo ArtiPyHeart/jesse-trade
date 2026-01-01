@@ -10,12 +10,29 @@ Phase 3: 模型预测测试
     pytest tests/test_backtest_vectorized/test_phase3_predictions.py -v
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 
 # 初始化 Jesse 数据库连接 (必须在导入其他模块之前)
 from jesse.services import db  # noqa: F401
+
+PIPELINE_DIR = (
+    Path(__file__).parent.parent.parent / "strategies/BinanceBtcDemoBarV2/models"
+)
+PIPELINE_NAME = "global_pipeline"
+
+
+def _align_features_for_model(
+    df_features: pd.DataFrame,
+    model_container,
+) -> pd.DataFrame:
+    from backtest_no_jesse import _align_lgbm_feature_columns
+
+    expected_columns = model_container.model.feature_name()
+    return _align_lgbm_feature_columns(df_features, expected_columns)
 
 
 # ==================== Fixtures ====================
@@ -25,14 +42,10 @@ def model_features_fixture(jesse_candles):
     准备完整的特征 DataFrame 用于模型预测测试
 
     Returns:
-        tuple: (df_features, model_names, feature_info)
+        tuple: (df_features, model_names)
     """
-    import json
-    from pathlib import Path
-
     from src.bars.fusion.demo import DemoBar
-    from src.features.simple_feature_calculator import SimpleFeatureCalculator
-    from strategies.BinanceBtcDemoBarV2.models.config import SSMContainer
+    from src.features.pipeline import FeaturePipeline
 
     warmup_candles, trading_candles = jesse_candles
 
@@ -46,77 +59,18 @@ def model_features_fixture(jesse_candles):
     warmup_last_ts = warmup_candles[-1, 0]
     warmup_len = np.searchsorted(fusion_bars[:, 0], warmup_last_ts, side="right")
 
-    # 加载特征配置
-    feature_info_path = (
-        Path(__file__).parent.parent.parent
-        / "strategies/BinanceBtcDemoBarV2/models/feature_info.json"
-    )
-    with open(feature_info_path) as f:
-        feature_info = json.load(f)
+    pipeline = FeaturePipeline.load(str(PIPELINE_DIR), PIPELINE_NAME)
+    df_features = pipeline.transform(fusion_bars)
+    df_features = df_features.iloc[warmup_len:].reset_index(drop=True)
 
-    fracdiff_features = feature_info["fracdiff"]
+    assert not df_features.isna().any().any()
 
-    # 获取模型需要的所有原始特征（不含 SSM 前缀的特征）
     model_names = ["c_L6_N1", "r_L5_N2"]
-    all_model_features = set()
-    for model_name in model_names:
-        all_model_features.update(feature_info[model_name])
-
-    # 过滤掉 SSM 特征（deep_ssm_*, lg_ssm_*），只保留原始特征
-    raw_features_needed = [
-        f for f in all_model_features
-        if not f.startswith("deep_ssm_") and not f.startswith("lg_ssm_")
-    ]
-
-    # 计算特征
-    fc = SimpleFeatureCalculator()
-    fc.load(fusion_bars, sequential=True)
-
-    df_fracdiff_full = pd.DataFrame.from_dict(fc.get(fracdiff_features))
-    df_raw_full = pd.DataFrame.from_dict(fc.get(raw_features_needed))
-
-    # 找到第一个无 NaN 的行 (fracdiff 特征预热期)
-    first_valid_idx = df_fracdiff_full.dropna().index[0]
-
-    # 从第一个有效行开始切片
-    df_fracdiff = df_fracdiff_full.iloc[first_valid_idx:].reset_index(drop=True)
-    df_raw = df_raw_full.iloc[first_valid_idx:].reset_index(drop=True)
-
-    # 调整 warmup_len
-    adjusted_warmup_len = max(0, warmup_len - first_valid_idx)
-
-    # SSM warmup 和 trading 处理
-    deep_ssm = SSMContainer("deep_ssm")
-    lg_ssm = SSMContainer("lg_ssm")
-    deep_ssm_results = []
-    lg_ssm_results = []
-
-    # Warmup (使用部分数据加速)
-    warmup_count = min(adjusted_warmup_len, 100)
-    for i in range(warmup_count):
-        deep_ssm.inference(df_fracdiff.iloc[[i]])
-        lg_ssm.inference(df_fracdiff.iloc[[i]])
-
-    # Trading (使用更多数据确保有足够的非 NaN 行)
-    trading_count = min(len(df_fracdiff) - warmup_count, 200)
-    for i in range(warmup_count, warmup_count + trading_count):
-        deep_ssm_results.append(deep_ssm.inference(df_fracdiff.iloc[[i]]))
-        lg_ssm_results.append(lg_ssm.inference(df_fracdiff.iloc[[i]]))
-
-    # 合并 SSM 结果
-    df_deep_ssm = pd.concat(deep_ssm_results, axis=0).reset_index(drop=True)
-    df_lg_ssm = pd.concat(lg_ssm_results, axis=0).reset_index(drop=True)
-    df_raw_trading = df_raw.iloc[
-        warmup_count : warmup_count + trading_count
-    ].reset_index(drop=True)
-
-    # 拼接所有特征
-    df_features = pd.concat([df_deep_ssm, df_lg_ssm, df_raw_trading], axis=1)
 
     print(f"\n[fixture] Features shape: {df_features.shape}")
-    print(f"[fixture] Trading count: {trading_count}")
+    print(f"[fixture] Trading count: {len(df_features)}")
 
-    return df_features, model_names, feature_info
+    return df_features, model_names
 
 
 # ==================== Test 3.1: LGBMContainer 加载与预测 ====================
@@ -157,7 +111,7 @@ class TestLGBMContainerLoading:
             model_name_to_params,
         )
 
-        df_features, model_names, feature_info = model_features_fixture
+        df_features, model_names = model_features_fixture
 
         for model_name in model_names:
             model = LGBMContainer(*model_name_to_params(model_name))
@@ -166,14 +120,12 @@ class TestLGBMContainerLoading:
             # 清除 filters 以获取原始 predict_proba
             model.clear_filters()
 
-            # 获取模型需要的特征列 (只取 df_features 中存在的列)
-            model_feat_names = feature_info[model.MODEL_NAME]
-            available_feats = [f for f in model_feat_names if f in df_features.columns]
+            df_features_aligned = _align_features_for_model(df_features, model)
 
             # 测试几行数据 (从后面的行开始，避免 NaN)
             valid_probs = []
             for i in range(len(df_features) - 1, max(0, len(df_features) - 50), -1):
-                feat_row = df_features.iloc[[i]][available_feats]
+                feat_row = df_features_aligned.iloc[[i]]
 
                 # 如果特征行有 NaN，跳过
                 if feat_row.isna().any().any():
@@ -205,15 +157,17 @@ class TestLGBMContainerLoading:
             model_name_to_params,
         )
 
-        df_features, model_names, feature_info = model_features_fixture
+        df_features, model_names = model_features_fixture
 
         for model_name in model_names:
             model = LGBMContainer(*model_name_to_params(model_name))
             model.is_livetrading = False
 
+            df_features_aligned = _align_features_for_model(df_features, model)
+
             predictions = []
             for i in range(min(10, len(df_features))):
-                feat_row = df_features.iloc[[i]][feature_info[model.MODEL_NAME]]
+                feat_row = df_features_aligned.iloc[[i]]
                 pred = model.final_predict(feat_row)
                 predictions.append(pred)
 
@@ -356,15 +310,17 @@ class TestBatchPredictions:
             model_name_to_params,
         )
 
-        df_features, model_names, feature_info = model_features_fixture
+        df_features, model_names = model_features_fixture
 
         for model_name in model_names:
             model = LGBMContainer(*model_name_to_params(model_name))
             model.is_livetrading = False
 
+            df_features_aligned = _align_features_for_model(df_features, model)
+
             predictions = []
             for i in range(len(df_features)):
-                feat_row = df_features.iloc[[i]][feature_info[model.MODEL_NAME]]
+                feat_row = df_features_aligned.iloc[[i]]
                 pred = model.final_predict(feat_row)
                 predictions.append(pred)
 
@@ -381,15 +337,17 @@ class TestBatchPredictions:
             model_name_to_params,
         )
 
-        df_features, model_names, feature_info = model_features_fixture
+        df_features, model_names = model_features_fixture
 
         for model_name in model_names:
             model = LGBMContainer(*model_name_to_params(model_name))
             model.is_livetrading = False
 
+            df_features_aligned = _align_features_for_model(df_features, model)
+
             predictions = []
             for i in range(min(20, len(df_features))):
-                feat_row = df_features.iloc[[i]][feature_info[model.MODEL_NAME]]
+                feat_row = df_features_aligned.iloc[[i]]
                 pred = model.final_predict(feat_row)
                 predictions.append(pred)
 
@@ -405,7 +363,7 @@ class TestBatchPredictions:
             model_name_to_params,
         )
 
-        df_features, model_names, feature_info = model_features_fixture
+        df_features, model_names = model_features_fixture
 
         for model_name in model_names:
             model = LGBMContainer(*model_name_to_params(model_name))
@@ -414,9 +372,11 @@ class TestBatchPredictions:
             # 清除 filters 以获取原始预测
             model.clear_filters()
 
+            df_features_aligned = _align_features_for_model(df_features, model)
+
             predictions = []
             for i in range(len(df_features)):
-                feat_row = df_features.iloc[[i]][feature_info[model.MODEL_NAME]]
+                feat_row = df_features_aligned.iloc[[i]]
                 pred = model.final_predict(feat_row)
                 predictions.append(pred)
 
@@ -424,8 +384,7 @@ class TestBatchPredictions:
             unique_preds = set(predictions)
             # 至少应该有 2 种不同的预测值（可能没有 0 因为没有 filter）
             assert len(unique_preds) >= 2, (
-                f"{model_name} predictions should have variety, "
-                f"got only {unique_preds}"
+                f"{model_name} predictions should have variety, got only {unique_preds}"
             )
 
     def test_model_name_to_params(self):

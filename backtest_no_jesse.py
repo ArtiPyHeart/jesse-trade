@@ -14,8 +14,9 @@
 
 import json
 import time
+from importlib import import_module
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,14 +26,41 @@ from tqdm.auto import tqdm
 
 from src.bars.fusion.demo import DemoBar
 from src.features.pipeline import FeaturePipeline
-from strategies.BinanceBtcDemoBarV2.models.config import (
-    model_name_to_params,
-    LGBMContainer,
-)
 
 # ==================== 配置常量 ====================
 STOP_LOSS_RATIO_NO_LEVERAGE = 0.05
 POSITION_SIZE_RATIO = 0.95
+
+
+def _resolve_model_config_module(
+    model_dir: Path, model_config_module: Optional[str]
+) -> str:
+    if model_config_module is not None:
+        return model_config_module
+
+    if model_dir.name != "models":
+        raise ValueError(
+            "无法从 model_dir 推断策略路径，请显式传入 model_config_module。"
+        )
+
+    strategy_name = model_dir.parent.name
+    if not strategy_name:
+        raise ValueError(
+            "model_dir 缺少策略目录名，无法定位 models.config，请显式传入 model_config_module。"
+        )
+
+    return f"strategies.{strategy_name}.models.config"
+
+
+def _load_model_config(
+    module_path: str,
+) -> tuple[Callable[[str], tuple[str, int, int, float]], type]:
+    module = import_module(module_path)
+    if not hasattr(module, "model_name_to_params"):
+        raise AttributeError(f"{module_path} 缺少 model_name_to_params")
+    if not hasattr(module, "LGBMContainer"):
+        raise AttributeError(f"{module_path} 缺少 LGBMContainer")
+    return module.model_name_to_params, module.LGBMContainer
 
 
 # ==================== 数据类 ====================
@@ -1028,19 +1056,26 @@ def compute_features_vectorized(
     return df_features_full
 
 
-def _predict_single_model(model_name: str, df_features: pd.DataFrame) -> list[int]:
+def _predict_single_model(
+    model_name: str,
+    df_features: pd.DataFrame,
+    model_name_to_params: Callable[[str], tuple[str, int, int, float]],
+    lgbm_container_cls: type,
+) -> list[int]:
     """
     单模型预测（逐行 + filters）
 
     Args:
         model_name: 模型名称
         df_features: 完整特征 DataFrame
+        model_name_to_params: 模型参数解析函数
+        lgbm_container_cls: 模型容器类
 
     Returns:
         预测结果列表
     """
     # 初始化模型容器
-    model_container = LGBMContainer(*model_name_to_params(model_name))
+    model_container = lgbm_container_cls(*model_name_to_params(model_name))
     model_container.is_livetrading = False  # 使用回测模型
 
     expected_columns = model_container.model.feature_name()
@@ -1066,6 +1101,8 @@ def _predict_single_model(model_name: str, df_features: pd.DataFrame) -> list[in
 def predict_all_models(
     df_features: pd.DataFrame,
     models: list[str],
+    model_name_to_params: Callable[[str], tuple[str, int, int, float]],
+    lgbm_container_cls: type,
 ) -> dict[str, list[int]]:
     """
     所有模型的预测（逐行 + 进度条）
@@ -1073,6 +1110,8 @@ def predict_all_models(
     Args:
         df_features: 完整特征 DataFrame
         models: 模型列表
+        model_name_to_params: 模型参数解析函数
+        lgbm_container_cls: 模型容器类
 
     Returns:
         predictions: {model_name: [pred1, pred2, ...]}
@@ -1086,7 +1125,12 @@ def predict_all_models(
     for model_name in models:
         print(f"\n预测模型: {model_name}")
 
-        model_preds = _predict_single_model(model_name, df_features)
+        model_preds = _predict_single_model(
+            model_name,
+            df_features,
+            model_name_to_params,
+            lgbm_container_cls,
+        )
         predictions[model_name] = model_preds
         print(f"  完成！预测结果: {len(model_preds)} 个")
 
@@ -1101,6 +1145,8 @@ def predict_all_models_with_individual_pipelines(
     warmup_fusion_bars_len: int,
     models: list[str],
     model_dir: Path,
+    model_name_to_params: Callable[[str], tuple[str, int, int, float]],
+    lgbm_container_cls: type,
 ) -> dict[str, list[int]]:
     """
     每个模型使用独立 FeaturePipeline 的预测流程
@@ -1110,6 +1156,8 @@ def predict_all_models_with_individual_pipelines(
         warmup_fusion_bars_len: warmup 对应的 fusion bar 数量
         models: 模型列表
         model_dir: 模型与 Pipeline 存放目录
+        model_name_to_params: 模型参数解析函数
+        lgbm_container_cls: 模型容器类
 
     Returns:
         predictions: {model_name: [pred1, pred2, ...]}
@@ -1132,7 +1180,12 @@ def predict_all_models_with_individual_pipelines(
             pipeline_label=model_name,
         )
 
-        model_preds = _predict_single_model(model_name, df_features)
+        model_preds = _predict_single_model(
+            model_name,
+            df_features,
+            model_name_to_params,
+            lgbm_container_cls,
+        )
         if expected_len is None:
             expected_len = len(model_preds)
         elif len(model_preds) != expected_len:
@@ -1258,6 +1311,7 @@ def run_vectorized_backtest(
     models: list[str],
     model_dir: Path,
     pipeline_name: Optional[str],
+    model_config_module: Optional[str] = None,
     starting_balance: float = 10000,
     fee_rate: float = 0.0005,
     leverage: int = 3,
@@ -1272,6 +1326,7 @@ def run_vectorized_backtest(
         models: 模型列表
         model_dir: 模型与 Pipeline 存放目录
         pipeline_name: 全局 Pipeline 名称；None 表示每模型独立 Pipeline
+        model_config_module: 模型配置模块路径（可选，默认从 model_dir 推断）
         starting_balance: 初始资金
         fee_rate: 手续费率
         leverage: 杠杆倍数
@@ -1290,11 +1345,14 @@ def run_vectorized_backtest(
     print(f"Pipeline 模式: {'global' if pipeline_name is not None else 'per-model'}")
     if pipeline_name is not None:
         print(f"Pipeline 名称: {pipeline_name}")
+    resolved_module = _resolve_model_config_module(model_dir, model_config_module)
+    print(f"模型配置: {resolved_module}")
     print(f"Warmup K线数: {len(warmup_candles):,}")
     print(f"Trading K线数: {len(trading_candles):,}")
     print("=" * 60 + "\n")
 
     total_start = time.perf_counter()
+    model_name_to_params, lgbm_container_cls = _load_model_config(resolved_module)
 
     # ========== Phase 1: 生成 Fusion Bars ==========
     fusion_bars, warmup_fusion_bars_len = generate_all_fusion_bars_with_split(
@@ -1308,6 +1366,8 @@ def run_vectorized_backtest(
             warmup_fusion_bars_len,
             models,
             model_dir,
+            model_name_to_params,
+            lgbm_container_cls,
         )
     else:
         pipeline = FeaturePipeline.load(str(model_dir), pipeline_name)
@@ -1317,7 +1377,12 @@ def run_vectorized_backtest(
             pipeline,
             pipeline_label=pipeline_name,
         )
-        predictions = predict_all_models(df_features, models)
+        predictions = predict_all_models(
+            df_features,
+            models,
+            model_name_to_params,
+            lgbm_container_cls,
+        )
 
     # ========== Phase 4: 汇总投票 ==========
     signals = aggregate_votes(predictions, models)
@@ -1486,16 +1551,15 @@ if __name__ == "__main__":
     # 测试模式：启用后只处理前 N 个 fusion bars
     TEST_MODE = False
     TEST_FUSION_BARS = 1000
-    MODEL_DIR = Path("./strategies/BinanceBtcDemoBarV2/models")
-    PIPELINE_NAME: Optional[str] = "global_pipeline"  # None => 每模型独立 Pipeline
+    STRATEGY = "BinanceBtcDemoBar"
+    PIPELINE_NAME: Optional[str] = None  # None => 每模型独立 Pipeline
 
     MODELS = [
-        "c_L5_N1",
-        "c_L5_N2",
+        "c_L4_N1",
+        "c_L4_N2",
     ]
 
-    STRATEGY = "BinanceBtcDemoBarV2"
-
+    MODEL_DIR = Path(f"./strategies/{STRATEGY}/models")
     # ========== 获取数据 ==========
     print("正在加载K线数据...")
     warmup_candles, trading_candles = research.get_candles(
@@ -1503,8 +1567,8 @@ if __name__ == "__main__":
         "BTC-USDT",
         "1m",
         helpers.date_to_timestamp("2025-06-01"),
-        helpers.date_to_timestamp("2025-11-25"),
-        warmup_candles_num=50000,
+        helpers.date_to_timestamp("2025-12-25"),
+        warmup_candles_num=43200,
         caching=False,
         is_for_jesse=False,
     )
