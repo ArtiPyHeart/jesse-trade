@@ -193,6 +193,7 @@ class FeaturePipeline:
         self._dimension_reducer = dimension_reducer
 
         self._is_fitted = False
+        self._sync_verbose()
 
     @property
     def is_fitted(self) -> bool:
@@ -208,6 +209,21 @@ class FeaturePipeline:
     def dimension_reducer(self) -> Optional[DimensionReducerProtocol]:
         """降维器"""
         return self._dimension_reducer
+
+    @property
+    def verbose(self) -> bool:
+        """当前 verbose 配置"""
+        return self.config.verbose
+
+    @verbose.setter
+    def verbose(self, value: bool) -> None:
+        """统一更新 FeaturePipeline 的 verbose 设置"""
+        self.config.verbose = bool(value)
+        self._sync_verbose()
+
+    def _sync_verbose(self) -> None:
+        if self._raw_calculator is not None:
+            self._raw_calculator.verbose = self.config.verbose
 
     # ========== 输入验证 ==========
 
@@ -825,6 +841,7 @@ class FeaturePipeline:
             >>> model_features = model_pipeline.fit_transform(candles)
         """
         self._raw_calculator = source._raw_calculator
+        self._sync_verbose()
         return self
 
     def copy_ssm_from(

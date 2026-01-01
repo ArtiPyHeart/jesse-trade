@@ -49,6 +49,8 @@ class BinanceBtcDemoBar(Strategy):
             for model_name in MODELS
         }
         self._pipelines_warmed = {model_name: False for model_name in MODELS}
+        for pipeline in self._pipelines.values():
+            pipeline.verbose = False
 
         self._init_models()
 

@@ -43,6 +43,7 @@ class BinanceBtcDemoBarV2(Strategy):
         super().__init__()
         self.bar_container = DemoBar(max_bars=3500, threshold=1.399)
         self.feature_pipeline = FeaturePipeline.load(str(MODEL_DIR), PIPELINE_NAME)
+        self.feature_pipeline.verbose = False
         self._pipeline_warmed = False
 
         self._init_models()
