@@ -16,6 +16,14 @@ os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 import torch
 
 
+def _is_main_process() -> bool:
+    """检测是否为主进程（非多进程子进程）"""
+    import multiprocessing
+
+    current = multiprocessing.current_process()
+    return current.name == "MainProcess"
+
+
 def _configure_pytorch():
     """Configure PyTorch defaults while allowing explicit GPU usage."""
     # Force CPU device globally
@@ -28,11 +36,14 @@ def _configure_pytorch():
     # Note: torch.set_default_tensor_type is deprecated in PyTorch 2.1+
     # The set_default_device('cpu') above already ensures CPU tensors
 
-    # Log configuration
-    device = (
-        torch.get_default_device() if hasattr(torch, "get_default_device") else "cpu"
-    )
-    print(f"PyTorch configured: device={device}, dtype={torch.get_default_dtype()}")
+    # Log configuration (only in main process, can be silenced via env var)
+    if _is_main_process() and not os.environ.get("PYTORCH_CONFIG_QUIET"):
+        device = (
+            torch.get_default_device()
+            if hasattr(torch, "get_default_device")
+            else "cpu"
+        )
+        print(f"PyTorch configured: device={device}, dtype={torch.get_default_dtype()}")
 
 
 def get_device() -> str:
