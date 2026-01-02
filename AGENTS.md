@@ -55,7 +55,7 @@
 ## 编码规范
 - 内部函数使用 `_` 前缀
 - 数据操作使用 NumPy/Pandas
-- 禁止使用 `*args` 和 `**kwargs`, 使用显式参数或配置对象
+- 除非明确说明，否则不要使用 `*args` 和 `**kwargs`, 优先使用显式参数或配置对象
 - 配置对象优先使用 `pydantic.BaseModel`, 仅性能敏感内部结构 (如高频循环) 用 `dataclass`
 - Fail Fast: 用 `assert` 拦截非法输入, 避免宽泛 `try/except`
 - 异常仅用于可恢复场景, 特征/指标失败应直接抛出

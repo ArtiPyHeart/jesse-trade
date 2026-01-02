@@ -48,7 +48,7 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 
 ## 编码规范
 - 内部函数用`_`前缀，数据操作用NumPy/Pandas
-- **禁止 `*args`/`**kwargs`**：使用显式参数或配置对象
+- **除非明确说明，否则不要使用 `*args`/`**kwargs`**：优先使用显式参数或配置对象
 - **配置对象用Pydantic**：`class Config(BaseModel): field: int = Field(default=1, ge=0)`，仅高频循环用`dataclass`
 - **Fail Fast**：用`assert`拦截非法输入，异常立即抛出，仅在可恢复场景（如网络重试）捕获异常
 - 简单测试用`if __name__ == "__main__"`，复杂测试放`tests/`
