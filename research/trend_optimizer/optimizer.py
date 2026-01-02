@@ -15,6 +15,28 @@ from .evaluator import MultiWindowEvaluator, TrialResult, extract_top_n
 
 # 约束违反时的惩罚值（direction=maximize 时使用负值）
 PENALTY_SCORE = -1e6
+EXPLORATION_STARTUP_RATIO = 0.8
+MIN_STARTUP_TRIALS = 50
+MIN_EI_CANDIDATES = 64
+MAX_EI_CANDIDATES = 256
+
+
+def _exploration_gamma(trial_count: int) -> int:
+    return min(int(trial_count**0.5), 50)
+
+
+def _resolve_startup_trials(n_trials: int, n_startup_trials: int | None) -> int:
+    if n_startup_trials is None:
+        startup_trials = max(
+            MIN_STARTUP_TRIALS, int(n_trials * EXPLORATION_STARTUP_RATIO)
+        )
+    else:
+        startup_trials = n_startup_trials
+    return min(max(1, startup_trials), n_trials)
+
+
+def _resolve_ei_candidates(n_trials: int) -> int:
+    return max(MIN_EI_CANDIDATES, min(MAX_EI_CANDIDATES, n_trials * 2))
 
 
 class TrendOptimizer:
@@ -75,7 +97,7 @@ class TrendOptimizer:
     def optimize(
         self,
         n_trials: int = 100,
-        n_startup_trials: int = 20,
+        n_startup_trials: int | None = None,
         show_progress: bool = True,
         **param_ranges: tuple[float, float] | tuple[float, float, str],
     ) -> list[TrialResult]:
@@ -83,7 +105,7 @@ class TrendOptimizer:
 
         Args:
             n_trials: 试验次数
-            n_startup_trials: 随机采样次数（TPE 预热）
+            n_startup_trials: 随机采样次数（None 表示按探索比例自动计算）
             show_progress: 显示进度条
             **param_ranges: 参数搜索范围
                 - float 参数: param=(min, max) 或 param=(min, max, "log")
@@ -95,13 +117,32 @@ class TrendOptimizer:
         Raises:
             ValueError: 如果参数名不在 FusionBar 构造函数中
         """
+        assert n_trials >= 1, f"n_trials must be >= 1, got {n_trials}"
+        if n_startup_trials is not None:
+            assert n_startup_trials >= 1, (
+                f"n_startup_trials must be >= 1, got {n_startup_trials}"
+            )
+
         # 校验参数名
         self._validate_param_names(param_ranges)
+
+        startup_trials = _resolve_startup_trials(n_trials, n_startup_trials)
+        ei_candidates = _resolve_ei_candidates(n_trials)
 
         # 创建 study（内存存储，direction=maximize）
         study = optuna.create_study(
             direction="maximize",
-            sampler=optuna.samplers.TPESampler(n_startup_trials=n_startup_trials),
+            sampler=optuna.samplers.TPESampler(
+                n_startup_trials=startup_trials,
+                n_ei_candidates=ei_candidates,
+                gamma=_exploration_gamma,
+                multivariate=True,
+                group=True,
+                constant_liar=True,
+                consider_endpoints=True,
+                consider_magic_clip=False,
+                warn_independent_sampling=False,
+            ),
         )
 
         # 定义目标函数（闭包捕获 param_ranges）
