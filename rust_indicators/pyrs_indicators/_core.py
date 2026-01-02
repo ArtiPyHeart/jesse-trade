@@ -20,6 +20,10 @@ try:
         sample_entropy_py as _rust_sample_entropy,
         approximate_entropy_rolling_py as _rust_approximate_entropy_rolling,
         sample_entropy_rolling_py as _rust_sample_entropy_rolling,
+        shannon_entropy_gaussian_py as _rust_shannon_entropy_gaussian,
+        shannon_entropy_gaussian_rolling_py as _rust_shannon_entropy_gaussian_rolling,
+        shannon_entropy_hist_py as _rust_shannon_entropy_hist,
+        shannon_entropy_hist_rolling_py as _rust_shannon_entropy_hist_rolling,
     )
     HAS_RUST = True
     _IMPORT_ERROR = None
@@ -38,7 +42,7 @@ except ImportError as e:
             f"Make sure you have Rust and Maturin installed:\n"
             f"  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh\n"
             f"  pip install maturin"
-        ) from e
+        ) from _IMPORT_ERROR
 
     # 创建占位函数，调用时会抛出有用的错误
     _rust_vmd = _raise_import_error
@@ -51,6 +55,10 @@ except ImportError as e:
     _rust_sample_entropy = _raise_import_error
     _rust_approximate_entropy_rolling = _raise_import_error
     _rust_sample_entropy_rolling = _raise_import_error
+    _rust_shannon_entropy_gaussian = _raise_import_error
+    _rust_shannon_entropy_gaussian_rolling = _raise_import_error
+    _rust_shannon_entropy_hist = _raise_import_error
+    _rust_shannon_entropy_hist_rolling = _raise_import_error
 
 
 __all__ = [

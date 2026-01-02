@@ -11,6 +11,10 @@ from .._core import (
     _rust_approximate_entropy_rolling,
     _rust_sample_entropy,
     _rust_sample_entropy_rolling,
+    _rust_shannon_entropy_gaussian,
+    _rust_shannon_entropy_gaussian_rolling,
+    _rust_shannon_entropy_hist,
+    _rust_shannon_entropy_hist_rolling,
 )
 
 
@@ -132,6 +136,42 @@ def sample_entropy(
     )
 
 
+def shannon_entropy_gaussian(x: npt.NDArray[np.float64]) -> float:
+    """Shannon entropy (Gaussian NLL, 包含 log σ)
+
+    使用高斯分布拟合序列，返回平均 NLL（nats）。
+    当序列方差为 0 时返回 NaN。
+    """
+    if not isinstance(x, np.ndarray):
+        raise ValueError("x must be a numpy array")
+    if x.ndim != 1:
+        raise ValueError(f"x must be 1D array, got {x.ndim}D")
+    if len(x) < 2:
+        raise ValueError(f"x must have at least 2 elements, got {len(x)}")
+
+    return _rust_shannon_entropy_gaussian(x.astype(np.float64, copy=False))
+
+
+def shannon_entropy_hist(
+    x: npt.NDArray[np.float64],
+    bins: int = 30,
+) -> float:
+    """Shannon entropy (Histogram 插件估计)
+
+    使用等宽 bins 估计离散分布，返回 Shannon entropy（nats）。
+    """
+    if not isinstance(x, np.ndarray):
+        raise ValueError("x must be a numpy array")
+    if x.ndim != 1:
+        raise ValueError(f"x must be 1D array, got {x.ndim}D")
+    if len(x) < 2:
+        raise ValueError(f"x must have at least 2 elements, got {len(x)}")
+    if bins < 2:
+        raise ValueError(f"bins must be >= 2, got {bins}")
+
+    return _rust_shannon_entropy_hist(x.astype(np.float64, copy=False), bins)
+
+
 def approximate_entropy_rolling(
     data: npt.NDArray[np.float64],
     period: int,
@@ -243,4 +283,54 @@ def sample_entropy_rolling(
         m,
         r_ratio,
         use_std,
+    )
+
+
+def shannon_entropy_gaussian_rolling(
+    data: npt.NDArray[np.float64],
+    period: int,
+) -> npt.NDArray[np.float64]:
+    """滑动窗口 Shannon entropy（Gaussian NLL, 包含 log σ）
+
+    返回每个窗口最后一个样本的 self-information（nats）。
+    """
+    if not isinstance(data, np.ndarray):
+        raise ValueError("data must be a numpy array")
+    if data.ndim != 1:
+        raise ValueError(f"data must be 1D array, got {data.ndim}D")
+    if period < 2:
+        raise ValueError(f"period must be >= 2, got {period}")
+
+    return _rust_shannon_entropy_gaussian_rolling(
+        data.astype(np.float64, copy=False),
+        period,
+    )
+
+
+def shannon_entropy_hist_rolling(
+    data: npt.NDArray[np.float64],
+    period: int,
+    bins: int = 30,
+    min_prob: float = 1e-12,
+) -> npt.NDArray[np.float64]:
+    """滑动窗口 Shannon entropy（Histogram surprisal）
+
+    返回每个窗口最后一个样本的 self-information（nats）。
+    """
+    if not isinstance(data, np.ndarray):
+        raise ValueError("data must be a numpy array")
+    if data.ndim != 1:
+        raise ValueError(f"data must be 1D array, got {data.ndim}D")
+    if period < 2:
+        raise ValueError(f"period must be >= 2, got {period}")
+    if bins < 2:
+        raise ValueError(f"bins must be >= 2, got {bins}")
+    if not 0 < min_prob < 1:
+        raise ValueError(f"min_prob must be in (0, 1), got {min_prob}")
+
+    return _rust_shannon_entropy_hist_rolling(
+        data.astype(np.float64, copy=False),
+        period,
+        bins,
+        min_prob,
     )

@@ -33,6 +33,10 @@ fn _rust_indicators(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(entropy::sample_entropy_py, m)?)?;
     m.add_function(wrap_pyfunction!(entropy::approximate_entropy_rolling_py, m)?)?;
     m.add_function(wrap_pyfunction!(entropy::sample_entropy_rolling_py, m)?)?;
+    m.add_function(wrap_pyfunction!(entropy::shannon_entropy_gaussian_py, m)?)?;
+    m.add_function(wrap_pyfunction!(entropy::shannon_entropy_gaussian_rolling_py, m)?)?;
+    m.add_function(wrap_pyfunction!(entropy::shannon_entropy_hist_py, m)?)?;
+    m.add_function(wrap_pyfunction!(entropy::shannon_entropy_hist_rolling_py, m)?)?;
 
     Ok(())
 }

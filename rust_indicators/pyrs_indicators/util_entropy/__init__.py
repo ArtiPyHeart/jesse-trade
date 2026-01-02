@@ -1,6 +1,7 @@
 """util_entropy - 熵计算工具函数
 
-提供 Approximate Entropy (ApEn) 和 Sample Entropy (SampEn) 的高性能实现。
+提供 Approximate Entropy (ApEn)、Sample Entropy (SampEn) 与 Shannon
+entropy/self-information 的高性能实现。
 
 使用示例:
     >>> from pyrs_indicators.util_entropy import approximate_entropy, sample_entropy
@@ -21,6 +22,10 @@ from .entropy import (
     approximate_entropy_rolling,
     sample_entropy,
     sample_entropy_rolling,
+    shannon_entropy_gaussian,
+    shannon_entropy_gaussian_rolling,
+    shannon_entropy_hist,
+    shannon_entropy_hist_rolling,
 )
 
 __all__ = [

@@ -99,7 +99,7 @@ class TrendOptimizer:
         n_trials: int = 100,
         n_startup_trials: int | None = None,
         show_progress: bool = True,
-        **param_ranges: tuple[float, float] | tuple[float, float, str],
+        **param_ranges: tuple[Any, ...],
     ) -> list[TrialResult]:
         """运行优化
 
@@ -110,6 +110,7 @@ class TrendOptimizer:
             **param_ranges: 参数搜索范围
                 - float 参数: param=(min, max) 或 param=(min, max, "log")
                 - int 参数: param=(min, max, "int")
+                - category 参数: param=([v1, v2, ...], "category")
 
         Returns:
             Top-N 结果列表，按得分降序排列
@@ -174,9 +175,28 @@ class TrendOptimizer:
                 raise ValueError(
                     f"Param '{name}' spec must be tuple, got {type(spec).__name__}"
                 )
+
+            if len(spec) == 2 and isinstance(spec[1], str) and spec[1] == "category":
+                choices = spec[0]
+                if not isinstance(choices, (list, tuple)):
+                    raise ValueError(
+                        f"Param '{name}' category choices must be list or tuple, got {type(choices).__name__}"
+                    )
+                if len(choices) < 2:
+                    raise ValueError(
+                        f"Param '{name}' category choices must have >= 2 values"
+                    )
+                continue
+
             if len(spec) < 2 or len(spec) > 3:
                 raise ValueError(
                     f"Param '{name}' spec must have 2-3 elements, got {len(spec)}"
+                )
+            if not isinstance(spec[0], (int, float)) or not isinstance(
+                spec[1], (int, float)
+            ):
+                raise ValueError(
+                    f"Param '{name}' min/max must be numeric, got {type(spec[0]).__name__}, {type(spec[1]).__name__}"
                 )
             if spec[0] >= spec[1]:
                 raise ValueError(
@@ -196,7 +216,9 @@ class TrendOptimizer:
         # 1. 采样参数
         params = {}
         for name, spec in param_ranges.items():
-            if len(spec) == 3 and spec[2] == "int":
+            if len(spec) == 2 and isinstance(spec[1], str) and spec[1] == "category":
+                params[name] = trial.suggest_categorical(name, list(spec[0]))
+            elif len(spec) == 3 and spec[2] == "int":
                 params[name] = trial.suggest_int(name, int(spec[0]), int(spec[1]))
             elif len(spec) == 3 and spec[2] == "log":
                 params[name] = trial.suggest_float(name, spec[0], spec[1], log=True)

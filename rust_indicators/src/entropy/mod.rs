@@ -10,3 +10,7 @@ pub use ffi::approximate_entropy_py;
 pub use ffi::approximate_entropy_rolling_py;
 pub use ffi::sample_entropy_py;
 pub use ffi::sample_entropy_rolling_py;
+pub use ffi::shannon_entropy_gaussian_py;
+pub use ffi::shannon_entropy_gaussian_rolling_py;
+pub use ffi::shannon_entropy_hist_py;
+pub use ffi::shannon_entropy_hist_rolling_py;

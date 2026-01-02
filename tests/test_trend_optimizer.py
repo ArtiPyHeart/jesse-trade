@@ -8,6 +8,7 @@ from research.trend_optimizer import (
     TrendOptimizer,
     TrialResult,
 )
+from src.bars.fusion.base import FusionBarContainerBase
 from src.bars.fusion.demo import DemoBar
 
 
@@ -30,6 +31,22 @@ def _make_candles(prices: np.ndarray) -> np.ndarray:
     candles[:, 4] = prices * 0.999  # low
     candles[:, 5] = 1000  # volume
     return candles
+
+
+class CategoryDemoBar(FusionBarContainerBase):
+    """用于 category 参数测试的简化 FusionBar"""
+
+    def __init__(self, threshold: float, mode: str, max_bars: int = -1):
+        super().__init__(max_bars, threshold)
+        self.mode = mode
+
+    @property
+    def max_lookback(self) -> int:
+        return 1
+
+    def get_thresholds(self, candles: np.ndarray) -> np.ndarray:
+        base = 1.0 if self.mode == "fast" else 2.0
+        return np.full(len(candles) - 1, base, dtype=np.float64)
 
 
 class TestMultiWindowEvaluator:
@@ -188,6 +205,20 @@ class TestTrendOptimizer:
         with pytest.raises(ValueError, match="'int' or 'log'"):
             optimizer._validate_param_names({"threshold": (0.1, 0.5, "float")})
 
+    def test_validate_param_spec_category(self):
+        """参数范围校验：category 参数"""
+        prices = _generate_random_walk(1000)
+        candles = _make_candles(prices)
+
+        optimizer = TrendOptimizer(
+            fusion_bar_cls=CategoryDemoBar,
+            candles=candles,
+        )
+
+        optimizer._validate_param_names(
+            {"threshold": (0.1, 0.5), "mode": (["fast", "slow"], "category")}
+        )
+
     def test_optimize_basic(self):
         """基本优化测试（少量试验）"""
         prices = _generate_random_walk(2000)
@@ -272,6 +303,28 @@ class TestTrendOptimizer:
             n_startup_trials=2,
             show_progress=False,
             threshold=(0.1, 10.0, "log"),
+        )
+
+        assert isinstance(results, list)
+
+    def test_optimize_with_category_param(self):
+        """带 category 参数的优化测试"""
+        prices = _generate_random_walk(2000)
+        candles = _make_candles(prices)
+
+        optimizer = TrendOptimizer(
+            fusion_bar_cls=CategoryDemoBar,
+            candles=candles,
+            window_sizes=(20, 40),
+            n_top_results=3,
+        )
+
+        results = optimizer.optimize(
+            n_trials=3,
+            n_startup_trials=2,
+            show_progress=False,
+            threshold=(0.1, 0.5),
+            mode=(["fast", "slow"], "category"),
         )
 
         assert isinstance(results, list)

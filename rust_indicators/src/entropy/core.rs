@@ -161,6 +161,115 @@ pub fn sample_entropy(x: &Array1<f64>, m: usize, r_ratio: f64, use_std: bool) ->
 }
 
 // ============================================================================
+// Shannon entropy / self-information helpers
+// ============================================================================
+
+/// 计算样本均值和标准差（ddof=0）
+fn mean_and_std(x: &[f64]) -> Option<(f64, f64)> {
+    if x.is_empty() {
+        return None;
+    }
+
+    let mut sum = 0.0;
+    for &v in x {
+        if !v.is_finite() {
+            return None;
+        }
+        sum += v;
+    }
+    let n = x.len() as f64;
+    let mean = sum / n;
+    let variance = x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+    if variance <= 0.0 {
+        return None;
+    }
+    Some((mean, variance.sqrt()))
+}
+
+/// Gaussian NLL (包含 log σ) 的单点 self-information
+fn gaussian_surprisal(value: f64, mean: f64, std: f64) -> f64 {
+    let z = (value - mean) / std;
+    let log_2pi = (2.0 * std::f64::consts::PI).ln();
+    0.5 * (log_2pi + z * z) + std.ln()
+}
+
+/// Shannon entropy (Gaussian NLL, 包含 log σ)
+///
+/// 返回整段序列的平均 NLL（nats）。如果 std == 0，则返回 NaN。
+pub fn shannon_entropy_gaussian(x: &Array1<f64>) -> f64 {
+    let x_slice = x.as_slice().unwrap();
+    let (mean, std) = match mean_and_std(x_slice) {
+        Some(res) => res,
+        None => return f64::NAN,
+    };
+
+    let mut nll_sum = 0.0;
+    for &v in x_slice {
+        nll_sum += gaussian_surprisal(v, mean, std);
+    }
+    nll_sum / x_slice.len() as f64
+}
+
+/// Shannon entropy (Histogram 插件估计)
+///
+/// 使用区间 [min, max] 均分 bins 来估计离散分布。
+pub fn shannon_entropy_hist(x: &Array1<f64>, bins: usize) -> f64 {
+    if bins == 0 {
+        return f64::NAN;
+    }
+
+    let x_slice = x.as_slice().unwrap();
+    if x_slice.is_empty() {
+        return f64::NAN;
+    }
+
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for &v in x_slice {
+        if !v.is_finite() {
+            return f64::NAN;
+        }
+        if v < min {
+            min = v;
+        }
+        if v > max {
+            max = v;
+        }
+    }
+
+    let range = max - min;
+    if range <= 0.0 {
+        return 0.0;
+    }
+
+    let bin_width = range / bins as f64;
+    if bin_width <= 0.0 {
+        return f64::NAN;
+    }
+
+    let mut counts = vec![0usize; bins];
+    for &v in x_slice {
+        let mut idx = ((v - min) / bin_width).floor() as isize;
+        if idx < 0 {
+            idx = 0;
+        } else if idx as usize >= bins {
+            idx = bins as isize - 1;
+        }
+        counts[idx as usize] += 1;
+    }
+
+    let n = x_slice.len() as f64;
+    let mut entropy = 0.0;
+    for count in counts {
+        if count > 0 {
+            let p = count as f64 / n;
+            entropy -= p * p.ln();
+        }
+    }
+    entropy
+}
+
+// ============================================================================
 // 内部切片版本（用于 rolling 计算，避免 Array1 分配开销）
 // ============================================================================
 
@@ -215,6 +324,69 @@ fn sample_entropy_slice(x: &[f64], m: usize, r_ratio: f64, use_std: bool) -> f64
     } else {
         -((am as f64) / (bm as f64)).ln()
     }
+}
+
+/// 切片版本的 Gaussian NLL self-information（用于 rolling）
+fn shannon_entropy_gaussian_slice(x: &[f64]) -> f64 {
+    let (mean, std) = match mean_and_std(x) {
+        Some(res) => res,
+        None => return f64::NAN,
+    };
+    gaussian_surprisal(x[x.len() - 1], mean, std)
+}
+
+/// 切片版本的 Histogram surprisal（用于 rolling）
+fn shannon_entropy_hist_slice(x: &[f64], bins: usize, min_prob: f64) -> f64 {
+    if bins == 0 || !(0.0 < min_prob && min_prob < 1.0) {
+        return f64::NAN;
+    }
+
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for &v in x {
+        if !v.is_finite() {
+            return f64::NAN;
+        }
+        if v < min {
+            min = v;
+        }
+        if v > max {
+            max = v;
+        }
+    }
+
+    let range = max - min;
+    if range <= 0.0 {
+        return 0.0;
+    }
+
+    let bin_width = range / bins as f64;
+    if bin_width <= 0.0 {
+        return f64::NAN;
+    }
+
+    let mut counts = vec![0usize; bins];
+    for &v in x {
+        let mut idx = ((v - min) / bin_width).floor() as isize;
+        if idx < 0 {
+            idx = 0;
+        } else if idx as usize >= bins {
+            idx = bins as isize - 1;
+        }
+        counts[idx as usize] += 1;
+    }
+
+    let last = x[x.len() - 1];
+    let mut last_idx = ((last - min) / bin_width).floor() as isize;
+    if last_idx < 0 {
+        last_idx = 0;
+    } else if last_idx as usize >= bins {
+        last_idx = bins as isize - 1;
+    }
+
+    let p = counts[last_idx as usize] as f64 / x.len() as f64;
+    let p = if p < min_prob { min_prob } else { p };
+    -p.ln()
 }
 
 // ============================================================================
@@ -313,6 +485,65 @@ pub fn sample_entropy_rolling(
     output
 }
 
+/// 滑动窗口 Shannon entropy（Gaussian NLL, 包含 log σ）
+///
+/// 返回每个窗口最后一个样本的 self-information（nats）。
+pub fn shannon_entropy_gaussian_rolling(data: &Array1<f64>, period: usize) -> Array1<f64> {
+    let n = data.len();
+    let data_slice = data.as_slice().unwrap();
+
+    if n < period {
+        return Array1::from_elem(n, f64::NAN);
+    }
+
+    let results: Vec<f64> = (period - 1..n)
+        .into_par_iter()
+        .map(|end_idx| {
+            let start_idx = end_idx + 1 - period;
+            let window = &data_slice[start_idx..=end_idx];
+            shannon_entropy_gaussian_slice(window)
+        })
+        .collect();
+
+    let mut output = Array1::from_elem(n, f64::NAN);
+    for (i, &val) in results.iter().enumerate() {
+        output[period - 1 + i] = val;
+    }
+    output
+}
+
+/// 滑动窗口 Shannon entropy（Histogram surprisal）
+///
+/// 返回每个窗口最后一个样本的 self-information（nats）。
+pub fn shannon_entropy_hist_rolling(
+    data: &Array1<f64>,
+    period: usize,
+    bins: usize,
+    min_prob: f64,
+) -> Array1<f64> {
+    let n = data.len();
+    let data_slice = data.as_slice().unwrap();
+
+    if n < period {
+        return Array1::from_elem(n, f64::NAN);
+    }
+
+    let results: Vec<f64> = (period - 1..n)
+        .into_par_iter()
+        .map(|end_idx| {
+            let start_idx = end_idx + 1 - period;
+            let window = &data_slice[start_idx..=end_idx];
+            shannon_entropy_hist_slice(window, bins, min_prob)
+        })
+        .collect();
+
+    let mut output = Array1::from_elem(n, f64::NAN);
+    for (i, &val) in results.iter().enumerate() {
+        output[period - 1 + i] = val;
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,5 +603,51 @@ mod tests {
         // 短序列应返回 NaN 或 0
         assert!(apen.is_nan() || apen == 0.0);
         assert!(sampen.is_nan());
+    }
+
+    #[test]
+    fn test_shannon_entropy_gaussian_basic() {
+        let x = Array1::from_vec(vec![0.0, 1.0, 2.0, 3.0]);
+        let entropy = shannon_entropy_gaussian(&x);
+
+        let std = 1.25_f64.sqrt();
+        let expected = 0.5 * (2.0 * std::f64::consts::PI).ln() + std.ln() + 0.5;
+        assert_relative_eq!(entropy, expected, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_shannon_entropy_gaussian_constant() {
+        let x = Array1::from_vec(vec![1.0, 1.0, 1.0, 1.0]);
+        let entropy = shannon_entropy_gaussian(&x);
+        assert!(entropy.is_nan());
+    }
+
+    #[test]
+    fn test_shannon_entropy_hist_uniform() {
+        let x = Array1::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
+        let entropy = shannon_entropy_hist(&x, 2);
+        assert_relative_eq!(entropy, std::f64::consts::LN_2, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_shannon_entropy_gaussian_rolling() {
+        let x = Array1::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
+        let res = shannon_entropy_gaussian_rolling(&x, 3);
+
+        assert!(res[0].is_nan());
+        assert!(res[1].is_nan());
+        assert!(res[2].is_finite());
+        assert!(res[3].is_finite());
+    }
+
+    #[test]
+    fn test_shannon_entropy_hist_rolling() {
+        let x = Array1::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
+        let res = shannon_entropy_hist_rolling(&x, 2, 2, 1e-12);
+
+        assert!(res[0].is_nan());
+        assert_relative_eq!(res[1], 0.0, epsilon = 1e-10);
+        assert_relative_eq!(res[2], std::f64::consts::LN_2, epsilon = 1e-10);
+        assert_relative_eq!(res[3], 0.0, epsilon = 1e-10);
     }
 }
