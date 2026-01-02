@@ -78,9 +78,9 @@ class TrendOptimizer:
             n_top_results: 返回前 N 个结果
         """
         assert candles.ndim == 2, f"candles must be 2D, got {candles.ndim}D"
-        assert candles.shape[1] == 6, (
-            f"candles must have 6 columns, got {candles.shape[1]}"
-        )
+        assert (
+            candles.shape[1] == 6
+        ), f"candles must have 6 columns, got {candles.shape[1]}"
 
         self.fusion_bar_cls = fusion_bar_cls
         self.candles = candles
@@ -120,9 +120,9 @@ class TrendOptimizer:
         """
         assert n_trials >= 1, f"n_trials must be >= 1, got {n_trials}"
         if n_startup_trials is not None:
-            assert n_startup_trials >= 1, (
-                f"n_startup_trials must be >= 1, got {n_startup_trials}"
-            )
+            assert (
+                n_startup_trials >= 1
+            ), f"n_startup_trials must be >= 1, got {n_startup_trials}"
 
         # 校验参数名
         self._validate_param_names(param_ranges)
@@ -236,14 +236,16 @@ class TrendOptimizer:
             trial.set_user_attr("constraint_reason", f"exception: {e}")
             return PENALTY_SCORE
 
+        fusion_bar_count = 0 if fusion_bars is None else len(fusion_bars)
+        print(f"trial={trial.number} fusion_bar_count={fusion_bar_count}")
+
         # 3. 检查 bars 是否有效
-        if fusion_bars is None or len(fusion_bars) == 0:
+        if fusion_bar_count == 0:
             trial.set_user_attr("constraint_reason", "no bars generated")
             trial.set_user_attr("constraint_satisfied", False)
             trial.set_user_attr("fusion_bar_count", 0)
             return PENALTY_SCORE
 
-        fusion_bar_count = len(fusion_bars)
         trial.set_user_attr("fusion_bar_count", fusion_bar_count)
 
         # 4. 检查约束
