@@ -6,7 +6,6 @@
 - **科学方法**：应用先进数学/物理概念于交易
 - **破坏性变更优先**：优先采用破坏性变更+变更后验证，减少技术债。除非用户明确要求，否则不考虑向后兼容
 - **中文回复**：回应用户时, 优先使用简体中文回答
-- **同步更新**：当CLAUDE.md更新时，必须同步更新AGENTS.md
 
 ## 项目结构
 - `src/`：生产代码（bars/features/indicators/utils）—— 生产代码仅从此导入
@@ -62,7 +61,7 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 ## 开发工具
 
 ### 代码检索
-**优先使用 `mcp__auggie-mcp__codebase-retrieval`** 进行语义化代码检索，而非 Grep/Glob。
+**可以使用 `mcp__auggie-mcp__codebase-retrieval`** 进行语义化代码检索来增强代码阅读能力
 
 ### Codex 技术指导
 遇到算法/架构问题时，通过 mcp-shell-server 调用 codex 获取专业建议：
@@ -83,9 +82,11 @@ Question: Is this numerically stable?"
 ```
 
 ## 关键提醒
-- **MCP服务依赖**：auggie/context7/chrome-devtools/mcp-shell-server等服务不可用时，立即停止并提示用户配置，不要绕过
+- **MCP服务依赖**：auggie/context7/claude-in-chrome/chrome-devtools/mcp-shell-server等服务不可用时，立即停止并提示用户配置，不要绕过
 - 开发时用 context7 MCP 查看最新文档
-- WebFetch失败时可用chrome devtools MCP（优先headless模式）
+- **浏览器操作分工**：
+  - 正常网页交互（阅读网页、填表、点击等）→ 优先使用 claude-in-chrome 插件（mcp__claude-in-chrome__* 工具）
+  - 开发调试相关（查看 console、network、DOM 调试等）→ 使用 chrome-devtools MCP
 - 从 jesse 获取真实 candles 的程序/脚本/测试必须在项目根目录运行，需读取 .env 配置，否则会导致配置无法识别而失败
 - 策略间保持独立，避免交叉依赖
 - 功能实现后必须单元测试

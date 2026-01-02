@@ -6,7 +6,6 @@
 - 采用科学方法推进建模与特征工程, 避免经验主义
 - 优先接受破坏性变更并在变更后验证, 减少技术债, 除非用户明确要求兼容
 - 回应用户时, 优先使用简体中文回答
-- 当AGENTS.md更新时，需同步更新CLAUDE.md
 
 ## 项目结构
 - `src/`: 生产代码 (bars/features/indicators/utils)
@@ -76,8 +75,7 @@
 
 ## 开发工具
 ### 代码检索 (Auggie MCP)
-- 优先使用 `mcp__auggie-mcp__codebase-retrieval` 进行语义化检索
-- 避免使用 grep/glob 做代码检索
+- 可以使用 `mcp__auggie-mcp__codebase-retrieval` 进行语义化检索来增强代码阅读能力
 
 ## 关键提醒
 - MCP 工具不可用时立即停止并提示用户配置服务
