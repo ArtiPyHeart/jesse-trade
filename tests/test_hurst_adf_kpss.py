@@ -171,6 +171,40 @@ class TestTrendValidator:
         trend = validator._classify_trend(0.5, 0.1, 0.1)
         assert "弱趋势或反趋势" in trend
 
+    def test_validate_parallel_matches_serial(self):
+        """并行模式结果应与串行一致"""
+        prices = _generate_random_walk(200)
+        candles = _make_candles(prices)
+
+        serial_validator = TrendValidator(window_size=40, step=10, n_jobs=1)
+        parallel_validator = TrendValidator(window_size=40, step=10, n_jobs=2)
+
+        serial_results = serial_validator.validate(candles)
+        parallel_results = parallel_validator.validate(candles)
+
+        np.testing.assert_allclose(
+            serial_results["hurst"].to_numpy(),
+            parallel_results["hurst"].to_numpy(),
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            serial_results["adf_pvalue"].to_numpy(),
+            parallel_results["adf_pvalue"].to_numpy(),
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            serial_results["kpss_pvalue"].to_numpy(),
+            parallel_results["kpss_pvalue"].to_numpy(),
+            equal_nan=True,
+        )
+        assert (
+            serial_results["score"].to_numpy() == parallel_results["score"].to_numpy()
+        ).all()
+        assert (
+            serial_results["trend_type"].to_numpy()
+            == parallel_results["trend_type"].to_numpy()
+        ).all()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
