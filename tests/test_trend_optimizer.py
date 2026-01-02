@@ -213,6 +213,26 @@ class TestTrendOptimizer:
             assert isinstance(results[0], TrialResult)
             assert results[0].rank == 1
 
+    def test_optimize_default_startup_trials(self):
+        """默认探索配置应可正常运行"""
+        prices = _generate_random_walk(1500)
+        candles = _make_candles(prices)
+
+        optimizer = TrendOptimizer(
+            fusion_bar_cls=DemoBar,
+            candles=candles,
+            window_sizes=(20, 40),
+            n_top_results=3,
+        )
+
+        results = optimizer.optimize(
+            n_trials=3,
+            show_progress=False,
+            threshold=(0.3, 1.0),
+        )
+
+        assert isinstance(results, list)
+
     def test_optimize_with_int_param(self):
         """带整数参数的优化测试"""
         prices = _generate_random_walk(2000)

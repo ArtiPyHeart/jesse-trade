@@ -7,6 +7,7 @@ pub mod vmd;
 pub mod nrbo;
 pub mod cwt;
 pub mod fti;
+pub mod entropy;
 
 use pyo3::prelude::*;
 
@@ -26,6 +27,10 @@ fn _rust_indicators(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // 注册 FTI 函数
     m.add_function(wrap_pyfunction!(fti::fti_process_py, m)?)?;
+
+    // 注册 Entropy 函数
+    m.add_function(wrap_pyfunction!(entropy::approximate_entropy_py, m)?)?;
+    m.add_function(wrap_pyfunction!(entropy::sample_entropy_py, m)?)?;
 
     Ok(())
 }

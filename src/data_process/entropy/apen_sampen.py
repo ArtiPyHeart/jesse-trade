@@ -31,8 +31,9 @@ def sample_entropy(x, m=2, r_ratio: float = 0.3, mode: str = "range"):
     x = np.asarray(x, float)
     r = r_ratio * _data_range(x, mode)
     N = len(x)
+    # 按照 Richman & Moorman 定义，m 维和 m+1 维使用相同的模板索引范围
     Xm = np.array([x[i : i + m] for i in range(N - m)])
-    Xm1 = np.array([x[i : i + m + 1] for i in range(N - m - 1)])
+    Xm1 = np.array([x[i : i + m + 1] for i in range(N - m)])
 
     def _count_pairs(Y):
         M = len(Y)
@@ -72,8 +73,9 @@ def sample_entropy_fast(x, m=2, r_ratio: float = 0.3, mode: str = "range"):
             count += np.sum(np.all(diff <= r, axis=1))
         return count
 
+    # 按照 Richman & Moorman 定义，m 维和 m+1 维使用相同的模板索引范围
     Xm = np.array([x[i : i + m] for i in range(N - m)])
-    Xm1 = np.array([x[i : i + m + 1] for i in range(N - m - 1)])
+    Xm1 = np.array([x[i : i + m + 1] for i in range(N - m)])
 
     Bm = _count_pairs_fast(Xm)
     Am = _count_pairs_fast(Xm1)
@@ -112,8 +114,9 @@ def sample_entropy_numba(x, m=2, r_ratio: float = 0.3, mode: str = "range"):
     r = r_ratio * _data_range(x, mode)
     N = len(x)
 
+    # 按照 Richman & Moorman 定义，m 维和 m+1 维使用相同的模板索引范围
     Xm = np.array([x[i : i + m] for i in range(N - m)])
-    Xm1 = np.array([x[i : i + m + 1] for i in range(N - m - 1)])
+    Xm1 = np.array([x[i : i + m + 1] for i in range(N - m)])
 
     Bm = _count_pairs_numba(Xm, r)
     Am = _count_pairs_numba(Xm1, r)

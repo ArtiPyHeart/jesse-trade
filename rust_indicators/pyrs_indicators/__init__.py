@@ -39,6 +39,7 @@ Python Support: 3.8+
 from . import ind_wavelets
 from . import ind_decomposition
 from . import ind_trend
+from . import util_entropy
 
 # 导入工具
 from ._core import HAS_RUST
@@ -49,6 +50,7 @@ __all__ = [
     "ind_wavelets",
     "ind_decomposition",
     "ind_trend",
+    "util_entropy",
     # 工具
     "HAS_RUST",
 ]

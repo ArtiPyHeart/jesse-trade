@@ -16,6 +16,8 @@ try:
         fti_process_py as _rust_fti,
         nrbo_py as _rust_nrbo,  # 内部使用，不导出到公开 API
         nrbo_batch_py as _rust_nrbo_batch,  # NRBO 批量处理 API（Rayon 并行）
+        approximate_entropy_py as _rust_approximate_entropy,
+        sample_entropy_py as _rust_sample_entropy,
     )
     HAS_RUST = True
     _IMPORT_ERROR = None
@@ -43,6 +45,8 @@ except ImportError as e:
     _rust_fti = _raise_import_error
     _rust_nrbo = _raise_import_error
     _rust_nrbo_batch = _raise_import_error
+    _rust_approximate_entropy = _raise_import_error
+    _rust_sample_entropy = _raise_import_error
 
 
 __all__ = [
