@@ -9,8 +9,23 @@
     >>> x = np.sin(np.linspace(0, 4*np.pi, 100))
     >>> apen = approximate_entropy(x, m=2, r_ratio=0.3)
     >>> sampen = sample_entropy(x, m=2, r_ratio=0.3)
+
+滑动窗口示例:
+    >>> from pyrs_indicators.util_entropy import approximate_entropy_rolling
+    >>> prices = np.cumsum(np.random.randn(1000)) + 100
+    >>> apen_rolling = approximate_entropy_rolling(prices, period=32)
 """
 
-from .entropy import approximate_entropy, sample_entropy
+from .entropy import (
+    approximate_entropy,
+    approximate_entropy_rolling,
+    sample_entropy,
+    sample_entropy_rolling,
+)
 
-__all__ = ["approximate_entropy", "sample_entropy"]
+__all__ = [
+    "approximate_entropy",
+    "approximate_entropy_rolling",
+    "sample_entropy",
+    "sample_entropy_rolling",
+]

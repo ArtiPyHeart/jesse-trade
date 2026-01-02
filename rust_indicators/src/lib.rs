@@ -31,6 +31,8 @@ fn _rust_indicators(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // 注册 Entropy 函数
     m.add_function(wrap_pyfunction!(entropy::approximate_entropy_py, m)?)?;
     m.add_function(wrap_pyfunction!(entropy::sample_entropy_py, m)?)?;
+    m.add_function(wrap_pyfunction!(entropy::approximate_entropy_rolling_py, m)?)?;
+    m.add_function(wrap_pyfunction!(entropy::sample_entropy_rolling_py, m)?)?;
 
     Ok(())
 }

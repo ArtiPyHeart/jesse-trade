@@ -1,7 +1,7 @@
 //! Entropy Python FFI bindings
 
 use ndarray::Array1;
-use numpy::PyReadonlyArray1;
+use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::prelude::*;
 
 use super::core;
@@ -48,4 +48,70 @@ pub fn sample_entropy_py(
 ) -> f64 {
     let x_array = Array1::from_iter(x.as_array().iter().copied());
     core::sample_entropy(&x_array, m, r_ratio, use_std)
+}
+
+/// 滑动窗口 Approximate Entropy (ApEn) Python 接口
+///
+/// 对输入序列进行纯粹的滑动窗口 entropy 计算，使用 Rayon 并行。
+///
+/// # Arguments
+/// * `data` - 输入序列（1D numpy array，任意数据如 log returns）
+/// * `period` - 滑动窗口大小
+/// * `m` - 嵌入维度 (default: 2)
+/// * `r_ratio` - 容忍度比例 (default: 0.3)
+/// * `use_std` - 是否使用标准差计算容忍度 (default: false)
+///
+/// # Returns
+/// 熵值数组，前 (period-1) 个位置为 NaN
+#[pyfunction]
+#[pyo3(signature = (data, period, m=2, r_ratio=0.3, use_std=false))]
+pub fn approximate_entropy_rolling_py<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray1<f64>,
+    period: usize,
+    m: usize,
+    r_ratio: f64,
+    use_std: bool,
+) -> Bound<'py, PyArray1<f64>> {
+    let data_array = Array1::from_iter(data.as_array().iter().copied());
+
+    // 释放 GIL 进行并行计算
+    let result = py.allow_threads(|| {
+        core::approximate_entropy_rolling(&data_array, period, m, r_ratio, use_std)
+    });
+
+    result.into_pyarray(py)
+}
+
+/// 滑动窗口 Sample Entropy (SampEn) Python 接口
+///
+/// 对输入序列进行纯粹的滑动窗口 entropy 计算，使用 Rayon 并行。
+///
+/// # Arguments
+/// * `data` - 输入序列（1D numpy array，任意数据如 log returns）
+/// * `period` - 滑动窗口大小
+/// * `m` - 嵌入维度 (default: 2)
+/// * `r_ratio` - 容忍度比例 (default: 0.3)
+/// * `use_std` - 是否使用标准差计算容忍度 (default: false)
+///
+/// # Returns
+/// 熵值数组，前 (period-1) 个位置为 NaN
+#[pyfunction]
+#[pyo3(signature = (data, period, m=2, r_ratio=0.3, use_std=false))]
+pub fn sample_entropy_rolling_py<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray1<f64>,
+    period: usize,
+    m: usize,
+    r_ratio: f64,
+    use_std: bool,
+) -> Bound<'py, PyArray1<f64>> {
+    let data_array = Array1::from_iter(data.as_array().iter().copied());
+
+    // 释放 GIL 进行并行计算
+    let result = py.allow_threads(|| {
+        core::sample_entropy_rolling(&data_array, period, m, r_ratio, use_std)
+    });
+
+    result.into_pyarray(py)
 }

@@ -7,4 +7,6 @@ mod ffi;
 
 pub use core::*;
 pub use ffi::approximate_entropy_py;
+pub use ffi::approximate_entropy_rolling_py;
 pub use ffi::sample_entropy_py;
+pub use ffi::sample_entropy_rolling_py;
