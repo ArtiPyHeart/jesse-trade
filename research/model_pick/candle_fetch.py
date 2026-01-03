@@ -29,8 +29,7 @@ class FusionCandles:
         return candles
 
     def get_candles(self, start_date, end_date):
-        if self._fusion_candles is None:
-            raw_candles = self._fetch_jesse_candles(start_date, end_date)
-            bar_container.update_with_candles(raw_candles)
-            self._fusion_candles = bar_container.get_fusion_bars()
+        raw_candles = self._fetch_jesse_candles(start_date, end_date)
+        bar_container.update_with_candles(raw_candles)
+        self._fusion_candles = bar_container.get_fusion_bars()
         return self._fusion_candles
