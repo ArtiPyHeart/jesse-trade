@@ -73,10 +73,6 @@
   - `rust-indicators-development`: Rust 高性能指标开发与集成
 - 使用原则: 严格遵循 SKILL 的决策准则、输出格式和沟通方式
 
-## 开发工具
-### 代码检索 (Auggie MCP)
-- 可以使用 `mcp__auggie-mcp__codebase-retrieval` 进行语义化检索来增强代码阅读能力
-
 ## 关键提醒
 - MCP 工具不可用时立即停止并提示用户配置服务
 - 优先使用 context7 获取最新文档

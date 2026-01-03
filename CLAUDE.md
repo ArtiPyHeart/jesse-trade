@@ -60,9 +60,6 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 
 ## 开发工具
 
-### 代码检索
-**可以使用 `mcp__auggie-mcp__codebase-retrieval`** 进行语义化代码检索来增强代码阅读能力
-
 ### Codex 技术指导
 遇到算法/架构问题时，通过 mcp-shell-server 调用 codex 获取专业建议：
 ```bash
@@ -82,7 +79,7 @@ Question: Is this numerically stable?"
 ```
 
 ## 关键提醒
-- **MCP服务依赖**：auggie/context7/claude-in-chrome/chrome-devtools/mcp-shell-server等服务不可用时，立即停止并提示用户配置，不要绕过
+- **MCP服务依赖**：context7/claude-in-chrome/chrome-devtools/mcp-shell-server等服务不可用时，立即停止并提示用户配置，不要绕过
 - 开发时用 context7 MCP 查看最新文档
 - **浏览器操作分工**：
   - 正常网页交互（阅读网页、填表、点击等）→ 优先使用 claude-in-chrome 插件（mcp__claude-in-chrome__* 工具）
