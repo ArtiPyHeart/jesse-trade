@@ -1,4 +1,5 @@
 import gc
+from typing import Optional
 
 import lightgbm as lgb
 import numpy as np
@@ -7,7 +8,7 @@ import pandas as pd
 from jesse.helpers import date_to_timestamp
 from optuna.integration import LightGBMPruningCallback
 from sklearn.metrics import f1_score
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import KFold
 
 from src.utils.drop_na import drop_na_and_align_x_and_y
 
@@ -23,18 +24,59 @@ def eval_metric(preds, eval_dataset):
 
 
 class ModelTuning:
-    def __init__(self, train_test_split_date: str, x: pd.DataFrame, y: np.ndarray):
-        self.split_date = train_test_split_date
+    """
+    LightGBM 模型调参器
 
+    支持两种初始化方式：
+    1. 传统方式：传入完整数据 + split_date，自动分割
+    2. 直接方式：使用 from_train_data() 工厂方法，直接传入训练集
+    """
+
+    def __init__(
+        self,
+        train_test_split_date: Optional[str] = None,
+        x: Optional[pd.DataFrame] = None,
+        y: Optional[np.ndarray] = None,
+    ):
+        """
+        初始化 ModelTuning
+
+        Args:
+            train_test_split_date: 训练/测试分割日期（可选）
+            x: 完整特征 DataFrame（可选）
+            y: 完整标签数组（可选）
+
+        Notes:
+            如果只需要使用 tuning_classifier_direct / tuning_regressor_direct，
+            推荐使用 from_train_data() 工厂方法。
+        """
+        self.split_date = train_test_split_date
         self.X = x
         self.Y = y
+        self.train_X = None
+        self.train_Y = None
 
-        train_mask = self.X.index.to_numpy() < date_to_timestamp(self.split_date)
+        if x is not None and y is not None and train_test_split_date is not None:
+            train_mask = self.X.index.to_numpy() < date_to_timestamp(self.split_date)
+            self.train_X = x[train_mask]
+            self.train_Y = y[train_mask]
+            assert len(self.train_X) == len(self.train_Y)
 
-        self.train_X = x[train_mask]
-        self.train_Y = y[train_mask]
+    @classmethod
+    def from_train_data(cls) -> "ModelTuning":
+        """
+        创建一个轻量级 ModelTuning 实例，用于直接调参
 
-        assert len(self.train_X) == len(self.train_Y)
+        无需传入完整数据，直接使用 tuning_classifier_direct / tuning_regressor_direct
+
+        Returns:
+            ModelTuning 实例
+
+        Examples:
+            >>> tuner = ModelTuning.from_train_data()
+            >>> best_params, cv_score = tuner.tuning_classifier_direct(train_x, train_y)
+        """
+        return cls()
 
     def tuning_classifier_direct(
         self, train_x: pd.DataFrame, train_y: np.ndarray
@@ -60,9 +102,7 @@ class ModelTuning:
 
         # 固定max_bin参数，使用 free_raw_data=True 释放原始数据
         dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
-        cv_folds = list(
-            StratifiedKFold(n_splits=3, shuffle=True, random_state=42).split(x, y)
-        )
+        cv_folds = list(KFold(n_splits=5, shuffle=True, random_state=42).split(x, y))
 
         def objective(trial):
             # 参数范围针对降维后 ~20 维特征优化，防止过拟合同时保持拟合精度
@@ -167,7 +207,7 @@ class ModelTuning:
 
         # 固定max_bin参数，使用 free_raw_data=True 释放原始数据
         dtrain = lgb.Dataset(x, y, free_raw_data=True, params={"max_bin": 255})
-        cv_folds = list(KFold(n_splits=3, shuffle=True, random_state=42).split(x))
+        cv_folds = list(KFold(n_splits=5, shuffle=True, random_state=42).split(x))
 
         # 预计算训练集标签的方差，用于计算R²
         y_var = np.var(y)
