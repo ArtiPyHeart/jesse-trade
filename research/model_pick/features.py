@@ -94,15 +94,15 @@ feats = (
     + ddt_feats
 )
 
-# ============================================================================
 # 滞后特征（时序信息）
-# ============================================================================
 lag_feats = [f"{i}_lag{l}" for i in feats for l in range(1, 4)]
 
-# ============================================================================
+# ssm模型特征
+deep_ssm_feats = [f"deep_ssm_{i}" for i in range(5)]
+lg_ssm_feats = [f"lg_ssm_{i}" for i in range(5)]
+
 # 完整特征集（包含phent特征和滞后特征）
-# ============================================================================
-ALL_FEATS = feats + phent_feats + lag_feats
+ALL_FEATS = deep_ssm_feats + lg_ssm_feats + feats + phent_feats + lag_feats
 
 
 class FeatureLoader:

@@ -332,7 +332,9 @@ class FeatureMaker:
             all_features = pd.concat([ssm_features, valid_raw_features_df], axis=1)
         else:
             if verbose:
-                print("    No SSM configured, skipping...")
+                print(
+                    "    No SSM configured (feature_names lacks deep_ssm_/lg_ssm_), skipping..."
+                )
             all_features = valid_raw_features_df
 
         return all_features

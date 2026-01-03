@@ -87,12 +87,32 @@ class TestFeatureMakerConfig:
         assert "lg_ssm_0" in config.ssm_feature_names
         assert config.ssm_types == ["deep_ssm", "lg_ssm"]
 
+    def test_inplace_feature_names_requires_refresh(self):
+        """测试 feature_names 原地修改需要刷新"""
+        config = FeatureMakerConfig(feature_names=["natr", "fisher"])
+        config.feature_names.append("deep_ssm_0")
+
+        with pytest.raises(ValueError, match="mutated in-place"):
+            _ = config.ssm_types
+
+        config.refresh(force_reset=True)
+        assert config.ssm_types == ["deep_ssm"]
+        assert "deep_ssm_0" in config.ssm_feature_names
+
     def test_ssm_index_validation(self):
         """测试 SSM 索引验证"""
         with pytest.raises(ValueError, match="index .* >= state_dim"):
             FeatureMakerConfig(
                 feature_names=["deep_ssm_10"],  # state_dim 默认是 5
                 ssm_state_dim=5,
+            )
+
+    def test_ssm_feature_count_exceeds_state_dim(self):
+        """测试 SSM 特征数量超过 state_dim"""
+        with pytest.raises(ValueError, match="exceeds ssm_state_dim"):
+            FeatureMakerConfig(
+                feature_names=["deep_ssm_0", "deep_ssm_1", "deep_ssm_0"],
+                ssm_state_dim=2,
             )
 
     def test_schema_hash_consistency(self):
@@ -330,7 +350,7 @@ class TestReducer:
         wrong_features = sample_features.copy()
         wrong_features.columns = [f"wrong_{i}" for i in range(50)]
 
-        with pytest.raises(ValueError, match="Column mismatch"):
+        with pytest.raises(ValueError, match="Missing required columns"):
             reducer.transform(wrong_features)
 
     def test_nan_input_raises(self, sample_features):
