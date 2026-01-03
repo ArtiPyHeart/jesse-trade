@@ -3,9 +3,13 @@
 
 核心改进：
 1. 一次性生成所有 fusion bars（避免逐根 candle 更新）
-2. 使用 FeaturePipeline 统一特征计算/降维，兼容 pipeline_model_train / pipeline_model_train_individual
+2. 使用 FeatureMaker + Reducer 二段式架构计算特征/降维
 3. SSM 全程 inference（先 warmup，再逐行推理），避免 transform 状态偏差
 4. 预先计算所有预测结果，交易模拟时直接查表
+
+架构说明：
+- FeatureMaker: 共享，负责原始特征 + SSM 计算
+- Reducer: 可全局共享或每模型独立，负责 ARDVAE 降维
 
 性能提升：
 - 特征计算阶段：~10-50x 加速
@@ -25,7 +29,7 @@ from pydantic import BaseModel
 from tqdm.auto import tqdm
 
 from src.bars.fusion.demo import DemoBar
-from src.features.pipeline import FeaturePipeline
+from src.features.pipeline import FeatureMaker, Reducer
 
 # ==================== 配置常量 ====================
 STOP_LOSS_RATIO_NO_LEVERAGE = 0.05
@@ -894,14 +898,14 @@ def generate_all_fusion_bars_with_split(
 
 
 def _compute_ssm_features_sequential(
-    pipeline: FeaturePipeline,
+    feature_maker: FeatureMaker,
     ssm_input_df: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     使用 SSM inference 逐行计算特征（保持状态连续）
 
     Args:
-        pipeline: 已加载的 FeaturePipeline
+        feature_maker: 已加载的 FeatureMaker
         ssm_input_df: 无 NaN 的 SSM 输入特征 DataFrame
 
     Returns:
@@ -910,15 +914,15 @@ def _compute_ssm_features_sequential(
     if ssm_input_df.empty:
         return pd.DataFrame(index=ssm_input_df.index)
 
-    pipeline.reset_ssm_states()
+    feature_maker.reset_ssm_states()
 
     n_rows = len(ssm_input_df)
     ssm_outputs: dict[str, np.ndarray] = {}
 
-    for ssm_type in pipeline.config.ssm_types:
-        processor = pipeline.ssm_processors.get(ssm_type)
+    for ssm_type in feature_maker.config.ssm_types:
+        processor = feature_maker.ssm_processors.get(ssm_type)
         if processor is None:
-            raise RuntimeError(f"SSM processor '{ssm_type}' not found in pipeline")
+            raise RuntimeError(f"SSM processor '{ssm_type}' not found in FeatureMaker")
         ssm_outputs[ssm_type] = np.empty(
             (n_rows, processor.state_dim), dtype=np.float32
         )
@@ -926,13 +930,13 @@ def _compute_ssm_features_sequential(
     ssm_values = ssm_input_df.to_numpy(dtype=np.float32, copy=False)
     for i in tqdm(range(n_rows), desc="SSM Inference", ncols=100):
         obs = ssm_values[i]
-        for ssm_type in pipeline.config.ssm_types:
-            processor = pipeline.ssm_processors[ssm_type]
+        for ssm_type in feature_maker.config.ssm_types:
+            processor = feature_maker.ssm_processors[ssm_type]
             ssm_outputs[ssm_type][i] = processor.inference(obs)
 
     ssm_dfs = []
-    for ssm_type in pipeline.config.ssm_types:
-        processor = pipeline.ssm_processors[ssm_type]
+    for ssm_type in feature_maker.config.ssm_types:
+        processor = feature_maker.ssm_processors[ssm_type]
         data = ssm_outputs[ssm_type]
         columns = [f"{processor.prefix}_{j}" for j in range(data.shape[1])]
         ssm_dfs.append(pd.DataFrame(data, columns=columns))
@@ -968,17 +972,19 @@ def _align_lgbm_feature_columns(
 def compute_features_vectorized(
     fusion_bars: np.ndarray,
     warmup_fusion_bars_len: int,
-    pipeline: FeaturePipeline,
-    pipeline_label: str,
+    feature_maker: FeatureMaker,
+    reducer: Reducer,
+    label: str,
 ) -> pd.DataFrame:
     """
-    使用 FeaturePipeline 向量化计算特征（SSM 逐行 inference）
+    使用 FeatureMaker + Reducer 向量化计算特征（SSM 逐行 inference）
 
     Args:
         fusion_bars: 所有 fusion bars
         warmup_fusion_bars_len: warmup 对应的 fusion bar 数量
-        pipeline: 已加载的 FeaturePipeline
-        pipeline_label: Pipeline 显示名称（用于日志输出）
+        feature_maker: 已加载的 FeatureMaker
+        reducer: 已加载的 Reducer
+        label: 显示名称（用于日志输出）
 
     Returns:
         df_features_full: trading 阶段的完整特征 DataFrame
@@ -988,19 +994,19 @@ def compute_features_vectorized(
     print("=" * 60)
 
     n_bars = len(fusion_bars)
-    print(f"Pipeline 名称: {pipeline_label}")
+    print(f"Label: {label}")
     print(f"Warmup fusion bars: {warmup_fusion_bars_len}")
     print(f"Trading fusion bars: {n_bars - warmup_fusion_bars_len}")
 
     # 2. 批量计算所有原始特征（sequential=True）
     print("\n计算原始特征...")
     start_time = time.perf_counter()
-    df_raw_features = pipeline._compute_raw_features(fusion_bars)
+    df_raw_features = feature_maker._compute_raw_features(fusion_bars)
     raw_feat_time = time.perf_counter() - start_time
     print(f"原始特征计算完成，耗时: {raw_feat_time:.2f}秒")
 
     # 3. 处理 NaN 并提取有效数据
-    valid_raw_features_df, first_valid = pipeline._prepare_valid_data(
+    valid_raw_features_df, first_valid = feature_maker._prepare_valid_data(
         df_raw_features, n_bars
     )
     if warmup_fusion_bars_len < first_valid:
@@ -1016,25 +1022,31 @@ def compute_features_vectorized(
     print("-" * 60)
 
     start_time = time.perf_counter()
-    if pipeline.config.ssm_types:
-        ssm_input_df = valid_raw_features_df[pipeline.config.ssm_input_features]
-        df_ssm_features = _compute_ssm_features_sequential(pipeline, ssm_input_df)
+    if feature_maker.config.ssm_types:
+        ssm_input_df = valid_raw_features_df[feature_maker.config.ssm_input_features]
+        df_ssm_features = _compute_ssm_features_sequential(feature_maker, ssm_input_df)
         all_features = pd.concat([df_ssm_features, valid_raw_features_df], axis=1)
     else:
         all_features = valid_raw_features_df
     ssm_time = time.perf_counter() - start_time
     print(f"SSM inference 完成，耗时: {ssm_time:.2f}秒")
 
-    # 5. 可选降维
-    if pipeline.config.use_dimension_reducer:
-        if pipeline._dimension_reducer is None:
-            raise RuntimeError("Pipeline 缺少降维器，无法进行 transform()")
-        all_features = pipeline._dimension_reducer.transform(all_features)
-    else:
-        all_features = all_features[pipeline.config.feature_names]
+    # 5. 降维（使用 Reducer）
+    print("\n降维处理...")
+    start_time = time.perf_counter()
+
+    # 显式对齐列顺序，确保与 Reducer 训练时一致
+    expected_columns = reducer.input_feature_names
+    if list(all_features.columns) != expected_columns:
+        print(f"  重排列顺序以匹配 Reducer 训练时的 schema...")
+        all_features = all_features[expected_columns]
+
+    reduced_features = reducer.transform(all_features)
+    reduce_time = time.perf_counter() - start_time
+    print(f"降维完成，耗时: {reduce_time:.2f}秒")
 
     # 6. 对齐回原始长度并截取 Trading 部分
-    df_features_full = pipeline._pad_with_leading_nan(all_features, n_bars)
+    df_features_full = feature_maker._pad_with_leading_nan(reduced_features, n_bars)
     df_features_full = df_features_full.iloc[warmup_fusion_bars_len:].reset_index(
         drop=True
     )
@@ -1049,7 +1061,8 @@ def compute_features_vectorized(
     print(f"  - 特征维度: {df_features_full.shape}")
     print(f"  - 原始特征耗时: {raw_feat_time:.2f}s")
     print(f"  - SSM inference耗时: {ssm_time:.2f}s")
-    total_time = raw_feat_time + ssm_time
+    print(f"  - 降维耗时: {reduce_time:.2f}s")
+    total_time = raw_feat_time + ssm_time + reduce_time
     print(f"  - 总耗时: {total_time:.2f}s")
     print("=" * 60 + "\n")
 
@@ -1140,7 +1153,7 @@ def predict_all_models(
     return predictions
 
 
-def predict_all_models_with_individual_pipelines(
+def predict_all_models_with_individual_reducers(
     fusion_bars: np.ndarray,
     warmup_fusion_bars_len: int,
     models: list[str],
@@ -1149,13 +1162,13 @@ def predict_all_models_with_individual_pipelines(
     lgbm_container_cls: type,
 ) -> dict[str, list[int]]:
     """
-    每个模型使用独立 FeaturePipeline 的预测流程
+    共享 FeatureMaker + 每模型独立 Reducer 的预测流程
 
     Args:
         fusion_bars: 所有 fusion bars
         warmup_fusion_bars_len: warmup 对应的 fusion bar 数量
         models: 模型列表
-        model_dir: 模型与 Pipeline 存放目录
+        model_dir: 模型与 FeatureMaker/Reducer 存放目录
         model_name_to_params: 模型参数解析函数
         lgbm_container_cls: 模型容器类
 
@@ -1163,8 +1176,12 @@ def predict_all_models_with_individual_pipelines(
         predictions: {model_name: [pred1, pred2, ...]}
     """
     print("\n" + "=" * 60)
-    print("Phase 2-3: 特征计算 + 预测（每模型独立 Pipeline）")
+    print("Phase 2-3: 特征计算 + 预测（共享 FeatureMaker + 独立 Reducer）")
     print("=" * 60)
+
+    # 加载共享 FeatureMaker
+    feature_maker = FeatureMaker.load(str(model_dir), "feature_maker")
+    print(f"已加载共享 FeatureMaker: {model_dir / 'feature_maker'}")
 
     predictions = {}
     expected_len = None
@@ -1172,12 +1189,15 @@ def predict_all_models_with_individual_pipelines(
     for model_name in models:
         print(f"\n模型: {model_name}")
 
-        pipeline = FeaturePipeline.load(str(model_dir), model_name)
+        # 加载该模型的 Reducer
+        reducer = Reducer.load(str(model_dir), model_name)
+
         df_features = compute_features_vectorized(
             fusion_bars,
             warmup_fusion_bars_len,
-            pipeline,
-            pipeline_label=model_name,
+            feature_maker,
+            reducer,
+            label=model_name,
         )
 
         model_preds = _predict_single_model(
@@ -1310,7 +1330,7 @@ def run_vectorized_backtest(
     trading_candles: np.ndarray,
     models: list[str],
     model_dir: Path,
-    pipeline_name: Optional[str],
+    reducer_name: Optional[str],
     model_config_module: Optional[str] = None,
     starting_balance: float = 10000,
     fee_rate: float = 0.0005,
@@ -1324,8 +1344,8 @@ def run_vectorized_backtest(
         warmup_candles: Warmup K线数据
         trading_candles: Trading K线数据
         models: 模型列表
-        model_dir: 模型与 Pipeline 存放目录
-        pipeline_name: 全局 Pipeline 名称；None 表示每模型独立 Pipeline
+        model_dir: 模型与 FeatureMaker/Reducer 存放目录
+        reducer_name: 全局 Reducer 名称；None 表示每模型独立 Reducer
         model_config_module: 模型配置模块路径（可选，默认从 model_dir 推断）
         starting_balance: 初始资金
         fee_rate: 手续费率
@@ -1342,9 +1362,9 @@ def run_vectorized_backtest(
     print(f"手续费率: {fee_rate * 100:.2f}%")
     print(f"杠杆倍数: {leverage}x")
     print(f"模型列表: {models}")
-    print(f"Pipeline 模式: {'global' if pipeline_name is not None else 'per-model'}")
-    if pipeline_name is not None:
-        print(f"Pipeline 名称: {pipeline_name}")
+    print(f"Reducer 模式: {'global' if reducer_name is not None else 'per-model'}")
+    if reducer_name is not None:
+        print(f"Reducer 名称: {reducer_name}")
     resolved_module = _resolve_model_config_module(model_dir, model_config_module)
     print(f"模型配置: {resolved_module}")
     print(f"Warmup K线数: {len(warmup_candles):,}")
@@ -1360,8 +1380,12 @@ def run_vectorized_backtest(
     )
 
     # ========== Phase 2-3: 特征计算与预测 ==========
-    if pipeline_name is None:
-        predictions = predict_all_models_with_individual_pipelines(
+    # 加载共享 FeatureMaker（所有模式都需要）
+    feature_maker = FeatureMaker.load(str(model_dir), "feature_maker")
+
+    if reducer_name is None:
+        # 每模型独立 Reducer 模式
+        predictions = predict_all_models_with_individual_reducers(
             fusion_bars,
             warmup_fusion_bars_len,
             models,
@@ -1370,12 +1394,14 @@ def run_vectorized_backtest(
             lgbm_container_cls,
         )
     else:
-        pipeline = FeaturePipeline.load(str(model_dir), pipeline_name)
+        # 全局 Reducer 模式
+        reducer = Reducer.load(str(model_dir), reducer_name)
         df_features = compute_features_vectorized(
             fusion_bars,
             warmup_fusion_bars_len,
-            pipeline,
-            pipeline_label=pipeline_name,
+            feature_maker,
+            reducer,
+            label=reducer_name,
         )
         predictions = predict_all_models(
             df_features,
@@ -1552,7 +1578,7 @@ if __name__ == "__main__":
     TEST_MODE = False
     TEST_FUSION_BARS = 1000
     STRATEGY = "BinanceBtcDemoBar"
-    PIPELINE_NAME: Optional[str] = None  # None => 每模型独立 Pipeline
+    REDUCER_NAME: Optional[str] = None  # None => 每模型独立 Reducer
 
     MODELS = [
         "c_L4_N1",
@@ -1593,7 +1619,7 @@ if __name__ == "__main__":
         trading_candles=trading_candles,
         models=MODELS,
         model_dir=MODEL_DIR,
-        pipeline_name=PIPELINE_NAME,
+        reducer_name=REDUCER_NAME,
         starting_balance=10000,
         fee_rate=0.0005,
         leverage=3,
