@@ -10,7 +10,7 @@ from joblib.externals.loky import get_reusable_executor
 from joblib.parallel import register_parallel_backend
 
 from src.bars.fusion.demo import DemoBar
-from src.features.pipeline import FeaturePipeline
+from src.features.pipeline import FeatureMaker, Reducer
 from .models.config import model_name_to_params, LGBMContainer
 
 # joblib设置
@@ -25,10 +25,10 @@ register_parallel_backend("loky_reuse", lambda **kw: backend, make_default=True)
 STOP_LOSS_RATIO_NO_LEVERAGE = 0.05
 POSITION_SIZE_RATIO = 0.95
 
-# FeaturePipeline 设置
+# 模型目录设置
 MODEL_DIR = Path(__file__).parent / "models"
-PIPELINE_NAME = "global_pipeline"
-# FeaturePipeline 推理要求足够历史长度以避免 NaN
+FEATURE_MAKER_NAME = "feature_maker"
+# 推理要求足够历史长度以避免 NaN
 MIN_FUSION_BARS = 512
 
 # 模型与特征设置
@@ -42,9 +42,14 @@ class BinanceBtcDemoBarV2(Strategy):
     def __init__(self):
         super().__init__()
         self.bar_container = DemoBar(max_bars=3500, threshold=1.399)
-        self.feature_pipeline = FeaturePipeline.load(str(MODEL_DIR), PIPELINE_NAME)
-        self.feature_pipeline.verbose = False
-        self._pipeline_warmed = False
+
+        # 新架构：FeatureMaker (共享) + Reducer (每模型独立)
+        self.feature_maker = FeatureMaker.load(str(MODEL_DIR), FEATURE_MAKER_NAME)
+        self.reducers = {
+            model_name: Reducer.load(str(MODEL_DIR), model_name)
+            for model_name in MODELS
+        }
+        self._maker_warmed = False
 
         self._init_models()
 
@@ -77,44 +82,46 @@ class BinanceBtcDemoBarV2(Strategy):
         return self.bar_container.get_fusion_bars()
 
     ############################ 机器学习模型 ############################
-    def _ensure_pipeline_ready(self) -> bool:
-        if self._pipeline_warmed:
+    def _ensure_maker_ready(self) -> bool:
+        if self._maker_warmed:
             return True
 
         fusion_bars = self.fusion_bar
         if len(fusion_bars) < MIN_FUSION_BARS or len(fusion_bars) < 2:
             return False
 
-        self.feature_pipeline.warmup_ssm(fusion_bars[:-1])
-        self._pipeline_warmed = True
+        self.feature_maker.warmup_ssm(fusion_bars[:-1])
+        self._maker_warmed = True
         return True
 
     @property
     @cached
-    def df_all_features(self) -> pd.DataFrame:
-        assert self._ensure_pipeline_ready(), "Feature pipeline not warmed up."
-        return self.feature_pipeline.inference(self.fusion_bar)
+    def df_raw_features(self) -> pd.DataFrame:
+        """FeatureMaker 输出的原始特征（SSM + 基础特征）"""
+        assert self._ensure_maker_ready(), "FeatureMaker not warmed up."
+        return self.feature_maker.inference(self.fusion_bar)
 
     @property
     @cached
     def votes(self) -> list[int]:
         preds = []
-        df_features = self.df_all_features
+        raw_features = self.df_raw_features
         for m in MODELS:
             mc: LGBMContainer = getattr(self, f"model_{m}")
+            # Reducer 降维
+            reduced_features = self.reducers[m].inference(raw_features)
+            # 对齐列名
             expected_columns = mc.model.feature_name()
-            if df_features.shape[1] != len(expected_columns):
+            if reduced_features.shape[1] != len(expected_columns):
                 raise ValueError(
                     f"Feature count mismatch for {mc.MODEL_NAME}: "
-                    f"pipeline={df_features.shape[1]}, model={len(expected_columns)}"
+                    f"reducer={reduced_features.shape[1]}, model={len(expected_columns)}"
                 )
-            if list(df_features.columns) != expected_columns:
-                df_features_aligned = df_features.set_axis(
+            if list(reduced_features.columns) != expected_columns:
+                reduced_features = reduced_features.set_axis(
                     expected_columns, axis=1, copy=False
                 )
-            else:
-                df_features_aligned = df_features
-            preds.append(mc.final_predict(df_features_aligned))
+            preds.append(mc.final_predict(reduced_features))
         return preds
 
     @property
@@ -126,12 +133,12 @@ class BinanceBtcDemoBarV2(Strategy):
         return all([v == -1 for v in self.votes])
 
     def should_long(self) -> bool:
-        if not self.should_trade_bar or not self._ensure_pipeline_ready():
+        if not self.should_trade_bar or not self._ensure_maker_ready():
             return False
         return self.model_shows_long
 
     def should_short(self) -> bool:
-        if not self.should_trade_bar or not self._ensure_pipeline_ready():
+        if not self.should_trade_bar or not self._ensure_maker_ready():
             return False
         return self.model_shows_short
 
@@ -162,7 +169,7 @@ class BinanceBtcDemoBarV2(Strategy):
         self.stop_loss = qty, entry_price * (1 + self.loss_ratio_with_leverage)
 
     def update_position(self):
-        if not self.should_trade_bar or not self._ensure_pipeline_ready():
+        if not self.should_trade_bar or not self._ensure_maker_ready():
             return
         # 更新仓位
         if self.is_long:
