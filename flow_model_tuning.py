@@ -56,6 +56,10 @@ LABEL_TYPES = ["hard", "direction"]
 # 输入文件
 INPUT_FILE = "feature_selection_results.csv"
 
+# 训练内部验证集比例（用于 early stopping）
+VALID_RATIO = 0.1
+MIN_VALID_SAMPLES = 200
+
 
 def get_models_dir() -> Path:
     """获取策略 models 目录路径"""
@@ -141,15 +145,17 @@ def get_selected_features_for_model(
 def align_features_labels(
     global_features: pd.DataFrame,
     raw_label: np.ndarray,
+    candles_ts: np.ndarray,
     log_return_lag: int,
     pred_next: int,
-) -> tuple[pd.DataFrame, np.ndarray]:
+) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
     对齐特征和标签
 
     - label 开头缺少 log_return_lag 个值
     - feature 需要去掉开头的 NaN
     - 按 pred_next 进行 shift 对齐
+    - 返回 label 对应的时间戳，用于严格切分
     """
     # 截断 feature 开头 (对齐 label 的 lag)
     features = global_features.iloc[log_return_lag:]
@@ -157,16 +163,39 @@ def align_features_labels(
     # shift 以对齐 PRED_NEXT
     features = features.iloc[:-pred_next]
     label = raw_label[pred_next:]
+    label_ts = candles_ts[log_return_lag + pred_next :]
 
     # 去掉 feature 开头的 NaN
     na_mask = features.isna().any(axis=1).values
     features = features.iloc[~na_mask]
     label = label[~na_mask]
+    label_ts = label_ts[~na_mask]
 
-    assert len(features) == len(label), (
-        f"Length mismatch: {len(features)} vs {len(label)}"
+    assert len(features) == len(label) == len(label_ts), (
+        f"Length mismatch: {len(features)} vs {len(label)} vs {len(label_ts)}"
     )
-    return features, label
+    return features, label, label_ts
+
+
+def split_train_valid(
+    train_x: pd.DataFrame, train_y: np.ndarray
+) -> tuple[pd.DataFrame, np.ndarray, pd.DataFrame | None, np.ndarray | None]:
+    """
+    按时间顺序切分训练/验证集，用于 early stopping。
+    """
+    n_train = len(train_x)
+    n_valid = int(n_train * VALID_RATIO)
+
+    if n_valid < MIN_VALID_SAMPLES:
+        return train_x, train_y, None, None
+
+    train_x_fit = train_x.iloc[:-n_valid]
+    train_y_fit = train_y[:-n_valid]
+    valid_x = train_x.iloc[-n_valid:]
+    valid_y = train_y[-n_valid:]
+
+    assert len(train_x_fit) > 0, "Train split empty after validation split."
+    return train_x_fit, train_y_fit, valid_x, valid_y
 
 
 def get_model_name(label_type: str, lag: int, pred_next: int) -> str:
@@ -228,9 +257,26 @@ def train_and_save_model(
     # 使用最佳参数在全量训练集上训练
     print(f"\n[训练] {model_name} (全量训练集)")
 
+    # 训练/验证切分（仅用训练集内部数据）
+    train_x_fit, train_y_fit, valid_x, valid_y = split_train_valid(train_x, train_y)
+
     # 准备训练数据
-    train_x_np = np.ascontiguousarray(train_x.to_numpy(dtype=np.float32))
-    dtrain = lgb.Dataset(train_x_np, train_y, free_raw_data=True)
+    train_x_np = np.ascontiguousarray(train_x_fit.to_numpy(dtype=np.float32))
+    dtrain = lgb.Dataset(train_x_np, train_y_fit, free_raw_data=True)
+
+    valid_sets = [dtrain]
+    valid_names = ["train"]
+    callbacks = []
+
+    if valid_x is not None:
+        valid_x_np = np.ascontiguousarray(valid_x.to_numpy(dtype=np.float32))
+        dvalid = lgb.Dataset(valid_x_np, valid_y, free_raw_data=True)
+        valid_sets.append(dvalid)
+        valid_names.append("valid")
+        callbacks.append(lgb.early_stopping(stopping_rounds=50, verbose=False))
+        print(f"  验证集: {len(valid_x)} 样本 (用于 early stopping)")
+    else:
+        print("  验证集: 未启用 (样本不足)")
 
     # 添加固定参数
     train_params = {
@@ -239,15 +285,19 @@ def train_and_save_model(
         "num_threads": -1,
         "verbose": -1,
     }
+    if label_type == "hard":
+        train_params["metric"] = "binary_logloss"
+    else:
+        train_params["metric"] = "l2"
 
     # 训练模型
     model = lgb.train(
         train_params,
         dtrain,
         num_boost_round=3000,
-        callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)],
-        valid_sets=[dtrain],
-        valid_names=["train"],
+        callbacks=callbacks,
+        valid_sets=valid_sets,
+        valid_names=valid_names,
     )
 
     # 保存模型
@@ -260,7 +310,8 @@ def train_and_save_model(
     # 测试集评估
     print(f"\n[评估] {model_name} (测试集)")
     test_x_np = np.ascontiguousarray(test_x.to_numpy(dtype=np.float32))
-    test_pred = model.predict(test_x_np)
+    best_iter = model.best_iteration if model.best_iteration > 0 else None
+    test_pred = model.predict(test_x_np, num_iteration=best_iter)
 
     if label_type == "hard":
         test_pred_binary = (test_pred > 0.5).astype(int)
@@ -290,6 +341,7 @@ def run_single_model(
     log_return_lag: int,
     pred_next: int,
     label_type: str,
+    split_ts: int,
     models_dir: Path,
 ) -> dict:
     """
@@ -302,6 +354,7 @@ def run_single_model(
         log_return_lag: 对数收益 lag
         pred_next: 预测步数
         label_type: 标签类型
+        split_ts: 训练/测试分割时间戳
         models_dir: 模型保存目录
 
     Returns:
@@ -324,19 +377,21 @@ def run_single_model(
     raw_label = labeler.label_hard if label_type == "hard" else labeler.label_direction
 
     print("[3/5] 对齐特征和标签...")
-    features, label = align_features_labels(
-        global_features, raw_label, log_return_lag, pred_next
+    candles_ts = candles[:, 0].astype(int)
+    features, label, label_ts = align_features_labels(
+        global_features, raw_label, candles_ts, log_return_lag, pred_next
     )
     features = features[selected_features]
     print(f"  对齐后: {len(features)} 样本, {features.shape[1]} 特征")
 
-    split_ts = date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
-    train_mask = features.index.to_numpy() < split_ts
+    train_mask = label_ts < split_ts
 
     train_x = features[train_mask].reset_index(drop=True)
     train_y = label[train_mask]
     test_x = features[~train_mask].reset_index(drop=True)
     test_y = label[~train_mask]
+    assert len(train_x) > 0, "Empty train split after alignment."
+    assert len(test_x) > 0, "Empty test split after alignment."
     print(f"  训练集: {len(train_x)}, 测试集: {len(test_x)}")
 
     print("[4/5] 训练 Reducer...")
@@ -384,6 +439,7 @@ def main():
     print(f"LABEL_TYPES: {LABEL_TYPES}")
     print("=" * 60)
 
+    split_ts = date_to_timestamp(TRAIN_TEST_SPLIT_DATE)
     models_dir = get_models_dir()
 
     # 清理并重建 models 目录
@@ -445,14 +501,22 @@ def main():
         verbose=True,
     )
     feature_maker = FeatureMaker(feature_config)
-    global_features = feature_maker.fit_transform(candles)
+    candles_ts = candles[:, 0].astype(int)
+    train_mask = candles_ts < split_ts
+    train_candles = candles[train_mask]
+
+    assert len(train_candles) > 0, "Train candles empty after split."
+    assert len(candles) > len(train_candles), "Test candles empty after split."
+
+    feature_maker.fit(train_candles)
+    global_features = feature_maker.transform(candles)
     print(f"  全局特征: {global_features.shape}")
 
     # 保存 FeatureMaker
     feature_maker.save(str(models_dir), "feature_maker")
 
     # 设置特征索引为 timestamp
-    global_features.index = candles[:, 0].astype(int)
+    global_features.index = candles_ts
 
     print("\n[5/5] 开始批量模型训练...")
     total = len(valid_combinations)
@@ -468,6 +532,7 @@ def main():
                 log_return_lag=lag,
                 pred_next=pred_next,
                 label_type=label_type,
+                split_ts=split_ts,
                 models_dir=models_dir,
             )
             results.append(result)
