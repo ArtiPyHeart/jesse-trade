@@ -104,8 +104,8 @@ class Reducer:
 
     # ==================== 输入验证 ====================
 
-    def _validate_input(self, X: pd.DataFrame, is_training: bool) -> None:
-        """验证输入数据"""
+    def _validate_input(self, X: pd.DataFrame) -> None:
+        """验证输入数据（类型和 NaN 检查）"""
         if not isinstance(X, pd.DataFrame):
             raise TypeError("Input must be a pandas DataFrame")
 
@@ -115,16 +115,6 @@ class Reducer:
                 f"Input contains NaN values in columns: {nan_cols}. "
                 "Please handle missing data before calling Reducer."
             )
-
-        if not is_training and self._input_feature_names is not None:
-            current_cols = list(X.columns)
-            if current_cols != self._input_feature_names:
-                missing = set(self._input_feature_names) - set(current_cols)
-                extra = set(current_cols) - set(self._input_feature_names)
-                raise ValueError(
-                    f"Column mismatch. Missing: {missing}, Extra: {extra}. "
-                    f"Expected columns: {self._input_feature_names}"
-                )
 
     # ==================== 训练接口 ====================
 
@@ -139,7 +129,7 @@ class Reducer:
         Returns:
             self
         """
-        self._validate_input(X, is_training=True)
+        self._validate_input(X)
 
         if verbose is None:
             verbose = self.config.verbose
@@ -183,7 +173,7 @@ class Reducer:
         批量降维
 
         Args:
-            X: 输入特征 DataFrame，列名需与训练时一致
+            X: 输入特征 DataFrame，需包含训练时的所有列（可以有额外列）
 
         Returns:
             降维后的 DataFrame
@@ -191,9 +181,17 @@ class Reducer:
         if not self._is_fitted:
             raise RuntimeError("Reducer not fitted. Call fit() first.")
 
-        self._validate_input(X, is_training=False)
+        # 先选择训练时的列（自动 subset，保持顺序）
+        if self._input_feature_names is not None:
+            missing = set(self._input_feature_names) - set(X.columns)
+            if missing:
+                raise ValueError(f"Missing required columns: {missing}")
+            X = X[self._input_feature_names]
 
-        # 可选：选择 subset 列
+        # 后验证（类型和 NaN 检查）
+        self._validate_input(X)
+
+        # config 中的额外 subset（如果有）
         if self.config.input_feature_names is not None:
             X = X[self.config.input_feature_names]
 
