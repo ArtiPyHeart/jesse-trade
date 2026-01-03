@@ -30,13 +30,26 @@ END = "2025-06-01"
 # 搜索参数
 LOG_RETURN_LAGS = [4, 5, 6, 7, 8]
 PRED_NEXT_STEPS = [1, 2, 3]
-LABEL_TYPE = "hard"  # "hard" (分类) 或 "direction" (回归)
+LABEL_TYPES = ["hard", "direction"]  # "hard" (分类), "direction" (回归)
 
 # 特征筛选配置
 GROOTCV_CUTOFF = 5
 
 # 输出文件
 OUTPUT_FILE = "feature_selection_results.csv"
+
+
+def report_ssm_feature_status(config: FeatureMakerConfig) -> None:
+    """打印 SSM 相关特征的配置状态（便于尽早发现未启用问题）"""
+    ssm_features = config.ssm_feature_names
+    if not ssm_features:
+        print("[提示] feature_names 未包含 deep_ssm_/lg_ssm_ 前缀，SSM 特征将被跳过。")
+        return
+
+    print(
+        f"SSM 特征: {len(ssm_features)} 个 | 类型: {config.ssm_types} "
+        f"| 示例: {ssm_features[:5]}"
+    )
 
 
 def align_features_labels(
@@ -64,9 +77,9 @@ def align_features_labels(
     features = features.iloc[~na_mask]
     label = label[~na_mask]
 
-    assert len(features) == len(
-        label
-    ), f"Length mismatch: {len(features)} vs {len(label)}"
+    assert len(features) == len(label), (
+        f"Length mismatch: {len(features)} vs {len(label)}"
+    )
     return features, label
 
 
@@ -129,7 +142,7 @@ def main():
     print(f"数据范围: {START} ~ {END}")
     print(f"LOG_RETURN_LAGS: {LOG_RETURN_LAGS}")
     print(f"PRED_NEXT_STEPS: {PRED_NEXT_STEPS}")
-    print(f"LABEL_TYPE: {LABEL_TYPE}")
+    print(f"LABEL_TYPES: {LABEL_TYPES}")
     print(f"GROOTCV_CUTOFF: {GROOTCV_CUTOFF}")
     print("=" * 60)
 
@@ -148,17 +161,18 @@ def main():
         ssm_state_dim=5,
         verbose=True,
     )
+    report_ssm_feature_status(feature_config)
     feature_maker = FeatureMaker(feature_config)
     global_features = feature_maker.fit_transform(candles)
     print(f"全局特征: {global_features.shape}")
 
     # 3. 遍历所有参数组合进行筛选
     print("\n[3/3] 开始批量特征筛选...")
-    combinations = list(product(LOG_RETURN_LAGS, PRED_NEXT_STEPS))
+    combinations = list(product(LOG_RETURN_LAGS, PRED_NEXT_STEPS, LABEL_TYPES))
     total = len(combinations)
     results = []
 
-    for idx, (lag, pred_next) in enumerate(combinations, 1):
+    for idx, (lag, pred_next, label_type) in enumerate(combinations, 1):
         print(f"\n进度: {idx}/{total}")
         try:
             result = run_single_selection(
@@ -166,12 +180,14 @@ def main():
                 candles=candles,
                 log_return_lag=lag,
                 pred_next=pred_next,
-                label_type=LABEL_TYPE,
+                label_type=label_type,
                 cutoff=GROOTCV_CUTOFF,
             )
             results.append(result)
         except Exception as e:
-            print(f"[ERROR] lag={lag}, pred_next={pred_next}: {e}")
+            print(
+                f"[ERROR] lag={lag}, pred_next={pred_next}, label_type={label_type}: {e}"
+            )
             continue
 
     # 4. 保存结果
@@ -190,6 +206,7 @@ def main():
                 [
                     "log_return_lag",
                     "pred_next",
+                    "label_type",
                     "n_total_features",
                     "n_selected_features",
                 ]
