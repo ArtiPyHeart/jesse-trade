@@ -46,10 +46,12 @@ def alpha_057(
     decay_argmax = decay_linear(argmax_30, 2)
 
     # Avoid division by zero
-    result = np.where(
-        decay_argmax != 0,
-        -1.0 * (close - vwap) / decay_argmax,
-        0.0
+    numerator = -1.0 * (close - vwap)
+    result = np.divide(
+        numerator,
+        decay_argmax,
+        out=np.zeros_like(decay_argmax),
+        where=decay_argmax != 0,
     )
 
     return result if sequential else result[-1:]

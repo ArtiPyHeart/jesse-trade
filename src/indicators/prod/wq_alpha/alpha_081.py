@@ -48,7 +48,8 @@ def alpha_081(
     corr1 = ts_corr(vwap, sum_adv, 8)
     corr1_pow4 = corr1 ** 4  # Always positive
     prod = ts_product(corr1_pow4, 15)
-    log_prod = np.where(prod > 0, np.log(prod), np.nan)
+    log_prod = np.full_like(prod, np.nan)
+    np.log(prod, out=log_prod, where=prod > 0)
 
     # Part 2: correlation(vwap, volume, 5)
     corr2 = ts_corr(vwap, volume, 5)
