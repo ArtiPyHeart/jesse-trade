@@ -46,6 +46,7 @@ from .micro_structure import (
 from .mod_bollinger import mod_bollinger
 from .mod_rsi import mod_rsi
 from .mod_stochastic import mod_stochastic
+from .natr import natr
 from .norm_on_balance_volume import (
     norm_on_balance_volume,
 )
