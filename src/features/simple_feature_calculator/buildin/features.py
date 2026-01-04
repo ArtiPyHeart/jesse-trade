@@ -40,6 +40,7 @@ from src.indicators.prod import (
     ma_difference,
     mod_rsi,
     mod_stochastic,
+    natr,
     norm_on_balance_volume,
     price_change_oscillator,
     price_variance_ratio,
@@ -544,9 +545,9 @@ def natr_feature(
     sequential: bool = True,
 ):
     if sequential:
-        return ta.natr(candles, sequential=sequential)
+        return natr(candles, sequential=sequential)
     else:
-        return np.array([ta.natr(candles, sequential=sequential)])
+        return np.array([natr(candles, sequential=sequential)])
 
 
 @feature(
