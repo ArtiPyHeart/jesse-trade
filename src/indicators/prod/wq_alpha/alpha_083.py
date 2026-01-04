@@ -44,7 +44,12 @@ def alpha_083(
     ma_5 = ts_mean(close, 5)
 
     # Range ratio
-    range_ratio = np.where(ma_5 != 0, (high - low) / ma_5, 0.0)
+    range_ratio = np.divide(
+        (high - low),
+        ma_5,
+        out=np.zeros_like(ma_5),
+        where=ma_5 != 0,
+    )
 
     # Delayed range ratio
     delay_ratio = ts_delay(range_ratio, 2)
@@ -53,10 +58,21 @@ def alpha_083(
     vwap_dev = vwap - close
 
     # Denominator: range_ratio / (vwap - close)
-    denom = np.where(vwap_dev != 0, range_ratio / vwap_dev, 0.0)
+    denom = np.divide(
+        range_ratio,
+        vwap_dev,
+        out=np.zeros_like(vwap_dev),
+        where=vwap_dev != 0,
+    )
 
     # Final result
-    result = np.where(denom != 0, (delay_ratio * volume) / denom, 0.0)
+    numerator = delay_ratio * volume
+    result = np.divide(
+        numerator,
+        denom,
+        out=np.zeros_like(denom),
+        where=denom != 0,
+    )
 
     return result if sequential else result[-1:]
 

@@ -51,7 +51,12 @@ def alpha_066(
     # Part 2: ts_rank(decay_linear((low - vwap) / (open - mid), 11), 7)
     # Note: 0.96633 + (1-0.96633) = 1, so it's just low
     denom = open_ - mid
-    ratio = np.where(denom != 0, (low - vwap) / denom, 0.0)
+    ratio = np.divide(
+        (low - vwap),
+        denom,
+        out=np.zeros_like(denom),
+        where=denom != 0,
+    )
     decay_ratio = decay_linear(ratio, 11)
     part2 = ts_rank(decay_ratio, 7)
 

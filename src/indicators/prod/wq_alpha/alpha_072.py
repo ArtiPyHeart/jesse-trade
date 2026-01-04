@@ -55,7 +55,12 @@ def alpha_072(
     part2 = decay_linear(corr2, 3)
 
     # Ratio with protection
-    result = np.where(part2 != 0, part1 / part2, 0.0)
+    result = np.divide(
+        part1,
+        part2,
+        out=np.zeros_like(part1),
+        where=part2 != 0,
+    )
 
     return result if sequential else result[-1:]
 

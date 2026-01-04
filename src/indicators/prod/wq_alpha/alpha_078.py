@@ -54,12 +54,11 @@ def alpha_078(
     # Part 2: correlation(vwap, volume, 6)
     corr2 = ts_corr(vwap, volume, 6)
 
-    # Power with protection for negative base
-    result = np.where(
-        corr1 >= 0,
-        np.power(corr1, corr2),
-        -np.power(np.abs(corr1), corr2)
-    )
+    # Power with protection for negative/zero base
+    base_abs = np.abs(corr1)
+    power = np.zeros_like(base_abs)
+    np.power(base_abs, corr2, out=power, where=base_abs != 0)
+    result = np.where(corr1 >= 0, power, -power)
 
     return result if sequential else result[-1:]
 
