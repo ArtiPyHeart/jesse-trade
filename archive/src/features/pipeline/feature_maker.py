@@ -73,6 +73,8 @@ class FeatureMaker:
     >>> latest_features = maker.inference(current_candles)
     """
 
+    _NAN_SCAN_MAX_ELEMENTS = 2_000_000
+
     def __init__(
         self,
         config: Optional[FeatureMakerConfig] = None,
@@ -174,11 +176,18 @@ class FeatureMaker:
         Returns:
             第一个有效行的索引，如果全是 NaN 返回 len(df)
         """
-        valid_rows = ~df.isna().any(axis=1)
-        valid_indices = valid_rows[valid_rows].index
-        if len(valid_indices) == 0:
-            return len(df)
-        return valid_indices[0]
+        n_rows = len(df)
+        if n_rows == 0:
+            return 0
+
+        chunk_rows = self._get_nan_scan_chunk_rows(n_rows, df.shape[1])
+        for start in range(0, n_rows, chunk_rows):
+            chunk = df.iloc[start : start + chunk_rows]
+            valid_mask = ~chunk.isna().any(axis=1)
+            if valid_mask.any():
+                return start + int(np.argmax(valid_mask.to_numpy()))
+
+        return n_rows
 
     def _validate_no_intermediate_nan(self, df: pd.DataFrame, start_row: int) -> None:
         """
@@ -191,14 +200,43 @@ class FeatureMaker:
         Raises:
             ValueError: 如果存在中间 NaN
         """
-        valid_df = df.iloc[start_row:]
-        nan_cols = valid_df.columns[valid_df.isna().any()].tolist()
+        n_rows, n_cols = df.shape
+        if start_row >= n_rows:
+            return
+
+        nan_mask = np.zeros(n_cols, dtype=bool)
+        chunk_rows = self._get_nan_scan_chunk_rows(n_rows - start_row, n_cols)
+        if self.verbose:
+            print(
+                "    NaN scan: "
+                f"rows={n_rows - start_row}, cols={n_cols}, chunk_rows={chunk_rows}",
+                flush=True,
+            )
+        chunk_idx = 0
+        for start in range(start_row, n_rows, chunk_rows):
+            chunk = df.iloc[start : start + chunk_rows]
+            nan_mask |= chunk.isna().any(axis=0).to_numpy()
+            if self.verbose:
+                chunk_idx += 1
+                if chunk_idx <= 3 or chunk_idx % 50 == 0:
+                    print(
+                        f"    NaN scan chunk {chunk_idx}: rows {start}-{start + chunk_rows}",
+                        flush=True,
+                    )
+
+        nan_cols = df.columns[nan_mask].tolist()
 
         if nan_cols:
             raise ValueError(
                 f"Features contain intermediate NaN values after row {start_row}. "
                 f"Affected features: {nan_cols}"
             )
+
+    def _get_nan_scan_chunk_rows(self, n_rows: int, n_cols: int) -> int:
+        if n_rows <= 0:
+            return 0
+        chunk_rows = max(1, self._NAN_SCAN_MAX_ELEMENTS // max(1, n_cols))
+        return min(n_rows, chunk_rows)
 
     def _pad_with_leading_nan(self, df: pd.DataFrame, target_rows: int) -> pd.DataFrame:
         """
@@ -217,7 +255,7 @@ class FeatureMaker:
 
         nan_rows = target_rows - current_rows
         nan_df = pd.DataFrame(
-            np.float32(np.nan),
+            np.nan,
             index=range(nan_rows),
             columns=df.columns,
         )
@@ -275,6 +313,34 @@ class FeatureMaker:
 
         if verbose:
             print(f"    First valid row: {first_valid} (of {n_candles})")
+            dtype_counts = raw_features_df.dtypes.value_counts()
+            dtype_summary = ", ".join(
+                f"{dtype}:{count}" for dtype, count in dtype_counts.items()
+            )
+            mem_mb = raw_features_df.memory_usage(deep=False).sum() / (1024 * 1024)
+            print(f"    Raw features shape: {raw_features_df.shape}", flush=True)
+            print(f"    Raw features dtypes: {dtype_summary}", flush=True)
+            print(f"    Raw features memory: {mem_mb:.2f} MB (deep=False)", flush=True)
+
+            obj_cols = raw_features_df.columns[
+                raw_features_df.dtypes == "object"
+            ].tolist()
+            if obj_cols:
+                sample_idx = min(first_valid, len(raw_features_df) - 1)
+                sample_row = raw_features_df.iloc[sample_idx]
+                sample_types = {
+                    col: type(sample_row[col]).__name__ for col in obj_cols[:10]
+                }
+                print(
+                    f"    Object dtype columns detected: {len(obj_cols)} (showing up to 10)",
+                    flush=True,
+                )
+                print(f"    Object dtype samples: {sample_types}", flush=True)
+                raise TypeError(
+                    "Feature outputs contain object dtype columns; this is invalid for "
+                    "numeric feature processing. Please fix the corresponding feature "
+                    "functions to return numeric numpy arrays."
+                )
 
         if first_valid >= n_candles:
             raise ValueError(
@@ -304,7 +370,7 @@ class FeatureMaker:
             包含 SSM 特征和原始特征的完整 DataFrame
         """
         if verbose:
-            print("  Training SSM models...")
+            print("  Training SSM models...", flush=True)
 
         if self.config.ssm_types:
             valid_ssm_input_df = valid_raw_features_df[self.config.ssm_input_features]
@@ -319,11 +385,11 @@ class FeatureMaker:
                 processor = self._ssm_processors[ssm_type]
                 if not processor.is_fitted:
                     if verbose:
-                        print(f"    Training {ssm_type}...")
+                        print(f"    Training {ssm_type}...", flush=True)
                     processor.fit(valid_ssm_input_df)
 
             if verbose:
-                print("  Computing SSM features...")
+                print("  Computing SSM features...", flush=True)
             ssm_features = self._compute_ssm_features_batch(valid_ssm_input_df)
 
             del valid_ssm_input_df
@@ -356,12 +422,23 @@ class FeatureMaker:
     def _create_ssm_adapter(self, ssm_type: str, obs_dim: int) -> SSMProtocol:
         """创建 SSM 适配器"""
         state_dim = self.config.ssm_state_dim
+        if self.verbose:
+            print(
+                f"    Creating {ssm_type} adapter (obs_dim={obs_dim}, state_dim={state_dim})...",
+                flush=True,
+            )
         if ssm_type == "deep_ssm":
             config = DeepSSMConfig(obs_dim=obs_dim, state_dim=state_dim)
-            return DeepSSMAdapter(config=config)
+            adapter = DeepSSMAdapter(config=config)
+            if self.verbose:
+                print("    DeepSSM adapter created.", flush=True)
+            return adapter
         elif ssm_type == "lg_ssm":
             config = LGSSMConfig(obs_dim=obs_dim, state_dim=state_dim)
-            return LGSSMAdapter(config=config)
+            adapter = LGSSMAdapter(config=config)
+            if self.verbose:
+                print("    LGSSM adapter created.", flush=True)
+            return adapter
         else:
             raise ValueError(f"Unknown SSM type: {ssm_type}")
 
@@ -383,7 +460,7 @@ class FeatureMaker:
         n_candles = len(candles)
 
         if verbose:
-            print("FeatureMaker: Starting fit...")
+            print("FeatureMaker: Starting fit...", flush=True)
 
         raw_features_df = self._compute_raw_features(candles, verbose)
         valid_raw_features_df, _ = self._prepare_valid_data(
@@ -404,13 +481,13 @@ class FeatureMaker:
                 processor = self._ssm_processors[ssm_type]
                 if not processor.is_fitted:
                     if verbose:
-                        print(f"    Training {ssm_type}...")
+                        print(f"    Training {ssm_type}...", flush=True)
                     processor.fit(valid_ssm_input_df)
 
         self._is_fitted = True
 
         if verbose:
-            print("FeatureMaker: fit complete!")
+            print("FeatureMaker: fit complete!", flush=True)
 
         return self
 
