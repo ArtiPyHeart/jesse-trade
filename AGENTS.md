@@ -14,6 +14,7 @@
 - `research/`: 离线研究实验 (不要在生产导入)
 - `extern/`: 参考资料 (不要在生产导入)
 - `tests/`: pytest 测试
+- `archive/`: 过时代码存档 (除非用户指定, 否则无需参考)
 - `.claude/skills/`: Claude 专用 SKILL 文档 (定义任务流程与标准)
 
 ## 运行入口

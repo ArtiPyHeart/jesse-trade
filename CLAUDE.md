@@ -14,6 +14,7 @@
 - `research/`：离线研究实验（勿在生产导入）
 - `extern/`：参考资料（勿导入）
 - `tests/`：pytest测试（文件名用`test_`前缀）
+- `archive/`：过时代码存档（除非用户指定，否则无需参考）
 - `.claude/skills/`：Claude专用SKILL文档，用户提及相关任务时自动加载
 
 ## 开发环境
