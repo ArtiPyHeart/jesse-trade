@@ -1,9 +1,8 @@
 import numpy as np
 from jesse.helpers import get_candle_source
 
+from pyrs_indicators._core import _rust_nrbo_batch  # NRBO 内部使用
 from pyrs_indicators.ind_decomposition import vmd, vmd_batch
-from pyrs_indicators._core import _rust_nrbo, _rust_nrbo_batch  # NRBO 内部使用
-
 from src.indicators.prod._indicator_base._cls_ind import IndicatorBase
 
 ALPHA = 2000  ###  数据保真度约束
