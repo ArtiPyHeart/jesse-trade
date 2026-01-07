@@ -9,8 +9,10 @@ from .registry import (
     SimpleFeatureRegistry,
     get_global_registry,
     feature,
-    class_feature
+    class_feature,
+    stateful_feature,
 )
+from .stateful import StatefulFeatureBase, StatefulCacheManager
 from .validator import FeatureOutputValidator
 from .transforms import (
     dt,
@@ -29,12 +31,17 @@ __all__ = [
     'SimpleFeatureRegistry',
     'FeatureOutputValidator',
     'TransformChain',
-    
+
     # 注册相关
     'get_global_registry',
     'feature',
     'class_feature',
-    
+    'stateful_feature',
+
+    # 有状态特征
+    'StatefulFeatureBase',
+    'StatefulCacheManager',
+
     # 转换函数
     'dt',
     'ddt',

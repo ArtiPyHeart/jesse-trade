@@ -7,8 +7,10 @@
 3. 严格的输出验证
 """
 
+import shutil
 import sys
 import time
+from pathlib import Path
 from typing import Dict, List, Union, Optional, Tuple
 
 import numpy as np
@@ -27,6 +29,7 @@ class SimpleFeatureCalculator:
         registry: Optional[SimpleFeatureRegistry] = None,
         load_buildin: bool = True,
         verbose: bool = False,
+        stateful_cache_dir: Optional[Path] = None,
     ):
         """
         初始化计算器
@@ -34,11 +37,20 @@ class SimpleFeatureCalculator:
         Args:
             registry: 特征注册中心，如果不提供则使用全局注册中心
             verbose: 是否显示计算进度和内存占用
+            stateful_cache_dir: 有状态特征缓存目录（必须为绝对路径）
         """
         self.registry = registry or get_global_registry()
         self.validator = FeatureOutputValidator()
         self.transform_chain = TransformChain()
         self.verbose = verbose
+
+        # 有状态特征缓存目录
+        if stateful_cache_dir is not None:
+            stateful_cache_dir = Path(stateful_cache_dir)
+            assert stateful_cache_dir.is_absolute(), (
+                f"stateful_cache_dir must be absolute path, got: {stateful_cache_dir}"
+            )
+        self.stateful_cache_dir = stateful_cache_dir
 
         # 状态变量
         self.candles: Optional[np.ndarray] = None
@@ -63,6 +75,7 @@ class SimpleFeatureCalculator:
         if self.candles is candles:
             # sequential=True 的缓存可以服务 sequential=False 的请求
             if self.sequential == sequential or self.sequential:
+                self.sequential = sequential  # 更新 sequential 状态
                 return  # 保留缓存
 
         # 2. 内容相等检查：不同对象但内容相同
@@ -301,6 +314,7 @@ class SimpleFeatureCalculator:
         metadata = self.registry.get_metadata(feature_name)
         returns_multiple = metadata.get("returns_multiple", False)
         is_class_feature = metadata.get("type") == "class"
+        is_stateful_feature = metadata.get("type") == "stateful"
 
         # 决定使用的sequential参数
         use_sequential = force_sequential or self.sequential
@@ -326,6 +340,19 @@ class SimpleFeatureCalculator:
             # raw_result是列表，不需要验证，直接返回
             self.cache[cache_key] = output
             return output
+        elif is_stateful_feature:
+            # 有状态特征需要传入 cache_dir
+            if self.stateful_cache_dir is None:
+                raise RuntimeError(
+                    f"Stateful feature '{feature_name}' requires stateful_cache_dir. "
+                    f"Please set stateful_cache_dir when creating SimpleFeatureCalculator."
+                )
+            output = feature_func(
+                self.candles,
+                use_sequential,
+                cache_dir=self.stateful_cache_dir,
+                return_raw=return_raw,
+            )
         else:
             # 普通调用
             output = feature_func(self.candles, use_sequential)
@@ -445,6 +472,27 @@ class SimpleFeatureCalculator:
     def clear_cache(self) -> None:
         """清空缓存"""
         self.cache.clear()
+
+    def clear_stateful_cache(self, feature_name: Optional[str] = None) -> None:
+        """
+        清除有状态特征缓存
+
+        Args:
+            feature_name: 特定特征名，如果为 None 则清除所有有状态特征缓存
+        """
+        if self.stateful_cache_dir is None:
+            return
+
+        if feature_name is not None:
+            # 清除特定特征
+            feature_cache = self.stateful_cache_dir / feature_name
+            if feature_cache.exists():
+                shutil.rmtree(feature_cache)
+        else:
+            # 清除所有
+            if self.stateful_cache_dir.exists():
+                shutil.rmtree(self.stateful_cache_dir)
+                self.stateful_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_cache_memory_bytes(self) -> int:
         """计算缓存中所有特征数组的总内存占用（字节）"""

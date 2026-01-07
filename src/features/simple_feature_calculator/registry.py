@@ -8,6 +8,7 @@
 """
 
 from functools import partial
+from pathlib import Path
 from typing import Callable, Dict, Optional, Any
 import numpy as np
 
@@ -107,7 +108,65 @@ class SimpleFeatureRegistry:
             "returns_multiple": returns_multiple,
             "type": "class"
         }
-    
+
+    def register_stateful_class(
+        self,
+        name: str,
+        cls: type,
+        params: Optional[Dict[str, Any]] = None,
+        description: str = "",
+        returns_multiple: bool = False
+    ) -> None:
+        """
+        注册有状态特征类
+
+        有状态特征需要训练阶段，模型状态会被持久化。
+
+        Args:
+            name: 特征名称
+            cls: 特征类（必须继承 StatefulFeatureBase）
+            params: 要固化的参数
+            description: 特征描述
+            returns_multiple: 是否返回多列
+        """
+        def stateful_class_wrapper(
+            candles: np.ndarray,
+            sequential: bool = True,
+            cache_dir: Optional[Path] = None,
+            return_raw: bool = False,
+        ) -> np.ndarray:
+            """将有状态类包装成函数
+
+            Args:
+                candles: K线数据
+                sequential: 是否返回序列
+                cache_dir: 缓存目录（由 Calculator 注入）
+                return_raw: 是否返回 raw_result（用于转换链处理）
+            """
+            # 创建实例
+            if params:
+                instance = cls(candles, sequential=sequential, **params)
+            else:
+                instance = cls(candles, sequential=sequential)
+
+            # 注入缓存目录和特征名
+            instance.cache_dir = cache_dir
+            instance._feature_name = name
+
+            # 如果需要 raw_result（用于转换链处理）
+            if return_raw and hasattr(instance, "raw_result"):
+                return instance.raw_result
+
+            # 调用 compute（自动处理缓存）
+            return instance.compute(candles, sequential)
+
+        self._features[name] = stateful_class_wrapper
+        self._metadata[name] = {
+            "description": description,
+            "returns_multiple": returns_multiple,
+            "type": "stateful",
+        }
+
     def get(self, name: str) -> Optional[Callable]:
         """获取特征计算函数"""
         return self._features.get(name)
@@ -178,7 +237,7 @@ def class_feature(
 ):
     """
     装饰器：注册类型特征
-    
+
     使用示例:
         @class_feature(name="vmd", params={"alpha": 2000}, returns_multiple=True)
         class VMD:
@@ -190,6 +249,55 @@ def class_feature(
     def decorator(cls: type) -> type:
         feature_name = name or cls.__name__.lower()
         _global_registry.register_class(
+            name=feature_name,
+            cls=cls,
+            params=params,
+            description=description or cls.__doc__ or "",
+            returns_multiple=returns_multiple
+        )
+        return cls
+    return decorator
+
+
+def stateful_feature(
+    name: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None,
+    description: str = "",
+    returns_multiple: bool = False
+):
+    """
+    装饰器：注册有状态特征
+
+    有状态特征需要训练阶段，模型状态会被持久化到磁盘。
+
+    使用示例:
+        @stateful_feature(name="my_ssm", returns_multiple=True)
+        class MySSMFeature(StatefulFeatureBase):
+            def __init__(self, candles, sequential=True, hidden_dim=64):
+                super().__init__(candles, sequential)
+                self.hidden_dim = hidden_dim
+
+            def get_params(self):
+                return {"hidden_dim": self.hidden_dim}
+
+            def get_version(self):
+                return "1.0.0"
+
+            def train(self, candles):
+                ...
+
+            def inference(self, candles, sequential):
+                ...
+
+            def get_state_dict(self):
+                return {"weights": self.model.weights}
+
+            def set_state_dict(self, state_dict):
+                self.model.weights = state_dict["weights"]
+    """
+    def decorator(cls: type) -> type:
+        feature_name = name or cls.__name__.lower()
+        _global_registry.register_stateful_class(
             name=feature_name,
             cls=cls,
             params=params,
