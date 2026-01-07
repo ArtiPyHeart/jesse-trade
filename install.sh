@@ -72,6 +72,153 @@ extract_conda_names() {
     ' "$1"
 }
 
+merge_conda_env_files() {
+    local base_file="$1"
+    local dev_file="$2"
+    local out_file="$3"
+
+    awk '
+        function dep_key(spec,   name) {
+            name = spec
+            gsub(/\[.*\]/, "", name)
+            sub(/[<>=!~].*$/, "", name)
+            gsub(/^"|"$/, "", name)
+            gsub(/^[ \t]+|[ \t]+$/, "", name)
+            return tolower(name)
+        }
+        function add_channel(chan) {
+            if (!(chan in channel_seen)) {
+                channel_seen[chan] = 1
+                channel_order[++channel_count] = chan
+            }
+        }
+        NR == FNR {
+            if ($0 ~ /^name:/) {
+                if (env_name == "") {
+                    env_name = $0
+                    sub(/^name:[ \t]*/, "", env_name)
+                }
+            }
+            if ($0 ~ /^channels:/) {
+                in_channels = 1
+                next
+            }
+            if (in_channels) {
+                if ($0 ~ /^  - /) {
+                    chan = $0
+                    sub(/^  - /, "", chan)
+                    gsub(/[ \t]+$/, "", chan)
+                    add_channel(chan)
+                    next
+                }
+                if ($0 !~ /^  /) {
+                    in_channels = 0
+                }
+            }
+            if ($0 ~ /^dependencies:/) {
+                in_deps = 1
+                next
+            }
+            if (in_deps) {
+                if ($0 ~ /^  - /) {
+                    spec = $0
+                    sub(/^  - /, "", spec)
+                    sub(/#.*/, "", spec)
+                    gsub(/^[ \t]+|[ \t]+$/, "", spec)
+                    gsub(/^"|"$/, "", spec)
+                    if (spec != "") {
+                        key = dep_key(spec)
+                        if (key != "") {
+                            if (!(key in base_seen)) {
+                                base_order[++base_count] = key
+                            }
+                            base_seen[key] = 1
+                            base_spec[key] = spec
+                        }
+                    }
+                } else if ($0 !~ /^  /) {
+                    in_deps = 0
+                }
+            }
+            next
+        }
+        FNR == 1 {
+            in_channels = 0
+            in_deps = 0
+        }
+        {
+            if ($0 ~ /^channels:/) {
+                in_channels = 1
+                next
+            }
+            if (in_channels) {
+                if ($0 ~ /^  - /) {
+                    chan = $0
+                    sub(/^  - /, "", chan)
+                    gsub(/[ \t]+$/, "", chan)
+                    add_channel(chan)
+                    next
+                }
+                if ($0 !~ /^  /) {
+                    in_channels = 0
+                }
+            }
+            if ($0 ~ /^dependencies:/) {
+                in_deps = 1
+                next
+            }
+            if (in_deps) {
+                if ($0 ~ /^  - /) {
+                    spec = $0
+                    sub(/^  - /, "", spec)
+                    sub(/#.*/, "", spec)
+                    gsub(/^[ \t]+|[ \t]+$/, "", spec)
+                    gsub(/^"|"$/, "", spec)
+                    if (spec != "") {
+                        key = dep_key(spec)
+                        if (key != "") {
+                            dev_spec[key] = spec
+                            if (!(key in dev_seen)) {
+                                dev_seen[key] = 1
+                                if (!(key in base_seen)) {
+                                    dev_only[++dev_count] = key
+                                }
+                            }
+                        }
+                    }
+                } else if ($0 !~ /^  /) {
+                    in_deps = 0
+                }
+            }
+        }
+        END {
+            if (env_name == "") {
+                env_name = "env"
+            }
+            print "name: " env_name
+            if (channel_count > 0) {
+                print "channels:"
+                for (i = 1; i <= channel_count; i++) {
+                    print "  - " channel_order[i]
+                }
+            }
+            print "dependencies:"
+            for (i = 1; i <= base_count; i++) {
+                key = base_order[i]
+                if (key in dev_spec) {
+                    print "  - " dev_spec[key]
+                } else {
+                    print "  - " base_spec[key]
+                }
+            }
+            for (i = 1; i <= dev_count; i++) {
+                key = dev_only[i]
+                print "  - " dev_spec[key]
+            }
+        }
+    ' "$base_file" "$dev_file" > "$out_file"
+}
+
 find_jesse_spec() {
     local deps_file="$1"
     if [ -z "$deps_file" ] || [ ! -f "$deps_file" ]; then
@@ -178,6 +325,7 @@ trap cleanup EXIT
 BASE_ENV_CONDA_FILE="$TMP_DIR/environment.base.conda.yml"
 BASE_PIP_DEPS_FILE="$TMP_DIR/pip.base.txt"
 CONDA_NAMES_FILE="$TMP_DIR/conda.names.txt"
+ENV_CONDA_FILE="$BASE_ENV_CONDA_FILE"
 
 strip_pip_block "$BASE_ENV_FILE" > "$BASE_ENV_CONDA_FILE"
 extract_pip_deps "$BASE_ENV_FILE" > "$BASE_PIP_DEPS_FILE"
@@ -188,9 +336,12 @@ DEV_PIP_DEPS_FILE=""
 if [ "$MODE" = "dev" ]; then
     DEV_ENV_CONDA_FILE="$TMP_DIR/environment.dev.conda.yml"
     DEV_PIP_DEPS_FILE="$TMP_DIR/pip.dev.txt"
+    MERGED_ENV_CONDA_FILE="$TMP_DIR/environment.dev.merged.conda.yml"
     strip_pip_block "$DEV_ENV_FILE" > "$DEV_ENV_CONDA_FILE"
     extract_pip_deps "$DEV_ENV_FILE" > "$DEV_PIP_DEPS_FILE"
     extract_conda_names "$DEV_ENV_FILE" >> "$CONDA_NAMES_FILE"
+    merge_conda_env_files "$BASE_ENV_CONDA_FILE" "$DEV_ENV_CONDA_FILE" "$MERGED_ENV_CONDA_FILE"
+    ENV_CONDA_FILE="$MERGED_ENV_CONDA_FILE"
 fi
 
 sort -u "$CONDA_NAMES_FILE" | awk 'NF {if ($0 != "python" && $0 != "pip") print $0}' > "$CONDA_NAMES_FILE.sorted"
@@ -213,18 +364,21 @@ if command -v mamba >/dev/null 2>&1; then
 fi
 
 echo ""
-echo ">>> 步骤 2: 安装生产环境依赖 ($ENV_NAME)..."
+if [ "$MODE" = "dev" ]; then
+    echo ">>> 步骤 2: 安装生产+开发环境依赖 ($ENV_NAME)..."
+else
+    echo ">>> 步骤 2: 安装生产环境依赖 ($ENV_NAME)..."
+fi
 
 if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
-    $CONDA_SOLVER env update -n "$ENV_NAME" -f "$BASE_ENV_CONDA_FILE" --prune
+    $CONDA_SOLVER env update -n "$ENV_NAME" -f "$ENV_CONDA_FILE" --prune
 else
-    $CONDA_SOLVER env create -n "$ENV_NAME" -f "$BASE_ENV_CONDA_FILE"
+    $CONDA_SOLVER env create -n "$ENV_NAME" -f "$ENV_CONDA_FILE"
 fi
 
 if [ "$MODE" = "dev" ]; then
     echo ""
-    echo ">>> 步骤 3: 安装开发环境依赖 (增量更新)..."
-    $CONDA_SOLVER env update -n "$ENV_NAME" -f "$DEV_ENV_CONDA_FILE"
+    echo ">>> 步骤 3: 开发依赖已合并到环境文件"
 fi
 
 echo ""
