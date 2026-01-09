@@ -651,6 +651,15 @@ cd "$ROOT_DIR"
 
 echo "✓ Rust Indicators 编译完成 (已针对当前CPU优化)"
 
+echo ""
+echo ">>> 步骤 9: 检查 Jesse 项目结构..."
+if [ ! -d "$ROOT_DIR/storage" ]; then
+    mkdir -p "$ROOT_DIR/storage"
+    echo "✓ 已创建 storage/ 目录"
+else
+    echo "✓ storage/ 目录已存在"
+fi
+
 if [ "$(uname)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
     systemctl restart pgbouncer
 fi
@@ -663,6 +672,7 @@ echo ""
 echo "已安装组件:"
 echo "  • Conda 环境 ($ENV_NAME)"
 echo "  • Rust 高性能指标 (VMD/NRBO)"
+echo "  • Jesse 项目结构 (strategies/, storage/)"
 echo ""
 echo "可以开始使用 jesse-trade 进行回测和交易"
 echo ""
