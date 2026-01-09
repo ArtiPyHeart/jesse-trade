@@ -15,24 +15,24 @@ import numpy as np
 
 class SimpleFeatureRegistry:
     """简化的特征注册中心"""
-    
+
     def __init__(self):
         # 只存储 name -> callable 的映射
         self._features: Dict[str, Callable[[np.ndarray, bool], np.ndarray]] = {}
         # 存储特征的元信息（可选）
         self._metadata: Dict[str, Dict[str, Any]] = {}
-    
+
     def register_function(
         self,
         name: str,
         func: Callable,
         params: Optional[Dict[str, Any]] = None,
         description: str = "",
-        returns_multiple: bool = False
+        returns_multiple: bool = False,
     ) -> None:
         """
         注册函数型特征
-        
+
         Args:
             name: 特征名称
             func: 特征计算函数
@@ -45,25 +45,25 @@ class SimpleFeatureRegistry:
             wrapped_func = partial(func, **params)
         else:
             wrapped_func = func
-        
+
         self._features[name] = wrapped_func
         self._metadata[name] = {
             "description": description,
             "returns_multiple": returns_multiple,
-            "type": "function"
+            "type": "function",
         }
-    
+
     def register_class(
         self,
         name: str,
         cls: type,
         params: Optional[Dict[str, Any]] = None,
         description: str = "",
-        returns_multiple: bool = False
+        returns_multiple: bool = False,
     ) -> None:
         """
         注册类型特征
-        
+
         Args:
             name: 特征名称
             cls: 特征类
@@ -71,9 +71,12 @@ class SimpleFeatureRegistry:
             description: 特征描述
             returns_multiple: 是否返回多列
         """
-        def class_wrapper(candles: np.ndarray, sequential: bool = True, return_raw: bool = False) -> np.ndarray:
+
+        def class_wrapper(
+            candles: np.ndarray, sequential: bool = True, return_raw: bool = False
+        ) -> np.ndarray:
             """将类包装成函数
-            
+
             Args:
                 candles: K线数据
                 sequential: 是否返回序列
@@ -84,29 +87,29 @@ class SimpleFeatureRegistry:
                 instance = cls(candles, sequential=sequential, **params)
             else:
                 instance = cls(candles, sequential=sequential)
-            
+
             # 如果需要raw_result（用于转换链处理）
-            if return_raw and hasattr(instance, 'raw_result'):
+            if return_raw and hasattr(instance, "raw_result"):
                 return instance.raw_result
-            
+
             # 获取结果
-            if hasattr(instance, 'res'):
+            if hasattr(instance, "res"):
                 return instance.res()
-            elif hasattr(instance, 'result'):
+            elif hasattr(instance, "result"):
                 return instance.result()
-            elif hasattr(instance, 'get'):
+            elif hasattr(instance, "get"):
                 return instance.get()
             else:
                 raise ValueError(
                     f"Class feature '{name}' doesn't have a result method "
                     f"(tried: res, result, get)"
                 )
-        
+
         self._features[name] = class_wrapper
         self._metadata[name] = {
             "description": description,
             "returns_multiple": returns_multiple,
-            "type": "class"
+            "type": "class",
         }
 
     def register_stateful_class(
@@ -115,7 +118,7 @@ class SimpleFeatureRegistry:
         cls: type,
         params: Optional[Dict[str, Any]] = None,
         description: str = "",
-        returns_multiple: bool = False
+        returns_multiple: bool = False,
     ) -> None:
         """
         注册有状态特征类
@@ -129,6 +132,7 @@ class SimpleFeatureRegistry:
             description: 特征描述
             returns_multiple: 是否返回多列
         """
+
         def stateful_class_wrapper(
             candles: np.ndarray,
             sequential: bool = True,
@@ -170,22 +174,19 @@ class SimpleFeatureRegistry:
     def get(self, name: str) -> Optional[Callable]:
         """获取特征计算函数"""
         return self._features.get(name)
-    
+
     def has_feature(self, name: str) -> bool:
         """检查特征是否已注册"""
         return name in self._features
-    
+
     def get_metadata(self, name: str) -> Optional[Dict[str, Any]]:
         """获取特征元信息"""
         return self._metadata.get(name)
-    
+
     def list_features(self) -> Dict[str, Dict[str, Any]]:
         """列出所有已注册的特征"""
-        return {
-            name: self._metadata.get(name, {})
-            for name in self._features.keys()
-        }
-    
+        return {name: self._metadata.get(name, {}) for name in self._features.keys()}
+
     def clear(self) -> None:
         """清空所有注册的特征"""
         self._features.clear()
@@ -206,16 +207,17 @@ def feature(
     name: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     description: str = "",
-    returns_multiple: bool = False
+    returns_multiple: bool = False,
 ):
     """
     装饰器：注册函数型特征
-    
+
     使用示例:
         @feature(name="rsi_14", params={"period": 14})
         def calculate_rsi(candles, sequential=True, period=14):
             return ta.rsi(candles, period=period, sequential=sequential)
     """
+
     def decorator(func: Callable) -> Callable:
         feature_name = name or func.__name__
         _global_registry.register_function(
@@ -223,9 +225,10 @@ def feature(
             func=func,
             params=params,
             description=description or func.__doc__ or "",
-            returns_multiple=returns_multiple
+            returns_multiple=returns_multiple,
         )
         return func
+
     return decorator
 
 
@@ -233,7 +236,7 @@ def class_feature(
     name: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     description: str = "",
-    returns_multiple: bool = False
+    returns_multiple: bool = False,
 ):
     """
     装饰器：注册类型特征
@@ -246,6 +249,7 @@ def class_feature(
             def res(self):
                 return self.result_array
     """
+
     def decorator(cls: type) -> type:
         feature_name = name or cls.__name__.lower()
         _global_registry.register_class(
@@ -253,9 +257,10 @@ def class_feature(
             cls=cls,
             params=params,
             description=description or cls.__doc__ or "",
-            returns_multiple=returns_multiple
+            returns_multiple=returns_multiple,
         )
         return cls
+
     return decorator
 
 
@@ -263,7 +268,7 @@ def stateful_feature(
     name: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     description: str = "",
-    returns_multiple: bool = False
+    returns_multiple: bool = False,
 ):
     """
     装饰器：注册有状态特征
@@ -295,6 +300,7 @@ def stateful_feature(
             def set_state_dict(self, state_dict):
                 self.model.weights = state_dict["weights"]
     """
+
     def decorator(cls: type) -> type:
         feature_name = name or cls.__name__.lower()
         _global_registry.register_stateful_class(
@@ -302,7 +308,8 @@ def stateful_feature(
             cls=cls,
             params=params,
             description=description or cls.__doc__ or "",
-            returns_multiple=returns_multiple
+            returns_multiple=returns_multiple,
         )
         return cls
+
     return decorator

@@ -22,32 +22,29 @@ from .transforms import (
     rolling_std,
     rolling_max,
     rolling_min,
-    TransformChain
+    TransformChain,
 )
 
 __all__ = [
     # 核心组件
-    'SimpleFeatureCalculator',
-    'SimpleFeatureRegistry',
-    'FeatureOutputValidator',
-    'TransformChain',
-
+    "SimpleFeatureCalculator",
+    "SimpleFeatureRegistry",
+    "FeatureOutputValidator",
+    "TransformChain",
     # 注册相关
-    'get_global_registry',
-    'feature',
-    'class_feature',
-    'stateful_feature',
-
+    "get_global_registry",
+    "feature",
+    "class_feature",
+    "stateful_feature",
     # 有状态特征
-    'StatefulFeatureBase',
-    'StatefulCacheManager',
-
+    "StatefulFeatureBase",
+    "StatefulCacheManager",
     # 转换函数
-    'dt',
-    'ddt',
-    'lag',
-    'rolling_mean',
-    'rolling_std',
-    'rolling_max',
-    'rolling_min',
+    "dt",
+    "ddt",
+    "lag",
+    "rolling_mean",
+    "rolling_std",
+    "rolling_max",
+    "rolling_min",
 ]

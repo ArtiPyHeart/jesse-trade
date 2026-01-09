@@ -20,7 +20,7 @@ class BaseIndicatorFeature:
         candles: np.ndarray,
         window: int,
         sequential: bool = False,
-        **kwargs
+        **kwargs,
     ):
         self.indicator = indicator_class(candles, window, sequential=sequential)
 

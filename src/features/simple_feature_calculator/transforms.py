@@ -770,7 +770,7 @@ def rolling_hurst(array: np.ndarray, window: int, min_lag: int = 2) -> np.ndarra
                 else:
                     result[i] = 0.5
 
-            except:
+            except Exception:
                 # 拟合异常，使用前一个值或0.5
                 if i > window - 1:
                     result[i] = result[i - 1]
@@ -891,7 +891,7 @@ def rolling_hurst(array: np.ndarray, window: int, min_lag: int = 2) -> np.ndarra
                     else:
                         result[i, col] = 0.5
 
-                except:
+                except Exception:
                     if i > window - 1:
                         result[i, col] = result[i - 1, col]
                     else:

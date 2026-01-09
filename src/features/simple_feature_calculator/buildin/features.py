@@ -763,9 +763,7 @@ def reverse_1v5_feature(
     long_period: int = 5,
 ):
     """反转动量1v5"""
-    return reverse_momentum(
-        candles, short_period, long_period, sequential=sequential
-    )
+    return reverse_momentum(candles, short_period, long_period, sequential=sequential)
 
 
 @feature(
@@ -780,9 +778,7 @@ def reverse_2v10_feature(
     long_period: int = 10,
 ):
     """反转动量2v10"""
-    return reverse_momentum(
-        candles, short_period, long_period, sequential=sequential
-    )
+    return reverse_momentum(candles, short_period, long_period, sequential=sequential)
 
 
 @feature(
@@ -797,9 +793,7 @@ def reverse_3v15_feature(
     long_period: int = 15,
 ):
     """反转动量3v15"""
-    return reverse_momentum(
-        candles, short_period, long_period, sequential=sequential
-    )
+    return reverse_momentum(candles, short_period, long_period, sequential=sequential)
 
 
 @feature(

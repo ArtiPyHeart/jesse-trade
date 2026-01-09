@@ -8,22 +8,83 @@ import numpy as np
 
 from src.features.simple_feature_calculator import feature
 from src.indicators.prod.wq_alpha import (
-    alpha_001, alpha_002, alpha_003, alpha_004, alpha_005,
-    alpha_006, alpha_007, alpha_008, alpha_009, alpha_010,
-    alpha_011, alpha_012, alpha_013, alpha_014, alpha_015,
-    alpha_016, alpha_017, alpha_018, alpha_019, alpha_020,
-    alpha_021, alpha_022, alpha_023, alpha_024, alpha_025,
-    alpha_026, alpha_027, alpha_030, alpha_033, alpha_034,
-    alpha_035, alpha_036, alpha_037, alpha_038, alpha_039,
-    alpha_040, alpha_041, alpha_042, alpha_043, alpha_044,
-    alpha_045, alpha_046, alpha_047, alpha_049, alpha_050,
-    alpha_051, alpha_052, alpha_053, alpha_054, alpha_055,
-    alpha_057, alpha_061, alpha_062, alpha_064, alpha_065,
-    alpha_066, alpha_068, alpha_071, alpha_072, alpha_073,
-    alpha_074, alpha_075, alpha_077, alpha_078, alpha_081,
-    alpha_083, alpha_084, alpha_085, alpha_086, alpha_088,
-    alpha_092, alpha_094, alpha_095, alpha_096, alpha_098,
-    alpha_099, alpha_101,
+    alpha_001,
+    alpha_002,
+    alpha_003,
+    alpha_004,
+    alpha_005,
+    alpha_006,
+    alpha_007,
+    alpha_008,
+    alpha_009,
+    alpha_010,
+    alpha_011,
+    alpha_012,
+    alpha_013,
+    alpha_014,
+    alpha_015,
+    alpha_016,
+    alpha_017,
+    alpha_018,
+    alpha_019,
+    alpha_020,
+    alpha_021,
+    alpha_022,
+    alpha_023,
+    alpha_024,
+    alpha_025,
+    alpha_026,
+    alpha_027,
+    alpha_030,
+    alpha_033,
+    alpha_034,
+    alpha_035,
+    alpha_036,
+    alpha_037,
+    alpha_038,
+    alpha_039,
+    alpha_040,
+    alpha_041,
+    alpha_042,
+    alpha_043,
+    alpha_044,
+    alpha_045,
+    alpha_046,
+    alpha_047,
+    alpha_049,
+    alpha_050,
+    alpha_051,
+    alpha_052,
+    alpha_053,
+    alpha_054,
+    alpha_055,
+    alpha_057,
+    alpha_061,
+    alpha_062,
+    alpha_064,
+    alpha_065,
+    alpha_066,
+    alpha_068,
+    alpha_071,
+    alpha_072,
+    alpha_073,
+    alpha_074,
+    alpha_075,
+    alpha_077,
+    alpha_078,
+    alpha_081,
+    alpha_083,
+    alpha_084,
+    alpha_085,
+    alpha_086,
+    alpha_088,
+    alpha_092,
+    alpha_094,
+    alpha_095,
+    alpha_096,
+    alpha_098,
+    alpha_099,
+    alpha_101,
 )
 
 
@@ -36,7 +97,10 @@ def _ensure_array(result) -> np.ndarray:
 
 # ============ Price/Volume Alphas ============
 
-@feature(name="wq_alpha_001", description="WQ101 Alpha #1: Conditioned Returns Momentum")
+
+@feature(
+    name="wq_alpha_001", description="WQ101 Alpha #1: Conditioned Returns Momentum"
+)
 def wq_alpha_001(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_001(candles, sequential=sequential))
 
@@ -98,6 +162,7 @@ def wq_alpha_101(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
 
 # ============ Correlation-based Alphas ============
 
+
 @feature(name="wq_alpha_002", description="WQ101 Alpha #2: Volume-Return Correlation")
 def wq_alpha_002(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_002(candles, sequential=sequential))
@@ -113,12 +178,16 @@ def wq_alpha_006(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_006(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_014", description="WQ101 Alpha #14: Returns-Open-Volume Correlation")
+@feature(
+    name="wq_alpha_014", description="WQ101 Alpha #14: Returns-Open-Volume Correlation"
+)
 def wq_alpha_014(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_014(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_015", description="WQ101 Alpha #15: High-Volume Correlation Sum")
+@feature(
+    name="wq_alpha_015", description="WQ101 Alpha #15: High-Volume Correlation Sum"
+)
 def wq_alpha_015(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_015(candles, sequential=sequential))
 
@@ -128,12 +197,16 @@ def wq_alpha_018(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_018(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_022", description="WQ101 Alpha #22: High-Volume Correlation Delta")
+@feature(
+    name="wq_alpha_022", description="WQ101 Alpha #22: High-Volume Correlation Delta"
+)
 def wq_alpha_022(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_022(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_026", description="WQ101 Alpha #26: Volume-High Correlation Max")
+@feature(
+    name="wq_alpha_026", description="WQ101 Alpha #26: Volume-High Correlation Max"
+)
 def wq_alpha_026(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_026(candles, sequential=sequential))
 
@@ -143,7 +216,9 @@ def wq_alpha_037(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_037(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_040", description="WQ101 Alpha #40: High Volatility Correlation")
+@feature(
+    name="wq_alpha_040", description="WQ101 Alpha #40: High Volatility Correlation"
+)
 def wq_alpha_040(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_040(candles, sequential=sequential))
 
@@ -158,7 +233,10 @@ def wq_alpha_045(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_045(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_055", description="WQ101 Alpha #55: Price Position Volume Correlation")
+@feature(
+    name="wq_alpha_055",
+    description="WQ101 Alpha #55: Price Position Volume Correlation",
+)
 def wq_alpha_055(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_055(candles, sequential=sequential))
 
@@ -194,6 +272,7 @@ def wq_alpha_099(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
 
 
 # ============ Rank-based Alphas ============
+
 
 @feature(name="wq_alpha_004", description="WQ101 Alpha #4: Low Rank")
 def wq_alpha_004(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
@@ -265,7 +344,9 @@ def wq_alpha_038(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_038(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_039", description="WQ101 Alpha #39: Delta Close with Decay Volume")
+@feature(
+    name="wq_alpha_039", description="WQ101 Alpha #39: Delta Close with Decay Volume"
+)
 def wq_alpha_039(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_039(candles, sequential=sequential))
 
@@ -275,12 +356,15 @@ def wq_alpha_043(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_043(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_052", description="WQ101 Alpha #52: Returns Momentum with Volume")
+@feature(
+    name="wq_alpha_052", description="WQ101 Alpha #52: Returns Momentum with Volume"
+)
 def wq_alpha_052(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_052(candles, sequential=sequential))
 
 
 # ============ VWAP-based Alphas ============
+
 
 @feature(name="wq_alpha_005", description="WQ101 Alpha #5: Open-VWAP Spread")
 def wq_alpha_005(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
@@ -322,7 +406,9 @@ def wq_alpha_047(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_047(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_050", description="WQ101 Alpha #50: Volume-VWAP Correlation Max")
+@feature(
+    name="wq_alpha_050", description="WQ101 Alpha #50: Volume-VWAP Correlation Max"
+)
 def wq_alpha_050(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_050(candles, sequential=sequential))
 
@@ -362,7 +448,9 @@ def wq_alpha_071(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_071(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_072", description="WQ101 Alpha #72: Ratio of Decay Correlations")
+@feature(
+    name="wq_alpha_072", description="WQ101 Alpha #72: Ratio of Decay Correlations"
+)
 def wq_alpha_072(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_072(candles, sequential=sequential))
 
@@ -422,7 +510,9 @@ def wq_alpha_096(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_096(candles, sequential=sequential))
 
 
-@feature(name="wq_alpha_098", description="WQ101 Alpha #98: Decay Correlation Difference")
+@feature(
+    name="wq_alpha_098", description="WQ101 Alpha #98: Decay Correlation Difference"
+)
 def wq_alpha_098(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
     return _ensure_array(alpha_098(candles, sequential=sequential))
 
@@ -431,28 +521,84 @@ def wq_alpha_098(candles: np.ndarray, sequential: bool = True) -> np.ndarray:
 
 WQ_ALPHA_FEATURES = [
     # Price/Volume
-    "wq_alpha_001", "wq_alpha_009", "wq_alpha_012", "wq_alpha_021",
-    "wq_alpha_023", "wq_alpha_024", "wq_alpha_046", "wq_alpha_049",
-    "wq_alpha_051", "wq_alpha_053", "wq_alpha_054", "wq_alpha_101",
+    "wq_alpha_001",
+    "wq_alpha_009",
+    "wq_alpha_012",
+    "wq_alpha_021",
+    "wq_alpha_023",
+    "wq_alpha_024",
+    "wq_alpha_046",
+    "wq_alpha_049",
+    "wq_alpha_051",
+    "wq_alpha_053",
+    "wq_alpha_054",
+    "wq_alpha_101",
     # Correlation-based
-    "wq_alpha_002", "wq_alpha_003", "wq_alpha_006", "wq_alpha_014",
-    "wq_alpha_015", "wq_alpha_018", "wq_alpha_022", "wq_alpha_026",
-    "wq_alpha_037", "wq_alpha_040", "wq_alpha_044", "wq_alpha_045",
-    "wq_alpha_055", "wq_alpha_068", "wq_alpha_085", "wq_alpha_088",
-    "wq_alpha_092", "wq_alpha_095", "wq_alpha_099",
+    "wq_alpha_002",
+    "wq_alpha_003",
+    "wq_alpha_006",
+    "wq_alpha_014",
+    "wq_alpha_015",
+    "wq_alpha_018",
+    "wq_alpha_022",
+    "wq_alpha_026",
+    "wq_alpha_037",
+    "wq_alpha_040",
+    "wq_alpha_044",
+    "wq_alpha_045",
+    "wq_alpha_055",
+    "wq_alpha_068",
+    "wq_alpha_085",
+    "wq_alpha_088",
+    "wq_alpha_092",
+    "wq_alpha_095",
+    "wq_alpha_099",
     # Rank-based
-    "wq_alpha_004", "wq_alpha_007", "wq_alpha_008", "wq_alpha_010",
-    "wq_alpha_013", "wq_alpha_016", "wq_alpha_017", "wq_alpha_019",
-    "wq_alpha_020", "wq_alpha_030", "wq_alpha_033", "wq_alpha_034",
-    "wq_alpha_035", "wq_alpha_038", "wq_alpha_039", "wq_alpha_043",
+    "wq_alpha_004",
+    "wq_alpha_007",
+    "wq_alpha_008",
+    "wq_alpha_010",
+    "wq_alpha_013",
+    "wq_alpha_016",
+    "wq_alpha_017",
+    "wq_alpha_019",
+    "wq_alpha_020",
+    "wq_alpha_030",
+    "wq_alpha_033",
+    "wq_alpha_034",
+    "wq_alpha_035",
+    "wq_alpha_038",
+    "wq_alpha_039",
+    "wq_alpha_043",
     "wq_alpha_052",
     # VWAP-based
-    "wq_alpha_005", "wq_alpha_011", "wq_alpha_025", "wq_alpha_027",
-    "wq_alpha_036", "wq_alpha_041", "wq_alpha_042", "wq_alpha_047",
-    "wq_alpha_050", "wq_alpha_057", "wq_alpha_061", "wq_alpha_062",
-    "wq_alpha_064", "wq_alpha_065", "wq_alpha_066", "wq_alpha_071",
-    "wq_alpha_072", "wq_alpha_073", "wq_alpha_074", "wq_alpha_075",
-    "wq_alpha_077", "wq_alpha_078", "wq_alpha_081", "wq_alpha_083",
-    "wq_alpha_084", "wq_alpha_086", "wq_alpha_094", "wq_alpha_096",
+    "wq_alpha_005",
+    "wq_alpha_011",
+    "wq_alpha_025",
+    "wq_alpha_027",
+    "wq_alpha_036",
+    "wq_alpha_041",
+    "wq_alpha_042",
+    "wq_alpha_047",
+    "wq_alpha_050",
+    "wq_alpha_057",
+    "wq_alpha_061",
+    "wq_alpha_062",
+    "wq_alpha_064",
+    "wq_alpha_065",
+    "wq_alpha_066",
+    "wq_alpha_071",
+    "wq_alpha_072",
+    "wq_alpha_073",
+    "wq_alpha_074",
+    "wq_alpha_075",
+    "wq_alpha_077",
+    "wq_alpha_078",
+    "wq_alpha_081",
+    "wq_alpha_083",
+    "wq_alpha_084",
+    "wq_alpha_086",
+    "wq_alpha_094",
+    "wq_alpha_096",
     "wq_alpha_098",
 ]

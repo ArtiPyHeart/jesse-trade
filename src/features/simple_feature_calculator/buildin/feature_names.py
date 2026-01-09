@@ -1,8 +1,8 @@
 _fracdiff_features = []
 for p1 in ["o", "h", "l", "c"]:
     for p2 in ["o", "h", "l", "c"]:
-        for l in range(1, 6):
-            _fracdiff_features.append(f"frac_{p1}_{p2}{l}_diff")
+        for lag in range(1, 6):
+            _fracdiff_features.append(f"frac_{p1}_{p2}{lag}_diff")
 
 BUILDIN_FEATURES = (
     _fracdiff_features
@@ -168,6 +168,6 @@ BUILDIN_FEATURES = (
 )
 
 if __name__ == "__main__":
-    assert len(BUILDIN_FEATURES) == len(
-        list(set(BUILDIN_FEATURES))
-    ), "duplicate buildin features"
+    assert len(BUILDIN_FEATURES) == len(list(set(BUILDIN_FEATURES))), (
+        "duplicate buildin features"
+    )
