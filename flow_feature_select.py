@@ -151,12 +151,13 @@ def run_single_selection(
 
     # 1. 生成标签
     labeler = GMMLabeler(candles, lag_n=log_return_lag, verbose=False)
+    gmm_random_state = labeler.random_state  # 记录 GMM 的 seed，供后续 build 复现
     if label_type == "hard":
         raw_labels = labeler.label_hard_state
     else:
         raw_labels = labeler.label_direction_force
 
-    print(f"标签生成完成: {len(raw_labels)} 样本")
+    print(f"标签生成完成: {len(raw_labels)} 样本, GMM seed={gmm_random_state}")
 
     # 2. 对齐特征和标签
     aligned_features, aligned_labels = align_features_labels(
@@ -179,6 +180,7 @@ def run_single_selection(
         "log_return_lag": log_return_lag,
         "pred_next": pred_next,
         "label_type": label_type,
+        "gmm_random_state": gmm_random_state,  # GMM seed，确保 build 时标签一致
         "n_total_features": aligned_features.shape[1],
         "n_selected_features": len(selected),
         "selected_features": json.dumps(selected),
