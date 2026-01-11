@@ -57,7 +57,7 @@ class ARDVAEConfig(BaseModel):
     learning_rate: float = 1e-3
     max_epochs: int = 200
     batch_size: int = 64
-    patience: int = 15
+    patience: int = 50
     min_delta: float = 1e-4
 
     # 正则化

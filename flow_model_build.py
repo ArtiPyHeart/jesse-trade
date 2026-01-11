@@ -376,16 +376,16 @@ def build_single_model(
 
     # 80% 训练，20% 验证
     val_split = int(len(aligned_features) * 0.8)
-    train_data = aligned_features.iloc[:val_split].values
-    val_data = aligned_features.iloc[val_split:].values
+    train_data = aligned_features.iloc[:val_split]
+    val_data = aligned_features.iloc[val_split:]
 
     vae.fit(train_data, val_data=val_data, verbose=True)
-    reduced_features = vae.transform(aligned_features.values)
+    reduced_features = vae.transform(aligned_features)
     print(f"降维后维度: {reduced_features.shape[1]}")
 
     # 5. Optuna 调参
     print("\n[4/6] Optuna 调参...")
-    reduced_df = pd.DataFrame(reduced_features)
+    reduced_df = reduced_features
 
     if label_type == "hard":
         best_params, cv_score = tune_classifier(reduced_df, aligned_labels)
