@@ -598,6 +598,16 @@ fi
 
 python -m pip install --no-deps "$JESSE_SPEC"
 
+if [ "$(uname)" = "Darwin" ]; then
+    echo ""
+    echo ">>> 步骤 6.5: macOS 检测到,重装 numpy 使用 Accelerate (避免 OpenBLAS/OpenMP 崩溃)..."
+    $CONDA_SOLVER install -n "$ENV_NAME" -c conda-forge --yes \
+        "numpy" \
+        "libblas=*=*accelerate" \
+        "liblapack=*=*accelerate" \
+        "libcblas=*=*accelerate"
+fi
+
 echo ""
 echo ">>> 步骤 7: 检查 maturin (Rust-Python 构建工具)..."
 if ! command -v maturin >/dev/null 2>&1; then
