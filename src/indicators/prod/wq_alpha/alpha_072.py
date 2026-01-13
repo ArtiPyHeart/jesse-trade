@@ -54,13 +54,16 @@ def alpha_072(
     corr2 = ts_corr(rank_vwap, rank_vol, 7)
     part2 = decay_linear(corr2, 3)
 
-    # Ratio with protection
-    result = np.divide(
-        part1,
-        part2,
-        out=np.zeros_like(part1),
-        where=part2 != 0,
-    )
+    # Ratio with protection (avoid near-zero denominator blow-ups)
+    eps = 1e-6
+    denom = part2.copy()
+    near_zero = np.abs(denom) < eps
+    denom[near_zero] = np.sign(denom[near_zero]) * eps
+    denom[denom == 0] = eps
+    ratio = part1 / denom
+
+    # Compress extreme values while preserving sign
+    result = np.sign(ratio) * np.log1p(np.abs(ratio))
 
     return result if sequential else result[-1:]
 
@@ -70,10 +73,14 @@ if __name__ == "__main__":
 
     print("Testing Alpha #72...")
     _, candles = research.get_candles(
-        "Binance Perpetual Futures", "BTC-USDT", "1m",
+        "Binance Perpetual Futures",
+        "BTC-USDT",
+        "1m",
         helpers.date_to_timestamp("2024-01-01"),
         helpers.date_to_timestamp("2024-01-07"),
-        warmup_candles_num=0, caching=True, is_for_jesse=False,
+        warmup_candles_num=0,
+        caching=True,
+        is_for_jesse=False,
     )
     print(f"  Loaded {len(candles)} candles")
 
