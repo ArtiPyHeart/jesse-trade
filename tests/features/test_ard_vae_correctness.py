@@ -393,6 +393,26 @@ class TestSaveLoad:
         np.testing.assert_allclose(loaded.kl_per_dim, ard_vae.kl_per_dim)
         assert loaded._feature_names == ard_vae._feature_names
 
+    def test_save_load_preserves_zero_var_mask(self):
+        """zero variance mask 应在 save/load 后保持"""
+        from src.features.dimensionality_reduction import ARDVAE, ARDVAEConfig
+
+        np.random.seed(42)
+        X = np.random.randn(100, 10)
+        X[:, 0] = 1.0
+        X[:, 3] = -2.0
+        df = pd.DataFrame(X, columns=[f"f{i}" for i in range(10)])
+
+        config = ARDVAEConfig(max_latent_dim=8, max_epochs=10, seed=42)
+        ard_vae = ARDVAE(config)
+        ard_vae.fit(df, verbose=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ard_vae.save(tmpdir, "test_model")
+            loaded = ARDVAE.load(tmpdir, "test_model")
+
+        np.testing.assert_array_equal(loaded._zero_var_mask, ard_vae._zero_var_mask)
+
     def test_save_without_fit_error(self):
         """未 fit 时 save 应报错"""
         from src.features.dimensionality_reduction import ARDVAE, ARDVAEConfig
@@ -438,6 +458,54 @@ class TestScalerIntegration:
 
         np.testing.assert_allclose(loaded._scaler_mean, original_mean)
         np.testing.assert_allclose(loaded._scaler_std, original_std)
+
+    def test_zero_variance_features_masked(self):
+        """零方差特征应被掩码并在 transform 时强制为 0"""
+        from src.features.dimensionality_reduction import ARDVAE, ARDVAEConfig
+
+        np.random.seed(42)
+        X = np.random.randn(200, 6)
+        X[:, 0] = 1.0
+        X[:, 4] = -3.0
+        df_train = pd.DataFrame(X, columns=[f"f{i}" for i in range(6)])
+
+        config = ARDVAEConfig(max_latent_dim=4, max_epochs=10, seed=42)
+        ard_vae = ARDVAE(config)
+        ard_vae.fit(df_train, verbose=False)
+
+        assert ard_vae._zero_var_mask is not None
+        assert ard_vae._zero_var_mask[0]
+        assert ard_vae._zero_var_mask[4]
+
+        df_val = df_train.copy()
+        df_val.iloc[:, 0] = 999.0
+        df_val.iloc[:, 4] = -999.0
+        scaled_val = ard_vae._transform_scaler(df_val.values)
+
+        assert np.allclose(scaled_val[:, 0], 0.0)
+        assert np.allclose(scaled_val[:, 4], 0.0)
+
+    def test_low_variance_features_masked_by_ratio(self):
+        """低方差特征应被 ratio 阈值掩码"""
+        from src.features.dimensionality_reduction import ARDVAE, ARDVAEConfig
+
+        np.random.seed(42)
+        X = np.random.randn(200, 6)
+        X[:, 1] = np.random.randn(200) * 1e-6 + 0.01
+        df_train = pd.DataFrame(X, columns=[f"f{i}" for i in range(6)])
+
+        config = ARDVAEConfig(
+            max_latent_dim=4,
+            max_epochs=5,
+            scaler_std_ratio_min=1e-2,
+            seed=42,
+        )
+        ard_vae = ARDVAE(config)
+        ard_vae.fit(df_train, verbose=False)
+
+        assert ard_vae._zero_var_mask is not None
+        assert ard_vae._zero_var_mask[1]
+        assert not ard_vae._zero_var_mask[0]
 
     def test_scaler_disabled(self):
         """use_scaler=False 时不应标准化"""

@@ -304,6 +304,40 @@ def tune_regressor(train_x: pd.DataFrame, train_y: np.ndarray) -> tuple[dict, fl
     return params, best_value
 
 
+def _train_final_lgbm_model(
+    train_x: pd.DataFrame,
+    train_y: np.ndarray,
+    params: dict,
+    num_boost_round: int = 3000,
+) -> lgb.Booster:
+    """
+    训练最终 LightGBM 模型（保留特征名）
+
+    Args:
+        train_x: 特征 DataFrame（列名会写入模型）
+        train_y: 标签数组
+        params: LightGBM 参数
+        num_boost_round: 训练轮数
+
+    Returns:
+        训练好的 LightGBM Booster
+    """
+    assert isinstance(train_x, pd.DataFrame), "train_x must be a pandas DataFrame"
+    assert len(train_x) == len(train_y), "train_x and train_y length mismatch"
+
+    x = train_x.copy()
+    x = x.astype(np.float32)
+    x.columns = [str(c) for c in x.columns]
+
+    dtrain = lgb.Dataset(
+        x,
+        train_y,
+        free_raw_data=True,
+        feature_name=list(x.columns),
+    )
+    return lgb.train(params, dtrain, num_boost_round=num_boost_round)
+
+
 # ============================================================================
 # 单模型构建
 # ============================================================================
@@ -396,11 +430,7 @@ def build_single_model(
 
     # 6. 全量训练最终模型
     print("\n[5/6] 全量训练...")
-    X = np.ascontiguousarray(reduced_df.values.astype(np.float32))
-    y = aligned_labels
-
-    dtrain = lgb.Dataset(X, y, free_raw_data=True)
-    final_model = lgb.train(best_params, dtrain, num_boost_round=3000)
+    final_model = _train_final_lgbm_model(reduced_df, aligned_labels, best_params)
 
     # 7. 持久化
     print("\n[6/6] 持久化模型...")

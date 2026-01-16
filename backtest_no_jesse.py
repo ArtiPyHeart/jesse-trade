@@ -3,20 +3,22 @@
 
 核心改进：
 1. 一次性生成所有 fusion bars（避免逐根 candle 更新）
-2. 使用 FeatureMaker + Reducer 二段式架构计算特征/降维
-3. SSM 全程 inference（先 warmup，再逐行推理），避免 transform 状态偏差
+2. 全局 SimpleFeatureCalculator 计算原始特征（按模型配置去重排序）
+3. 每模型 ARDVAE 降维并预测
 4. 预先计算所有预测结果，交易模拟时直接查表
 
 架构说明：
-- FeatureMaker: 共享，负责原始特征 + SSM 计算
-- Reducer: 可全局共享或每模型独立，负责 ARDVAE 降维
+- SimpleFeatureCalculator: 共享，负责原始特征计算
+- ARDVAE: 每模型独立，负责降维
 
 性能提升：
 - 特征计算阶段：~10-50x 加速
 - 预期整体：5-20x 加速
 """
 
+import importlib.util
 import json
+import sys
 import time
 from importlib import import_module
 from pathlib import Path
@@ -29,7 +31,8 @@ from pydantic import BaseModel
 from tqdm.auto import tqdm
 
 from src.bars.fusion.demo import DemoBar
-from src.features.pipeline import FeatureMaker, Reducer
+from src.features.dimensionality_reduction import ARDVAE
+from src.features.simple_feature_calculator import SimpleFeatureCalculator
 
 # ==================== 配置常量 ====================
 STOP_LOSS_RATIO_NO_LEVERAGE = 0.05
@@ -58,8 +61,27 @@ def _resolve_model_config_module(
 
 def _load_model_config(
     module_path: str,
+    config_path: Optional[Path] = None,
 ) -> tuple[Callable[[str], tuple[str, int, int, float]], type]:
-    module = import_module(module_path)
+    if config_path is not None:
+        config_path = Path(config_path)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+    else:
+        candidate = Path(module_path)
+        if candidate.suffix == ".py" or candidate.exists():
+            config_path = candidate
+
+    if config_path is not None:
+        module_name = f"_backtest_model_config_{abs(hash(str(config_path)))}"
+        spec = importlib.util.spec_from_file_location(module_name, config_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load config module from {config_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    else:
+        module = import_module(module_path)
     if not hasattr(module, "model_name_to_params"):
         raise AttributeError(f"{module_path} 缺少 model_name_to_params")
     if not hasattr(module, "LGBMContainer"):
@@ -801,7 +823,7 @@ class BacktestAnalyzer:
             )
 
 
-# ==================== 向量化特征计算 ====================
+# ==================== Fusion Bar 生成 ====================
 def generate_all_fusion_bars_with_split(
     warmup_candles: np.ndarray,
     trading_candles: np.ndarray,
@@ -897,51 +919,179 @@ def generate_all_fusion_bars_with_split(
     return fusion_bars, warmup_fusion_bars_len
 
 
-def _compute_ssm_features_sequential(
-    feature_maker: FeatureMaker,
-    ssm_input_df: pd.DataFrame,
-) -> pd.DataFrame:
+# ==================== 全局特征计算 ====================
+def _load_model_features(model_dir: Path, model_name: str) -> list[str]:
     """
-    使用 SSM inference 逐行计算特征（保持状态连续）
+    读取单模型特征配置
 
     Args:
-        feature_maker: 已加载的 FeatureMaker
-        ssm_input_df: 无 NaN 的 SSM 输入特征 DataFrame
+        model_dir: models 根目录
+        model_name: 模型名称
 
     Returns:
-        SSM 特征 DataFrame
+        特征列表（保持原顺序）
     """
-    if ssm_input_df.empty:
-        return pd.DataFrame(index=ssm_input_df.index)
+    features_path = model_dir / model_name / "features.json"
+    if not features_path.exists():
+        raise FileNotFoundError(f"Missing features.json: {features_path}")
 
-    feature_maker.reset_ssm_states()
+    with open(features_path, "r") as f:
+        features = json.load(f)
 
-    n_rows = len(ssm_input_df)
-    ssm_outputs: dict[str, np.ndarray] = {}
+    if not isinstance(features, list) or not all(
+        isinstance(feature, str) for feature in features
+    ):
+        raise ValueError(f"Invalid features.json format: {features_path}")
 
-    for ssm_type in feature_maker.config.ssm_types:
-        processor = feature_maker.ssm_processors.get(ssm_type)
-        if processor is None:
-            raise RuntimeError(f"SSM processor '{ssm_type}' not found in FeatureMaker")
-        ssm_outputs[ssm_type] = np.empty(
-            (n_rows, processor.state_dim), dtype=np.float32
+    if not features:
+        raise ValueError(f"Empty features.json: {features_path}")
+
+    seen = set()
+    duplicates = []
+    for feature in features:
+        if feature in seen:
+            duplicates.append(feature)
+        else:
+            seen.add(feature)
+
+    if duplicates:
+        raise ValueError(
+            f"Duplicate features in {features_path}: {sorted(set(duplicates))}"
         )
 
-    ssm_values = ssm_input_df.to_numpy(dtype=np.float32, copy=False)
-    for i in tqdm(range(n_rows), desc="SSM Inference", ncols=100):
-        obs = ssm_values[i]
-        for ssm_type in feature_maker.config.ssm_types:
-            processor = feature_maker.ssm_processors[ssm_type]
-            ssm_outputs[ssm_type][i] = processor.inference(obs)
+    return features
 
-    ssm_dfs = []
-    for ssm_type in feature_maker.config.ssm_types:
-        processor = feature_maker.ssm_processors[ssm_type]
-        data = ssm_outputs[ssm_type]
-        columns = [f"{processor.prefix}_{j}" for j in range(data.shape[1])]
-        ssm_dfs.append(pd.DataFrame(data, columns=columns))
 
-    return pd.concat(ssm_dfs, axis=1)
+def _collect_model_features(
+    model_dir: Path, models: list[str]
+) -> tuple[dict[str, list[str]], list[str]]:
+    """
+    汇总所有模型特征，并生成去重排序后的全局特征列表
+
+    Args:
+        model_dir: models 根目录
+        models: 模型列表
+
+    Returns:
+        (model_features_map, global_features)
+    """
+    model_features = {}
+    global_features_set: set[str] = set()
+
+    for model_name in models:
+        features = _load_model_features(model_dir, model_name)
+        model_features[model_name] = features
+        global_features_set.update(features)
+
+    global_features = sorted(global_features_set)
+    if not global_features:
+        raise ValueError("No features found from model configs")
+
+    return model_features, global_features
+
+
+def _find_first_valid_index(df_features: pd.DataFrame) -> int:
+    """找到首个全列非 NaN 的行索引。"""
+    valid_mask = ~df_features.isna().any(axis=1)
+    if not valid_mask.any():
+        raise ValueError("All rows contain NaN in computed features")
+    return int(np.argmax(valid_mask))
+
+
+def _compute_global_features(
+    fusion_bars: np.ndarray,
+    warmup_fusion_bars_len: int,
+    feature_names: list[str],
+    verbose: bool = True,
+) -> pd.DataFrame:
+    """
+    使用 SimpleFeatureCalculator 计算全局原始特征
+
+    Args:
+        fusion_bars: 所有 fusion bars
+        warmup_fusion_bars_len: warmup 对应的 fusion bar 数量
+        feature_names: 去重排序后的特征列表
+        verbose: 是否输出计算进度
+
+    Returns:
+        全量特征 DataFrame（包含 warmup + trading）
+    """
+    print("\n" + "=" * 60)
+    print("Phase 2: 全局原始特征计算")
+    print("=" * 60)
+    print(f"全局特征数: {len(feature_names)}")
+    print(f"Warmup fusion bars: {warmup_fusion_bars_len}")
+    print(f"Total fusion bars: {len(fusion_bars)}")
+
+    start_time = time.perf_counter()
+    calc = SimpleFeatureCalculator(verbose=verbose)
+    calc.load(fusion_bars, sequential=True)
+    features_dict = calc.get(feature_names)
+    features_df = pd.DataFrame(features_dict)
+    elapsed = time.perf_counter() - start_time
+
+    if len(features_df) != len(fusion_bars):
+        raise ValueError(
+            "Feature length mismatch. "
+            f"features={len(features_df)}, bars={len(fusion_bars)}"
+        )
+
+    first_valid = _find_first_valid_index(features_df)
+    if warmup_fusion_bars_len < first_valid:
+        raise ValueError(
+            "Warmup fusion bars 数量不足以覆盖特征 NaN 区间，"
+            f"first_valid={first_valid}, warmup={warmup_fusion_bars_len}. "
+            "请增加 warmup_candles_num。"
+        )
+
+    trading_df = features_df.iloc[warmup_fusion_bars_len:]
+    if trading_df.isna().any().any():
+        nan_cols = trading_df.columns[trading_df.isna().any()].tolist()
+        raise ValueError(
+            "Trading 特征仍包含 NaN，请增加 warmup_candles_num。"
+            f" NaN columns: {nan_cols}"
+        )
+
+    print(f"原始特征计算完成，耗时: {elapsed:.2f}s")
+    print("=" * 60 + "\n")
+
+    return features_df
+
+
+def _slice_trading_features(
+    features_df: pd.DataFrame,
+    model_features: list[str],
+    warmup_fusion_bars_len: int,
+    model_name: str,
+) -> pd.DataFrame:
+    """
+    提取模型特征并截取 trading 区间
+    """
+    missing = set(model_features) - set(features_df.columns)
+    if missing:
+        raise ValueError(f"Missing features for {model_name}: {sorted(missing)}")
+
+    model_df = features_df[model_features]
+    model_df = model_df.iloc[warmup_fusion_bars_len:].reset_index(drop=True)
+
+    if model_df.isna().any().any():
+        nan_cols = model_df.columns[model_df.isna().any()].tolist()
+        raise ValueError(f"Trading 特征包含 NaN: model={model_name}, cols={nan_cols}")
+
+    return model_df
+
+
+def _reduce_features_with_vae(
+    model_features_df: pd.DataFrame,
+    model_dir: Path,
+    model_name: str,
+) -> pd.DataFrame:
+    """
+    使用模型对应的 ARDVAE 降维
+    """
+    model_path = model_dir / model_name
+    vae = ARDVAE.load(str(model_path), model_name)
+    return vae.transform(model_features_df)
 
 
 def _align_lgbm_feature_columns(
@@ -966,107 +1116,15 @@ def _align_lgbm_feature_columns(
     if list(df_features.columns) == expected_columns:
         return df_features
 
-    return df_features.set_axis(expected_columns, axis=1, copy=False)
+    if set(df_features.columns) == set(expected_columns):
+        return df_features[expected_columns]
 
-
-def compute_features_vectorized(
-    fusion_bars: np.ndarray,
-    warmup_fusion_bars_len: int,
-    feature_maker: FeatureMaker,
-    reducer: Reducer,
-    label: str,
-) -> pd.DataFrame:
-    """
-    使用 FeatureMaker + Reducer 向量化计算特征（SSM 逐行 inference）
-
-    Args:
-        fusion_bars: 所有 fusion bars
-        warmup_fusion_bars_len: warmup 对应的 fusion bar 数量
-        feature_maker: 已加载的 FeatureMaker
-        reducer: 已加载的 Reducer
-        label: 显示名称（用于日志输出）
-
-    Returns:
-        df_features_full: trading 阶段的完整特征 DataFrame
-    """
-    print("\n" + "=" * 60)
-    print("Phase 2: 向量化特征计算")
-    print("=" * 60)
-
-    n_bars = len(fusion_bars)
-    print(f"Label: {label}")
-    print(f"Warmup fusion bars: {warmup_fusion_bars_len}")
-    print(f"Trading fusion bars: {n_bars - warmup_fusion_bars_len}")
-
-    # 2. 批量计算所有原始特征（sequential=True）
-    print("\n计算原始特征...")
-    start_time = time.perf_counter()
-    df_raw_features = feature_maker._compute_raw_features(fusion_bars)
-    raw_feat_time = time.perf_counter() - start_time
-    print(f"原始特征计算完成，耗时: {raw_feat_time:.2f}秒")
-
-    # 3. 处理 NaN 并提取有效数据
-    valid_raw_features_df, first_valid = feature_maker._prepare_valid_data(
-        df_raw_features, n_bars
+    missing = set(expected_columns) - set(df_features.columns)
+    extra = set(df_features.columns) - set(expected_columns)
+    raise ValueError(
+        "Feature name mismatch between reducer output and model. "
+        f"missing={sorted(missing)}, extra={sorted(extra)}"
     )
-    if warmup_fusion_bars_len < first_valid:
-        raise ValueError(
-            "Warmup fusion bars 数量不足以覆盖特征 NaN 区间，"
-            f"first_valid={first_valid}, warmup={warmup_fusion_bars_len}. "
-            "请增加 warmup_candles_num。"
-        )
-
-    # 4. SSM 处理（全程逐行 inference）
-    print("\n" + "-" * 60)
-    print("SSM 处理阶段（逐行 inference）")
-    print("-" * 60)
-
-    start_time = time.perf_counter()
-    if feature_maker.config.ssm_types:
-        ssm_input_df = valid_raw_features_df[feature_maker.config.ssm_input_features]
-        df_ssm_features = _compute_ssm_features_sequential(feature_maker, ssm_input_df)
-        all_features = pd.concat([df_ssm_features, valid_raw_features_df], axis=1)
-    else:
-        all_features = valid_raw_features_df
-    ssm_time = time.perf_counter() - start_time
-    print(f"SSM inference 完成，耗时: {ssm_time:.2f}秒")
-
-    # 5. 降维（使用 Reducer）
-    print("\n降维处理...")
-    start_time = time.perf_counter()
-
-    # 显式对齐列顺序，确保与 Reducer 训练时一致
-    expected_columns = reducer.input_feature_names
-    if list(all_features.columns) != expected_columns:
-        print(f"  重排列顺序以匹配 Reducer 训练时的 schema...")
-        all_features = all_features[expected_columns]
-
-    reduced_features = reducer.transform(all_features)
-    reduce_time = time.perf_counter() - start_time
-    print(f"降维完成，耗时: {reduce_time:.2f}秒")
-
-    # 6. 对齐回原始长度并截取 Trading 部分
-    df_features_full = feature_maker._pad_with_leading_nan(reduced_features, n_bars)
-    df_features_full = df_features_full.iloc[warmup_fusion_bars_len:].reset_index(
-        drop=True
-    )
-    if df_features_full.isna().any().any():
-        nan_cols = df_features_full.columns[df_features_full.isna().any()].tolist()
-        raise ValueError(
-            "Trading 特征仍包含 NaN，请增加 warmup_candles_num。"
-            f" NaN columns: {nan_cols}"
-        )
-
-    print("\n特征计算完成:")
-    print(f"  - 特征维度: {df_features_full.shape}")
-    print(f"  - 原始特征耗时: {raw_feat_time:.2f}s")
-    print(f"  - SSM inference耗时: {ssm_time:.2f}s")
-    print(f"  - 降维耗时: {reduce_time:.2f}s")
-    total_time = raw_feat_time + ssm_time + reduce_time
-    print(f"  - 总耗时: {total_time:.2f}s")
-    print("=" * 60 + "\n")
-
-    return df_features_full
 
 
 def _predict_single_model(
@@ -1112,7 +1170,10 @@ def _predict_single_model(
 
 
 def predict_all_models(
-    df_features: pd.DataFrame,
+    global_features_df: pd.DataFrame,
+    model_features_map: dict[str, list[str]],
+    warmup_fusion_bars_len: int,
+    model_dir: Path,
     models: list[str],
     model_name_to_params: Callable[[str], tuple[str, int, int, float]],
     lgbm_container_cls: type,
@@ -1121,54 +1182,11 @@ def predict_all_models(
     所有模型的预测（逐行 + 进度条）
 
     Args:
-        df_features: 完整特征 DataFrame
-        models: 模型列表
-        model_name_to_params: 模型参数解析函数
-        lgbm_container_cls: 模型容器类
-
-    Returns:
-        predictions: {model_name: [pred1, pred2, ...]}
-    """
-    print("\n" + "=" * 60)
-    print("Phase 3: 模型预测（逐行 + filters）")
-    print("=" * 60)
-
-    predictions = {}
-
-    for model_name in models:
-        print(f"\n预测模型: {model_name}")
-
-        model_preds = _predict_single_model(
-            model_name,
-            df_features,
-            model_name_to_params,
-            lgbm_container_cls,
-        )
-        predictions[model_name] = model_preds
-        print(f"  完成！预测结果: {len(model_preds)} 个")
-
-    print("\n所有模型预测完成")
-    print("=" * 60 + "\n")
-
-    return predictions
-
-
-def predict_all_models_with_individual_reducers(
-    fusion_bars: np.ndarray,
-    warmup_fusion_bars_len: int,
-    models: list[str],
-    model_dir: Path,
-    model_name_to_params: Callable[[str], tuple[str, int, int, float]],
-    lgbm_container_cls: type,
-) -> dict[str, list[int]]:
-    """
-    共享 FeatureMaker + 每模型独立 Reducer 的预测流程
-
-    Args:
-        fusion_bars: 所有 fusion bars
+        global_features_df: 全量特征 DataFrame（含 warmup）
+        model_features_map: 每模型的特征配置
         warmup_fusion_bars_len: warmup 对应的 fusion bar 数量
+        model_dir: 模型目录
         models: 模型列表
-        model_dir: 模型与 FeatureMaker/Reducer 存放目录
         model_name_to_params: 模型参数解析函数
         lgbm_container_cls: 模型容器类
 
@@ -1176,36 +1194,38 @@ def predict_all_models_with_individual_reducers(
         predictions: {model_name: [pred1, pred2, ...]}
     """
     print("\n" + "=" * 60)
-    print("Phase 2-3: 特征计算 + 预测（共享 FeatureMaker + 独立 Reducer）")
+    print("Phase 3: 模型预测（ARDVAE + filters）")
     print("=" * 60)
-
-    # 加载共享 FeatureMaker
-    feature_maker = FeatureMaker.load(str(model_dir), "feature_maker")
-    print(f"已加载共享 FeatureMaker: {model_dir / 'feature_maker'}")
 
     predictions = {}
     expected_len = None
 
     for model_name in models:
         print(f"\n模型: {model_name}")
+        model_features = model_features_map.get(model_name)
+        if model_features is None:
+            raise ValueError(f"Missing feature config for model: {model_name}")
 
-        # 加载该模型的 Reducer
-        reducer = Reducer.load(str(model_dir), model_name)
-
-        df_features = compute_features_vectorized(
-            fusion_bars,
+        model_features_df = _slice_trading_features(
+            global_features_df,
+            model_features,
             warmup_fusion_bars_len,
-            feature_maker,
-            reducer,
-            label=model_name,
+            model_name,
         )
+        reduced_df = _reduce_features_with_vae(
+            model_features_df,
+            model_dir,
+            model_name,
+        )
+        print(f"  原始特征: {len(model_features)} -> 降维后: {reduced_df.shape[1]}")
 
         model_preds = _predict_single_model(
             model_name,
-            df_features,
+            reduced_df,
             model_name_to_params,
             lgbm_container_cls,
         )
+
         if expected_len is None:
             expected_len = len(model_preds)
         elif len(model_preds) != expected_len:
@@ -1241,14 +1261,12 @@ def _parse_model_n_value(model_name: str) -> int:
 
 def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> list[str]:
     """
-    汇总投票结果（考虑不同 N 值模型的预测对齐）
+    汇总投票结果（使用 LGBMContainer deque 对齐后的输出）
 
     核心逻辑：
-    - N1 模型在时刻 t 预测的是 t+1 的方向
-    - N2 模型在时刻 t 预测的是 t+2 的方向
-    - 要在时刻 t 做交易决策，需要使用：
-      - N1 模型在 t-1 时刻的预测（预测目标是 t）
-      - N2 模型在 t-2 时刻的预测（预测目标是 t）
+    - 每根 fusion bar 都会调用一次 final_predict
+    - LGBMContainer 内部 deque 会把 pred_next 对齐到当前时刻
+    - 因此直接对同一时刻的预测做投票即可
 
     Args:
         predictions: {model_name: [pred1, pred2, ...]}
@@ -1258,42 +1276,14 @@ def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> lis
         signals: ["long", "short", "flat", ...]
     """
     print("\n" + "=" * 60)
-    print("Phase 4: 汇总投票结果（含预测对齐）")
+    print("Phase 4: 汇总投票结果（deque 对齐）")
     print("=" * 60)
-
-    # 1. 解析每个模型的 N 值
-    model_n_values = {m: _parse_model_n_value(m) for m in models}
-    max_n = max(model_n_values.values())
-    min_n = min(model_n_values.values())
-
-    print(f"模型 N 值: {model_n_values}")
-    print(f"最大 N 值: {max_n}, 最小 N 值: {min_n}")
 
     n_samples = len(predictions[models[0]])
     signals = []
 
-    # 2. 前 max_n 个时间点没有足够的历史预测，设为 flat
-    #    因为要在时刻 t 做决策，需要 N_max 模型在 t - N_max 时刻的预测
-    #    当 t < max_n 时，t - max_n < 0，索引无效
-    #    例如：max_n=2 时，时刻 0 需要索引 -2，时刻 1 需要索引 -1，都无效
-    #    只有从时刻 2 开始（索引 0）才有效
-    warmup_count = max_n
-    signals.extend(["flat"] * warmup_count)
-
-    print(f"预测对齐 warmup: 前 {warmup_count} 个时间点设为 flat")
-
-    # 3. 从 max_n 开始进行对齐投票
-    for i in range(warmup_count, n_samples):
-        votes = []
-        for m in models:
-            n = model_n_values[m]
-            # 对齐逻辑：
-            # - N1 模型预测 t+1，要得到对时刻 i 的预测，需要用 i-1 时刻的预测
-            # - N2 模型预测 t+2，要得到对时刻 i 的预测，需要用 i-2 时刻的预测
-            # - 通用公式：pred_idx = i - n
-            pred_idx = i - n
-            votes.append(predictions[m][pred_idx])
-
+    for i in range(n_samples):
+        votes = [predictions[m][i] for m in models]
         if all(v == 1 for v in votes):
             signals.append("long")
         elif all(v == -1 for v in votes):
@@ -1301,7 +1291,7 @@ def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> lis
         else:
             signals.append("flat")
 
-    # 4. 统计信号分布
+    # 统计信号分布
     signal_counts = {
         "long": signals.count("long"),
         "short": signals.count("short"),
@@ -1318,7 +1308,6 @@ def aggregate_votes(predictions: dict[str, list[int]], models: list[str]) -> lis
     print(
         f"  - Flat: {signal_counts['flat']} ({signal_counts['flat'] / n_samples * 100:.1f}%)"
     )
-    print(f"  - 其中 warmup flat: {warmup_count}")
     print("=" * 60 + "\n")
 
     return signals
@@ -1330,7 +1319,6 @@ def run_vectorized_backtest(
     trading_candles: np.ndarray,
     models: list[str],
     model_dir: Path,
-    reducer_name: Optional[str],
     model_config_module: Optional[str] = None,
     starting_balance: float = 10000,
     fee_rate: float = 0.0005,
@@ -1344,8 +1332,7 @@ def run_vectorized_backtest(
         warmup_candles: Warmup K线数据
         trading_candles: Trading K线数据
         models: 模型列表
-        model_dir: 模型与 FeatureMaker/Reducer 存放目录
-        reducer_name: 全局 Reducer 名称；None 表示每模型独立 Reducer
+        model_dir: 模型目录
         model_config_module: 模型配置模块路径（可选，默认从 model_dir 推断）
         starting_balance: 初始资金
         fee_rate: 手续费率
@@ -1362,17 +1349,25 @@ def run_vectorized_backtest(
     print(f"手续费率: {fee_rate * 100:.2f}%")
     print(f"杠杆倍数: {leverage}x")
     print(f"模型列表: {models}")
-    print(f"Reducer 模式: {'global' if reducer_name is not None else 'per-model'}")
-    if reducer_name is not None:
-        print(f"Reducer 名称: {reducer_name}")
     resolved_module = _resolve_model_config_module(model_dir, model_config_module)
-    print(f"模型配置: {resolved_module}")
+    config_path: Optional[Path] = None
+    if model_config_module is None:
+        config_path = model_dir / "config.py"
+    else:
+        candidate = Path(model_config_module)
+        if candidate.exists():
+            config_path = candidate
+
+    config_display = str(config_path) if config_path is not None else resolved_module
+    print(f"模型配置: {config_display}")
     print(f"Warmup K线数: {len(warmup_candles):,}")
     print(f"Trading K线数: {len(trading_candles):,}")
     print("=" * 60 + "\n")
 
     total_start = time.perf_counter()
-    model_name_to_params, lgbm_container_cls = _load_model_config(resolved_module)
+    model_name_to_params, lgbm_container_cls = _load_model_config(
+        resolved_module, config_path
+    )
 
     # ========== Phase 1: 生成 Fusion Bars ==========
     fusion_bars, warmup_fusion_bars_len = generate_all_fusion_bars_with_split(
@@ -1380,35 +1375,21 @@ def run_vectorized_backtest(
     )
 
     # ========== Phase 2-3: 特征计算与预测 ==========
-    # 加载共享 FeatureMaker（所有模式都需要）
-    feature_maker = FeatureMaker.load(str(model_dir), "feature_maker")
-
-    if reducer_name is None:
-        # 每模型独立 Reducer 模式
-        predictions = predict_all_models_with_individual_reducers(
-            fusion_bars,
-            warmup_fusion_bars_len,
-            models,
-            model_dir,
-            model_name_to_params,
-            lgbm_container_cls,
-        )
-    else:
-        # 全局 Reducer 模式
-        reducer = Reducer.load(str(model_dir), reducer_name)
-        df_features = compute_features_vectorized(
-            fusion_bars,
-            warmup_fusion_bars_len,
-            feature_maker,
-            reducer,
-            label=reducer_name,
-        )
-        predictions = predict_all_models(
-            df_features,
-            models,
-            model_name_to_params,
-            lgbm_container_cls,
-        )
+    model_features_map, global_features = _collect_model_features(model_dir, models)
+    global_features_df = _compute_global_features(
+        fusion_bars,
+        warmup_fusion_bars_len,
+        global_features,
+    )
+    predictions = predict_all_models(
+        global_features_df,
+        model_features_map,
+        warmup_fusion_bars_len,
+        model_dir,
+        models,
+        model_name_to_params,
+        lgbm_container_cls,
+    )
 
     # ========== Phase 4: 汇总投票 ==========
     signals = aggregate_votes(predictions, models)
@@ -1574,11 +1555,9 @@ if __name__ == "__main__":
     from jesse import helpers, research
 
     # ========== 配置 ==========
-    # 测试模式：启用后只处理前 N 个 fusion bars
-    TEST_MODE = False
-    TEST_FUSION_BARS = 1000
     STRATEGY = "BinanceBtcDemoBar"
-    REDUCER_NAME: Optional[str] = None  # None => 每模型独立 Reducer
+    TESTSET_START = "2025-06-01"
+    TESTSET_END = "2025-12-25"
 
     MODELS = [
         "c_L4_N1",
@@ -1586,14 +1565,17 @@ if __name__ == "__main__":
     ]
 
     MODEL_DIR = Path(f"./strategies/{STRATEGY}/models")
+    cli_models = [arg for arg in sys.argv[1:] if arg]
+    if cli_models:
+        MODELS = cli_models
     # ========== 获取数据 ==========
     print("正在加载K线数据...")
     warmup_candles, trading_candles = research.get_candles(
         "Binance Perpetual Futures",
         "BTC-USDT",
         "1m",
-        helpers.date_to_timestamp("2025-06-01"),
-        helpers.date_to_timestamp("2025-12-25"),
+        helpers.date_to_timestamp(TESTSET_START),
+        helpers.date_to_timestamp(TESTSET_END),
         warmup_candles_num=43200,
         caching=False,
         is_for_jesse=False,
@@ -1619,7 +1601,6 @@ if __name__ == "__main__":
         trading_candles=trading_candles,
         models=MODELS,
         model_dir=MODEL_DIR,
-        reducer_name=REDUCER_NAME,
         starting_balance=10000,
         fee_rate=0.0005,
         leverage=3,
