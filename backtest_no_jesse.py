@@ -833,13 +833,13 @@ def generate_all_fusion_bars_with_split(
     一次性生成所有 fusion bars，并计算 warmup 分界点
 
     核心逻辑：
-    1. 记录 warmup_candles 的最后一个时间戳
-    2. 将 warmup_candles 和 trading_candles stack 后一次性生成所有 fusion bars
-    3. 在 fusion bars 中找到最后一个时间戳 <= warmup 最后时间戳的 bar
+    1. 用同一个 DemoBar 先更新 warmup_candles，记录 warmup fusion bars 数量
+    2. 使用完整 candles 再更新一次，生成包含 warmup+trading 的全量 fusion bars
+    3. warmup_fusion_bars_len = warmup 阶段已完成的 bar 数量（与线上一致）
 
-    为什么不能分两次生成：
-    - DemoBar 是有状态的，两次生成会导致完全不同的 fusion bars
-    - warmup 单独生成的最后 bar 时间戳，可能在 all 生成时根本不存在
+    关键点：
+    - DemoBar 是有状态的，必须复用同一个容器保持未完成 bar 的状态
+    - trading 的第一根 fusion bar 可能包含 warmup 尾部的 candles
 
     Args:
         warmup_candles: warmup K线数据
@@ -859,43 +859,44 @@ def generate_all_fusion_bars_with_split(
     print(f"Warmup candles 数量: {len(warmup_candles)}")
     print(f"Warmup 最后 candle 时间戳: {warmup_last_candle_ts}")
 
-    # 2. 一次性生成所有 fusion bars（避免两次生成导致状态不一致）
+    # 2. 使用同一个容器先更新 warmup
+    bar_container = DemoBar(max_bars=max_bars)
+    bar_container.update_with_candles(warmup_candles)
+    warmup_fusion_bars = bar_container.get_fusion_bars()
+
+    warmup_fusion_bars_len = len(warmup_fusion_bars)
+    if warmup_fusion_bars_len == 0:
+        raise ValueError(
+            "Failed to generate warmup fusion bars. Please increase warmup_candles_num."
+        )
+
+    # 3. 再用全量 candles 更新，确保 warmup 尾部残留被带入 trading
     print("\n生成所有 fusion bars...")
     all_candles = np.vstack([warmup_candles, trading_candles])
-    bar_all = DemoBar(max_bars=max_bars)
-    bar_all.update_with_candles(all_candles)
-    fusion_bars = bar_all.get_fusion_bars()
+    bar_container.update_with_candles(all_candles)
+    fusion_bars = bar_container.get_fusion_bars()
 
     if len(fusion_bars) == 0:
         raise ValueError("Failed to generate any fusion bars from all_candles")
 
-    print(f"总共生成 {len(fusion_bars)} 个 fusion bars")
-
-    # 3. 找到最后一个时间戳 <= warmup_last_candle_ts 的 fusion bar
-    # 使用 searchsorted 找到第一个 > warmup_last_candle_ts 的位置
-    fusion_timestamps = fusion_bars[:, 0]
-    warmup_fusion_bars_len = np.searchsorted(
-        fusion_timestamps, warmup_last_candle_ts, side="right"
-    )
-
-    # Fail Fast: 确保找到了合理的分界点
-    if warmup_fusion_bars_len == 0:
-        raise ValueError(
-            f"Failed to find warmup boundary: all fusion bars are after "
-            f"warmup_last_candle_ts {warmup_last_candle_ts}. "
-            f"First fusion bar timestamp: {fusion_timestamps[0]}"
-        )
-
     if warmup_fusion_bars_len >= len(fusion_bars):
         raise ValueError(
-            f"Failed to find warmup boundary: all fusion bars are before or at "
-            f"warmup_last_candle_ts {warmup_last_candle_ts}. "
-            f"Last fusion bar timestamp: {fusion_timestamps[-1]}"
+            "Failed to find warmup boundary: warmup fusion bars consume all bars. "
+            f"warmup={warmup_fusion_bars_len}, total={len(fusion_bars)}. "
+            "Please adjust warmup_candles_num or trading period."
         )
 
+    if not np.array_equal(fusion_bars[:warmup_fusion_bars_len], warmup_fusion_bars):
+        raise ValueError(
+            "Warmup fusion bars mismatch with full fusion bars prefix. "
+            "Check fusion bar state consistency."
+        )
+
+    print(f"总共生成 {len(fusion_bars)} 个 fusion bars")
+
     # 打印分界点信息
-    warmup_last_bar_ts = fusion_timestamps[warmup_fusion_bars_len - 1]
-    trading_first_bar_ts = fusion_timestamps[warmup_fusion_bars_len]
+    warmup_last_bar_ts = warmup_fusion_bars[-1, 0]
+    trading_first_bar_ts = fusion_bars[warmup_fusion_bars_len, 0]
 
     print("\nWarmup 分界点:")
     print(f"  - Warmup 最后 candle 时间戳: {warmup_last_candle_ts}")
@@ -1557,7 +1558,7 @@ if __name__ == "__main__":
     # ========== 配置 ==========
     STRATEGY = "BinanceBtcDemoBar"
     TESTSET_START = "2025-06-01"
-    TESTSET_END = "2025-12-25"
+    TESTSET_END = "2026-01-10"
 
     MODELS = [
         "c_L4_N1",

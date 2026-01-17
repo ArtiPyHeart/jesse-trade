@@ -22,14 +22,14 @@ class TestFusionBarGeneration:
 
         预期: fusion bar 数量 < 原始 candle 数量
         """
-        demo_bar = DemoBar(clip_r=0.012, max_bars=-1, threshold=1.399)
+        demo_bar = DemoBar(max_bars=-1)
         demo_bar.update_with_candles(small_candles)
         fusion_bars = demo_bar.get_fusion_bars()
 
         # 压缩效果: fusion bar 数量应显著少于原始 K 线
-        assert len(fusion_bars) < len(
-            small_candles
-        ), f"Fusion bars ({len(fusion_bars)}) should be less than candles ({len(small_candles)})"
+        assert len(fusion_bars) < len(small_candles), (
+            f"Fusion bars ({len(fusion_bars)}) should be less than candles ({len(small_candles)})"
+        )
 
         # 压缩比例通常在 5%-50% 之间
         compression_ratio = len(fusion_bars) / len(small_candles)
@@ -48,14 +48,14 @@ class TestFusionBarGeneration:
         fusion_bars = demo_bar.get_fusion_bars()
 
         # 6 列格式
-        assert (
-            fusion_bars.shape[1] == 6
-        ), f"Expected 6 columns, got {fusion_bars.shape[1]}"
+        assert fusion_bars.shape[1] == 6, (
+            f"Expected 6 columns, got {fusion_bars.shape[1]}"
+        )
 
         # 数据类型为 float64
-        assert (
-            fusion_bars.dtype == np.float64
-        ), f"Expected float64, got {fusion_bars.dtype}"
+        assert fusion_bars.dtype == np.float64, (
+            f"Expected float64, got {fusion_bars.dtype}"
+        )
 
     def test_fusion_bar_timestamps_monotonic(self, small_candles):
         """
@@ -97,14 +97,14 @@ class TestFusionBarGeneration:
         lows = fusion_bars[:, 4]
 
         # High >= max(open, close)
-        assert np.all(
-            highs >= np.maximum(opens, closes)
-        ), "High must be >= max(open, close)"
+        assert np.all(highs >= np.maximum(opens, closes)), (
+            "High must be >= max(open, close)"
+        )
 
         # Low <= min(open, close)
-        assert np.all(
-            lows <= np.minimum(opens, closes)
-        ), "Low must be <= min(open, close)"
+        assert np.all(lows <= np.minimum(opens, closes)), (
+            "Low must be <= min(open, close)"
+        )
 
         # High >= Low
         assert np.all(highs >= lows), "High must be >= Low"
@@ -202,9 +202,9 @@ class TestThresholdCalculation:
         # 第一个阈值（微小波动）应该被 clip
         # 计算: abs(100.001 - 100) * (100.01 - 99.99) / 100.001 ≈ 0.00002
         # 这远小于 clip_r=0.01，应该被设为 0
-        assert (
-            thresholds[0] == 0
-        ), f"Small threshold {thresholds[0]} should be clipped to 0"
+        assert thresholds[0] == 0, (
+            f"Small threshold {thresholds[0]} should be clipped to 0"
+        )
 
 
 class TestWarmupTradingSplit:
@@ -226,19 +226,19 @@ class TestWarmupTradingSplit:
         warmup_last_ts = warmup_candles[-1, 0]
 
         # 1. warmup 最后一根 fusion bar 的时间戳 <= warmup 最后一根 candle 时间戳
-        assert (
-            fusion_bars[warmup_len - 1, 0] <= warmup_last_ts
-        ), f"Warmup last fusion bar {fusion_bars[warmup_len - 1, 0]} > warmup last candle {warmup_last_ts}"
+        assert fusion_bars[warmup_len - 1, 0] <= warmup_last_ts, (
+            f"Warmup last fusion bar {fusion_bars[warmup_len - 1, 0]} > warmup last candle {warmup_last_ts}"
+        )
 
         # 2. trading 第一根 fusion bar 的时间戳 > warmup 最后一根 candle 时间戳
-        assert (
-            fusion_bars[warmup_len, 0] > warmup_last_ts
-        ), f"Trading first fusion bar {fusion_bars[warmup_len, 0]} <= warmup last candle {warmup_last_ts}"
+        assert fusion_bars[warmup_len, 0] > warmup_last_ts, (
+            f"Trading first fusion bar {fusion_bars[warmup_len, 0]} <= warmup last candle {warmup_last_ts}"
+        )
 
         # 3. warmup_len 在合理范围内
-        assert (
-            0 < warmup_len < len(fusion_bars)
-        ), f"warmup_len {warmup_len} out of range [1, {len(fusion_bars) - 1}]"
+        assert 0 < warmup_len < len(fusion_bars), (
+            f"warmup_len {warmup_len} out of range [1, {len(fusion_bars) - 1}]"
+        )
 
         print("\nSplit result:")
         print(f"  - Warmup fusion bars: {warmup_len}")
@@ -266,15 +266,15 @@ class TestWarmupTradingSplit:
 
         # 所有 warmup bars 的时间戳都 <= warmup_last_ts
         warmup_bars = fusion_bars[:warmup_len]
-        assert np.all(
-            warmup_bars[:, 0] <= warmup_last_ts
-        ), "Some warmup fusion bars have timestamp > warmup last candle"
+        assert np.all(warmup_bars[:, 0] <= warmup_last_ts), (
+            "Some warmup fusion bars have timestamp > warmup last candle"
+        )
 
         # 所有 trading bars 的时间戳都 > warmup_last_ts
         trading_bars = fusion_bars[warmup_len:]
-        assert np.all(
-            trading_bars[:, 0] > warmup_last_ts
-        ), "Some trading fusion bars have timestamp <= warmup last candle"
+        assert np.all(trading_bars[:, 0] > warmup_last_ts), (
+            "Some trading fusion bars have timestamp <= warmup last candle"
+        )
 
     def test_no_fusion_bar_loss(self, jesse_candles):
         """
@@ -298,13 +298,50 @@ class TestWarmupTradingSplit:
         expected_fusion_bars = demo_bar.get_fusion_bars()
 
         # 数量一致
-        assert len(fusion_bars) == len(
-            expected_fusion_bars
-        ), f"Mismatch: split={len(fusion_bars)}, direct={len(expected_fusion_bars)}"
+        assert len(fusion_bars) == len(expected_fusion_bars), (
+            f"Mismatch: split={len(fusion_bars)}, direct={len(expected_fusion_bars)}"
+        )
 
         # 内容一致
         np.testing.assert_array_equal(
             fusion_bars, expected_fusion_bars, err_msg="Fusion bar content mismatch"
+        )
+
+    def test_split_matches_online_update(self, jesse_candles):
+        """
+        验证 warmup/trading 分界与线上更新逻辑一致
+
+        预期:
+        - warmup fusion bars 数量与线上 warmup 更新一致
+        - 全量 fusion bars 与线上全量更新结果一致
+        """
+        from backtest_no_jesse import generate_all_fusion_bars_with_split
+
+        warmup_candles, trading_candles = jesse_candles
+
+        fusion_bars, warmup_len = generate_all_fusion_bars_with_split(
+            warmup_candles, trading_candles, max_bars=-1
+        )
+
+        bar_container = DemoBar(max_bars=-1)
+        bar_container.update_with_candles(warmup_candles)
+        warmup_bars = bar_container.get_fusion_bars()
+
+        assert warmup_len == len(warmup_bars), (
+            "Warmup fusion bars length mismatch with online update"
+        )
+
+        all_candles = np.vstack([warmup_candles, trading_candles])
+        bar_container.update_with_candles(all_candles)
+        online_bars = bar_container.get_fusion_bars()
+
+        np.testing.assert_array_equal(
+            fusion_bars, online_bars, err_msg="Full fusion bars mismatch"
+        )
+        np.testing.assert_array_equal(
+            fusion_bars[:warmup_len],
+            warmup_bars,
+            err_msg="Warmup fusion bars mismatch",
         )
 
 
@@ -360,9 +397,9 @@ class TestEdgeCases:
         print(f"10 candles with large swings → {len(fusion_bars_10)} fusion bars")
 
         # 10 根有大波动的 candle 应该能生成至少 1 个 fusion bar
-        assert (
-            len(fusion_bars_10) >= 1
-        ), "Expected at least 1 fusion bar from 10 candles"
+        assert len(fusion_bars_10) >= 1, (
+            "Expected at least 1 fusion bar from 10 candles"
+        )
 
     def test_single_candle_no_crash(self):
         """
@@ -377,9 +414,9 @@ class TestEdgeCases:
         fusion_bars = demo_bar.get_fusion_bars()
 
         # 单根 candle 可能生成 0 或 1 个 fusion bar
-        assert (
-            len(fusion_bars) <= 1
-        ), f"Too many fusion bars from single candle: {len(fusion_bars)}"
+        assert len(fusion_bars) <= 1, (
+            f"Too many fusion bars from single candle: {len(fusion_bars)}"
+        )
 
     def test_max_bars_limit(self):
         """
@@ -402,37 +439,32 @@ class TestEdgeCases:
         demo_bar.update_with_candles(candles)
         fusion_bars = demo_bar.get_fusion_bars()
 
-        assert (
-            len(fusion_bars) <= max_bars
-        ), f"Fusion bars ({len(fusion_bars)}) exceeds max_bars ({max_bars})"
+        assert len(fusion_bars) <= max_bars, (
+            f"Fusion bars ({len(fusion_bars)}) exceeds max_bars ({max_bars})"
+        )
 
-    def test_stateful_behavior(self, small_candles):
+    def test_incremental_update_matches_one_shot(self, small_candles):
         """
-        验证 DemoBar 是有状态的
-
-        预期: 分两次调用 update 与一次调用结果不同
+        验证增量更新与一次性更新一致（模拟线上全量更新）
         """
         # 分割 candles
         mid = len(small_candles) // 2
         first_half = small_candles[:mid]
-        _ = small_candles[mid:]  # second_half (unused, for demonstration)
 
-        # 方法 1: 分两次调用
-        demo_bar_1 = DemoBar()
-        demo_bar_1.update_with_candles(first_half)
-        # 注意：这里实际上 DemoBar 可能不支持多次 update
-        # 取决于实现，这个测试可能需要调整
+        demo_bar_inc = DemoBar(max_bars=-1)
+        demo_bar_inc.update_with_candles(first_half)
+        demo_bar_inc.update_with_candles(small_candles)
+        fusion_bars_inc = demo_bar_inc.get_fusion_bars()
 
-        # 方法 2: 一次调用
-        demo_bar_2 = DemoBar()
-        demo_bar_2.update_with_candles(small_candles)
-        fusion_bars_2 = demo_bar_2.get_fusion_bars()
+        demo_bar_one = DemoBar(max_bars=-1)
+        demo_bar_one.update_with_candles(small_candles)
+        fusion_bars_one = demo_bar_one.get_fusion_bars()
 
-        # 验证一次生成的结果
-        assert len(fusion_bars_2) > 0, "One-shot generation should produce fusion bars"
-
-        print("\nStateful behavior test:")
-        print(f"  - One-shot fusion bars: {len(fusion_bars_2)}")
+        np.testing.assert_array_equal(
+            fusion_bars_inc,
+            fusion_bars_one,
+            err_msg="Incremental update mismatch with one-shot generation",
+        )
 
 
 if __name__ == "__main__":

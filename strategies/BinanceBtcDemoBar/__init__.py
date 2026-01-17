@@ -118,7 +118,7 @@ def _align_lgbm_feature_columns(
 class BinanceBtcDemoBar(Strategy):
     def __init__(self):
         super().__init__()
-        self.bar_container = DemoBar(max_bars=3500, threshold=1.399)
+        self.bar_container = DemoBar(max_bars=3500)
 
         self.model_features, self.global_features = _collect_model_features(
             MODEL_DIR, MODELS

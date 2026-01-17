@@ -3,13 +3,15 @@ Compare online (deque-aligned) vs backtest predictions on real candles.
 
 Usage:
     python scripts/compare_online_backtest.py
-    python scripts/compare_online_backtest.py c_L4_N1 c_L4_N2
+    python scripts/compare_online_backtest.py c_L4_N1 c_L4_N2 c_L4_N3
+    python scripts/compare_online_backtest.py --candles-path data/test_candles/jesse_*.npz
 """
 
-import sys
+import argparse
 import time
 from pathlib import Path
 
+import numpy as np
 from jesse import helpers, research
 
 from backtest_no_jesse import (
@@ -21,6 +23,7 @@ from backtest_no_jesse import (
     aggregate_votes,
     generate_all_fusion_bars_with_split,
 )
+from src.bars.fusion.demo import DemoBar
 from strategies.BinanceBtcDemoBar.models.config import (
     LGBMContainer,
     model_name_to_params,
@@ -30,35 +33,87 @@ from strategies.BinanceBtcDemoBar.models.config import (
 STRATEGY = "BinanceBtcDemoBar"
 MODEL_DIR = Path(f"strategies/{STRATEGY}/models")
 
-MODELS = [
-    "c_L4_N1",
-    "c_L4_N2",
-]
+MODELS = ["c_L4_N1", "c_L4_N2", "c_L4_N3"]
 
 TEST_START = "2025-06-01"
 TEST_END = "2025-06-03"
 WARMUP_CANDLES_NUM = 40000
+DEFAULT_CACHE = Path(
+    "data/test_candles/jesse_Binance_Perpetual_Futures_BTC-USDT_1m_2025-05-01_2025-07-01.npz"
+)
 
 
-def _parse_models(args: list[str]) -> list[str]:
-    cli_models = [arg for arg in args if arg]
-    return cli_models if cli_models else MODELS
+def _parse_pred_next(model_name: str) -> int:
+    parts = model_name.split("_")
+    assert len(parts) == 3, f"Invalid model name format: {model_name}"
+    assert parts[2].startswith("N"), f"Invalid pred_next format: {parts[2]}"
+    return int(parts[2][1:])
+
+
+def _load_candles_from_cache(
+    cache_path: Path, warmup_candles_num: int
+) -> tuple[np.ndarray, np.ndarray]:
+    if not cache_path.exists():
+        raise FileNotFoundError(f"Cache file not found: {cache_path}")
+
+    if cache_path.suffix == ".npz":
+        data = np.load(cache_path, allow_pickle=False)
+        if "warmup_candles" in data and "trading_candles" in data:
+            return data["warmup_candles"], data["trading_candles"]
+        if "all_candles" in data:
+            all_candles = data["all_candles"]
+        elif "trading_candles" in data:
+            all_candles = data["trading_candles"]
+        else:
+            raise ValueError("Invalid cache file: missing all_candles/trading_candles")
+    elif cache_path.suffix == ".npy":
+        all_candles = np.load(cache_path, allow_pickle=False)
+    else:
+        raise ValueError(f"Unsupported cache file type: {cache_path.suffix}")
+
+    warmup_candles = all_candles[:warmup_candles_num]
+    trading_candles = all_candles[warmup_candles_num:]
+    return warmup_candles, trading_candles
 
 
 def main() -> None:
-    models = _parse_models(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        description="Compare online vs backtest predictions on real candles."
+    )
+    parser.add_argument("models", nargs="*")
+    parser.add_argument("--candles-path", default=None)
+    parser.add_argument("--start", default=TEST_START)
+    parser.add_argument("--end", default=TEST_END)
+    parser.add_argument("--warmup-candles-num", type=int, default=WARMUP_CANDLES_NUM)
+    parser.add_argument("--exchange", default="Binance Perpetual Futures")
+    parser.add_argument("--symbol", default="BTC-USDT")
+    parser.add_argument("--timeframe", default="1m")
+    args = parser.parse_args()
+
+    models = args.models if args.models else MODELS
 
     print("加载真实K线数据...")
-    warmup_candles, trading_candles = research.get_candles(
-        "Binance Perpetual Futures",
-        "BTC-USDT",
-        "1m",
-        helpers.date_to_timestamp(TEST_START),
-        helpers.date_to_timestamp(TEST_END),
-        warmup_candles_num=WARMUP_CANDLES_NUM,
-        caching=False,
-        is_for_jesse=False,
-    )
+    if args.candles_path:
+        warmup_candles, trading_candles = _load_candles_from_cache(
+            Path(args.candles_path), args.warmup_candles_num
+        )
+        print(f"使用缓存: {args.candles_path}")
+    elif DEFAULT_CACHE.exists():
+        warmup_candles, trading_candles = _load_candles_from_cache(
+            DEFAULT_CACHE, args.warmup_candles_num
+        )
+        print(f"使用默认缓存: {DEFAULT_CACHE}")
+    else:
+        warmup_candles, trading_candles = research.get_candles(
+            args.exchange,
+            args.symbol,
+            args.timeframe,
+            helpers.date_to_timestamp(args.start),
+            helpers.date_to_timestamp(args.end),
+            warmup_candles_num=args.warmup_candles_num,
+            caching=False,
+            is_for_jesse=False,
+        )
 
     # 过滤0成交量
     warmup_candles = warmup_candles[warmup_candles[:, 5] >= 0]
@@ -69,7 +124,24 @@ def main() -> None:
     fusion_bars, warmup_fusion_bars_len = generate_all_fusion_bars_with_split(
         warmup_candles, trading_candles, max_bars=-1
     )
-    print(f"fusion_bars={len(fusion_bars)}, warmup_fusion_bars={warmup_fusion_bars_len}")
+    print(
+        f"fusion_bars={len(fusion_bars)}, warmup_fusion_bars={warmup_fusion_bars_len}"
+    )
+
+    # 对齐线上 Fusion Bars
+    bar_container = DemoBar(max_bars=-1)
+    bar_container.update_with_candles(warmup_candles)
+    warmup_bars = bar_container.get_fusion_bars()
+    bar_container.update_with_candles(np.vstack([warmup_candles, trading_candles]))
+    online_bars = bar_container.get_fusion_bars()
+
+    if len(warmup_bars) != warmup_fusion_bars_len:
+        raise ValueError(
+            "Warmup fusion bars length mismatch. "
+            f"online={len(warmup_bars)}, backtest={warmup_fusion_bars_len}"
+        )
+    if not np.array_equal(fusion_bars, online_bars):
+        raise ValueError("Fusion bars mismatch between online and backtest")
 
     model_features_map, global_features = _collect_model_features(MODEL_DIR, models)
 
@@ -134,19 +206,28 @@ def main() -> None:
     signals_seq = aggregate_votes(preds_seq, models)
 
     mismatch_models = {}
+    pred_next_gt1 = []
     for m in models:
-        mismatch = sum(
-            1 for a, b in zip(preds_vector[m], preds_seq[m]) if a != b
-        )
+        pred_next = _parse_pred_next(m)
+        mismatch = sum(1 for a, b in zip(preds_vector[m], preds_seq[m]) if a != b)
         mismatch_models[m] = mismatch
+        if pred_next > 1:
+            pred_next_gt1.append(m)
 
-    signal_mismatch = sum(
-        1 for a, b in zip(signals_vector, signals_seq) if a != b
-    )
+    signal_mismatch = sum(1 for a, b in zip(signals_vector, signals_seq) if a != b)
 
     print("\n对比结果:")
     print("模型预测不一致数:", mismatch_models)
     print(f"投票信号不一致数: {signal_mismatch} / {len(signals_vector)}")
+
+    if not pred_next_gt1:
+        print("警告: 未包含 pred_next > 1 的模型，无法验证对齐。")
+
+    mismatched_models = {m: c for m, c in mismatch_models.items() if c > 0}
+    if mismatched_models:
+        raise ValueError(f"Model prediction mismatch detected: {mismatched_models}")
+    if signal_mismatch > 0:
+        raise ValueError(f"Signal mismatch detected: {signal_mismatch}")
 
 
 if __name__ == "__main__":
