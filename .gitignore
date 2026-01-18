@@ -362,3 +362,4 @@ data/btc_1m.npz
 /temp/
 /rust_indicators/benchmark_results/
 /rust_indicators/test_data/
+/data/
