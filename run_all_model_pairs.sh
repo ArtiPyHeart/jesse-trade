@@ -6,6 +6,8 @@
 #   ./run_all_model_pairs.sh           # 运行所有组合（跳过已完成的）
 #   ./run_all_model_pairs.sh --dry-run # 仅显示待运行组合，不运行
 #   ./run_all_model_pairs.sh --force   # 强制重新运行所有组合
+#   ./run_all_model_pairs.sh --clean   # 删除 sharpe ratio <= 0 的结果
+#   ./run_all_model_pairs.sh --clean --dry-run  # 预览将被删除的目录
 #
 
 set -e
@@ -17,21 +19,120 @@ LOG_DIR="${RESULTS_DIR}/batch_logs"
 # 解析参数
 DRY_RUN=false
 FORCE=false
+CLEAN=false
 for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN=true ;;
         --force)   FORCE=true ;;
+        --clean)   CLEAN=true ;;
     esac
 done
 
+# ============================================
+# 清理模式：删除 sharpe ratio <= 0 的结果
+# ============================================
+if $CLEAN; then
+    echo "=============================================="
+    echo "Cleanup Mode: Remove Low-Quality Results"
+    echo "=============================================="
+    echo "Criteria: Sharpe Ratio <= 0"
+    echo ""
+
+    TO_DELETE=()
+    TO_KEEP=()
+
+    # 遍历所有回测结果目录
+    for dir in "$RESULTS_DIR"/*_vectorized_*/; do
+        [[ ! -d "$dir" ]] && continue
+
+        metrics_file="${dir}metrics.json"
+        if [[ ! -f "$metrics_file" ]]; then
+            continue
+        fi
+
+        # 提取 sharpe_ratio（使用 python 解析 JSON）
+        sharpe=$(python3 -c "
+import json
+with open('$metrics_file') as f:
+    data = json.load(f)
+    sharpe = data.get('risk', {}).get('sharpe_ratio', 0)
+    print(sharpe if sharpe is not None else 0)
+" 2>/dev/null || echo "0")
+
+        # 比较 sharpe ratio
+        is_bad=$(python3 -c "print(1 if float('$sharpe') <= 0 else 0)" 2>/dev/null || echo "1")
+
+        dir_name=$(basename "$dir")
+        if [[ "$is_bad" == "1" ]]; then
+            TO_DELETE+=("$dir_name|$sharpe")
+        else
+            TO_KEEP+=("$dir_name|$sharpe")
+        fi
+    done
+
+    echo "Results to KEEP (Sharpe > 0): ${#TO_KEEP[@]}"
+    echo "Results to DELETE (Sharpe <= 0): ${#TO_DELETE[@]}"
+    echo ""
+
+    if [[ ${#TO_DELETE[@]} -eq 0 ]]; then
+        echo "No directories to delete."
+        exit 0
+    fi
+
+    echo "Directories to delete:"
+    echo "----------------------------------------------"
+    for item in "${TO_DELETE[@]}"; do
+        dir_name="${item%|*}"
+        sharpe="${item#*|}"
+        printf "  %-60s Sharpe: %s\n" "$dir_name" "$sharpe"
+    done
+    echo "----------------------------------------------"
+    echo ""
+
+    if $DRY_RUN; then
+        echo "[DRY RUN] No files deleted."
+        exit 0
+    fi
+
+    # 确认删除
+    read -p "Delete these ${#TO_DELETE[@]} directories? [y/N] " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+
+    # 执行删除
+    deleted=0
+    for item in "${TO_DELETE[@]}"; do
+        dir_name="${item%|*}"
+        dir_path="$RESULTS_DIR/$dir_name"
+        if rm -rf "$dir_path"; then
+            echo "  Deleted: $dir_name"
+            deleted=$((deleted + 1))
+        else
+            echo "  Failed:  $dir_name"
+        fi
+    done
+
+    echo ""
+    echo "=============================================="
+    echo "Cleanup Complete"
+    echo "=============================================="
+    echo "Deleted: $deleted directories"
+    echo "Remaining: ${#TO_KEEP[@]} directories"
+    echo "=============================================="
+    exit 0
+fi
+
+# ============================================
+# 回测模式
+# ============================================
+
 # 检查模型组合是否已完成回测
-# 参数: MODEL1 MODEL2
-# 返回: 0 = 已完成, 1 = 未完成
 is_pair_completed() {
     local m1="$1"
     local m2="$2"
 
-    # 排序模型名称（与 create_output_dir 中的 sorted() 一致）
     if [[ "$m1" > "$m2" ]]; then
         local tmp="$m1"
         m1="$m2"
@@ -39,16 +140,14 @@ is_pair_completed() {
     fi
 
     local pattern="${m1}_${m2}_vectorized_*"
-
-    # 使用 find 检查是否存在匹配的目录且包含 metrics.json
     local match
     match=$(find "$RESULTS_DIR" -maxdepth 1 -type d -name "$pattern" 2>/dev/null | head -1)
 
     if [[ -n "$match" ]] && [[ -f "$match/metrics.json" ]]; then
-        return 0  # 已完成
+        return 0
     fi
 
-    return 1  # 未完成
+    return 1
 }
 
 # 获取所有模型名称
