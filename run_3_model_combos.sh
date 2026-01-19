@@ -4,11 +4,13 @@
 # 基于已有的2模型组合结果，提取有效模型后进行3模型组合
 #
 # 使用方式:
-#   ./run_triple_model_combos.sh              # 运行所有组合（跳过已完成的）
-#   ./run_triple_model_combos.sh --dry-run    # 仅显示待运行组合，不运行
-#   ./run_triple_model_combos.sh --force      # 强制重新运行所有组合
-#   ./run_triple_model_combos.sh --clean      # 删除 sharpe ratio <= 0 的结果
-#   ./run_triple_model_combos.sh --clean --dry-run  # 预览将被删除的目录
+#   ./run_3_model_combos.sh                   # 运行所有组合（跳过已完成的）
+#   ./run_3_model_combos.sh -j 4              # 并行运行4个回测
+#   ./run_3_model_combos.sh --jobs 8          # 并行运行8个回测
+#   ./run_3_model_combos.sh --dry-run         # 仅显示待运行组合，不运行
+#   ./run_3_model_combos.sh --force           # 强制重新运行所有组合
+#   ./run_3_model_combos.sh --clean           # 删除 sharpe ratio <= 0 的结果
+#   ./run_3_model_combos.sh --clean --dry-run # 预览将被删除的目录
 #
 
 set -e
@@ -20,13 +22,30 @@ LOG_DIR="${RESULTS_DIR}/batch_logs"
 DRY_RUN=false
 FORCE=false
 CLEAN=false
-for arg in "$@"; do
-    case $arg in
-        --dry-run) DRY_RUN=true ;;
-        --force)   FORCE=true ;;
-        --clean)   CLEAN=true ;;
+JOBS=1  # 默认单线程
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run) DRY_RUN=true; shift ;;
+        --force)   FORCE=true; shift ;;
+        --clean)   CLEAN=true; shift ;;
+        -j|--jobs)
+            JOBS="$2"
+            shift 2
+            ;;
+        -j*)
+            JOBS="${1#-j}"
+            shift
+            ;;
+        *) shift ;;
     esac
 done
+
+# 验证 JOBS 参数
+if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [[ "$JOBS" -lt 1 ]]; then
+    echo "Error: --jobs must be a positive integer, got: $JOBS"
+    exit 1
+fi
 
 # ============================================
 # 从2模型组合结果中提取有效模型
@@ -246,6 +265,7 @@ PENDING_COUNT=$(wc -l < "$PENDING_COMBOS_FILE" | tr -d ' ')
 echo "=============================================="
 echo "Completed:       ${COMPLETED_COUNT}"
 echo "Pending:         ${PENDING_COUNT}"
+echo "Parallel jobs:   ${JOBS}"
 if $FORCE; then
     echo "Mode:            FORCE (re-run all)"
 fi
@@ -273,37 +293,72 @@ fi
 
 # 创建日志目录
 mkdir -p "$LOG_DIR"
-BATCH_LOG="${LOG_DIR}/triple_batch_$(date +%Y%m%d_%H%M%S).log"
+BATCH_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BATCH_LOG="${LOG_DIR}/triple_batch_${BATCH_TIMESTAMP}.log"
 echo "Batch log: $BATCH_LOG"
 echo ""
 
-# 运行待处理的组合
-COMBO_COUNT=0
-FAILED_COUNT=0
-SUCCESS_COUNT=0
+# ============================================
+# 运行待处理的组合（并行版本 - 使用 xargs）
+# ============================================
 START_TIME=$(date +%s)
 
-while IFS=' ' read -r MODEL1 MODEL2 MODEL3; do
-    COMBO_COUNT=$((COMBO_COUNT + 1))
+echo "Starting parallel execution with $JOBS workers..."
+echo ""
 
-    echo ""
-    echo "=============================================="
-    printf "[%3d/%d] Running: %s + %s + %s\n" $COMBO_COUNT $PENDING_COUNT "$MODEL1" "$MODEL2" "$MODEL3"
-    echo "=============================================="
+# 创建临时目录存放每个任务的状态
+TASK_DIR=$(mktemp -d)
+trap 'rm -rf "$TASK_DIR" "$MODELS_FILE" "$PENDING_COMBOS_FILE"' EXIT
 
-    if python flow_backtest_vectorized.py "$MODEL1" "$MODEL2" "$MODEL3" 2>&1 | tee -a "$BATCH_LOG"; then
-        echo "[SUCCESS] $MODEL1 + $MODEL2 + $MODEL3" >> "$BATCH_LOG"
-        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-    else
-        echo "[FAILED] $MODEL1 + $MODEL2 + $MODEL3" >> "$BATCH_LOG"
-        FAILED_COUNT=$((FAILED_COUNT + 1))
-    fi
-done < "$PENDING_COMBOS_FILE"
+# 创建运行脚本（每个任务执行一次）
+RUNNER_SCRIPT="$TASK_DIR/runner.sh"
+cat > "$RUNNER_SCRIPT" << 'RUNNER_EOF'
+#!/usr/bin/env bash
+line="$1"
+task_dir="$2"
+batch_log="$3"
+pending_count="$4"
 
-rm -f "$MODELS_FILE" "$PENDING_COMBOS_FILE"
+# 解析参数
+combo_num=$(echo "$line" | cut -d'|' -f1)
+m1=$(echo "$line" | cut -d'|' -f2)
+m2=$(echo "$line" | cut -d'|' -f3)
+m3=$(echo "$line" | cut -d'|' -f4)
+
+echo "[${combo_num}/${pending_count}] START: ${m1} + ${m2} + ${m3}"
+echo "[$(date '+%H:%M:%S')] [${combo_num}/${pending_count}] Starting: ${m1} + ${m2} + ${m3}" >> "$batch_log"
+
+task_log="${task_dir}/task_${combo_num}.log"
+
+if python flow_backtest_vectorized.py "$m1" "$m2" "$m3" > "$task_log" 2>&1; then
+    echo "[$(date '+%H:%M:%S')] [${combo_num}/${pending_count}] SUCCESS: ${m1} + ${m2} + ${m3}" >> "$batch_log"
+    echo "[${combo_num}] DONE: ${m1} + ${m2} + ${m3}"
+    echo "1" > "${task_dir}/success_${combo_num}"
+else
+    echo "[$(date '+%H:%M:%S')] [${combo_num}/${pending_count}] FAILED:  ${m1} + ${m2} + ${m3}" >> "$batch_log"
+    echo "[${combo_num}] FAIL: ${m1} + ${m2} + ${m3}"
+    echo "1" > "${task_dir}/failed_${combo_num}"
+fi
+RUNNER_EOF
+chmod +x "$RUNNER_SCRIPT"
+
+# 生成带编号的任务列表（格式：编号|模型1|模型2|模型3）
+NUMBERED_TASKS="$TASK_DIR/numbered_tasks.txt"
+COMBO_NUM=0
+while IFS=' ' read -r M1 M2 M3; do
+    COMBO_NUM=$((COMBO_NUM + 1))
+    echo "${COMBO_NUM}|${M1}|${M2}|${M3}"
+done < "$PENDING_COMBOS_FILE" > "$NUMBERED_TASKS"
+
+# 使用 xargs 并行执行
+cat "$NUMBERED_TASKS" | xargs -P "$JOBS" -I {} "$RUNNER_SCRIPT" {} "$TASK_DIR" "$BATCH_LOG" "$PENDING_COUNT"
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
+
+# 统计成功和失败数
+SUCCESS_COUNT=$(find "$TASK_DIR" -name 'success_*' 2>/dev/null | wc -l | tr -d ' ')
+FAILED_COUNT=$(find "$TASK_DIR" -name 'failed_*' 2>/dev/null | wc -l | tr -d ' ')
 
 echo ""
 echo "=============================================="
@@ -312,6 +367,7 @@ echo "=============================================="
 echo "Processed:     $COMBO_COUNT"
 echo "Success:       $SUCCESS_COUNT"
 echo "Failed:        $FAILED_COUNT"
+echo "Parallel jobs: $JOBS"
 echo "Elapsed time:  ${ELAPSED}s ($((ELAPSED / 60))m $((ELAPSED % 60))s)"
 echo "Log file:      $BATCH_LOG"
 echo "=============================================="
