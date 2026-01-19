@@ -94,8 +94,9 @@ with open('$metrics_file') as f:
         exit 0
     fi
 
-    # 确认删除
-    read -p "Delete these ${#TO_DELETE[@]} directories? [y/N] " confirm
+    # 确认删除（兼容 bash 和 zsh）
+    printf "Delete these ${#TO_DELETE[@]} directories? [y/N] "
+    read confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         echo "Aborted."
         exit 0
