@@ -2,15 +2,8 @@
 FTI 指标正确性测试 - 验证 Rust 实现与 Python 实现的数值一致性
 """
 
-import sys
-from pathlib import Path
-
-# 添加项目根目录到 sys.path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 import numpy as np
-import pytest
+from scipy import special
 
 # 导入 Python numba 实现
 from src.indicators.prod.fti import (
@@ -46,6 +39,8 @@ def test_fti_basic_comparison():
 
     data_window = prices[-150:][::-1]  # 反转使最近的数据点在索引0
     python_result = python_calculator.process(data_window)
+    python_best_idx = python_calculator.sorted[0]
+    python_raw = python_calculator.fti_values[python_best_idx]
 
     # Rust 实现
     rust_result = rust_fti(
@@ -58,33 +53,44 @@ def test_fti_basic_comparison():
         beta=0.95,
         noise_cut=0.20,
     )
+    rust_raw = rust_result[0]
+    rust_transformed = 100.0 * special.gammainc(2.0, rust_raw / 3.0) - 50.0
 
     print("\n=== FTI 对比结果 ===")
-    print(f"Python FTI:          {python_result.fti:.6f}")
-    print(f"Rust FTI:            {rust_result[0]:.6f}")
-    print(f"差异:                {abs(python_result.fti - rust_result[0]):.6f}")
+    print(f"Python FTI(raw):     {python_raw:.6f}")
+    print(f"Rust FTI(raw):       {rust_raw:.6f}")
+    print(f"差异:                {abs(python_raw - rust_raw):.6f}")
+    print(f"Python FTI(xform):   {python_result.fti:.6f}")
+    print(f"Rust FTI(xform):     {rust_transformed:.6f}")
     print(f"\nPython filtered:     {python_result.filtered_value:.6f}")
     print(f"Rust filtered:       {rust_result[1]:.6f}")
-    print(f"差异:                {abs(python_result.filtered_value - rust_result[1]):.6f}")
+    print(
+        f"差异:                {abs(python_result.filtered_value - rust_result[1]):.6f}"
+    )
     print(f"\nPython width:        {python_result.width:.6f}")
     print(f"Rust width:          {rust_result[2]:.6f}")
     print(f"差异:                {abs(python_result.width - rust_result[2]):.6f}")
     print(f"\nPython period:       {python_result.best_period:.1f}")
     print(f"Rust period:         {rust_result[3]:.1f}")
 
-    # 验证 FTI 值范围（根据公式 mean_move/width，应 >= 0）
-    assert python_result.fti >= 0, f"Python FTI 为负: {python_result.fti}"
-    assert rust_result[0] >= 0, f"Rust FTI 为负: {rust_result[0]}"
+    # 验证 raw FTI 值范围（根据公式 mean_move/width，应 >= 0）
+    assert python_raw >= 0, f"Python raw FTI 为负: {python_raw}"
+    assert rust_raw >= 0, f"Rust raw FTI 为负: {rust_raw}"
 
     # 验证数值一致性（允许小误差）
-    assert np.isclose(python_result.fti, rust_result[0], rtol=1e-6, atol=1e-6), \
-        f"FTI 值不一致: Python={python_result.fti}, Rust={rust_result[0]}"
-    assert np.isclose(python_result.filtered_value, rust_result[1], rtol=1e-6, atol=1e-6), \
-        f"filtered_value 不一致"
-    assert np.isclose(python_result.width, rust_result[2], rtol=1e-6, atol=1e-6), \
-        f"width 不一致"
-    assert python_result.best_period == rust_result[3], \
-        f"best_period 不一致"
+    assert np.isclose(python_raw, rust_raw, rtol=1e-6, atol=1e-6), (
+        f"FTI raw 值不一致: Python={python_raw}, Rust={rust_raw}"
+    )
+    assert np.isclose(python_result.fti, rust_transformed, rtol=1e-6, atol=1e-6), (
+        f"FTI 变换值不一致: Python={python_result.fti}, Rust={rust_transformed}"
+    )
+    assert np.isclose(
+        python_result.filtered_value, rust_result[1], rtol=1e-6, atol=1e-6
+    ), "filtered_value 不一致"
+    assert np.isclose(python_result.width, rust_result[2], rtol=1e-6, atol=1e-6), (
+        "width 不一致"
+    )
+    assert python_result.best_period == rust_result[3], "best_period 不一致"
 
 
 def test_fti_component_comparison():
@@ -95,7 +101,6 @@ def test_fti_component_comparison():
     # 参数
     use_log = True
     min_period = 5
-    max_period = 65
     half_length = 35
     lookback = 150
     beta = 0.95
@@ -159,25 +164,35 @@ def test_fti_with_real_price_data():
     try:
         python_calculator = PythonFTI()
         python_result = python_calculator.process(data_window)
+        python_best_idx = python_calculator.sorted[0]
+        python_raw = python_calculator.fti_values[python_best_idx]
 
         rust_result = rust_fti(data_window)
+        rust_raw = rust_result[0]
+        rust_transformed = 100.0 * special.gammainc(2.0, rust_raw / 3.0) - 50.0
 
-        print(f"\n=== 真实数据测试 ===")
+        print("\n=== 真实数据测试 ===")
         print(f"价格范围: {prices.min():.2f} - {prices.max():.2f}")
-        print(f"Python FTI: {python_result.fti:.6f}")
-        print(f"Rust FTI:   {rust_result[0]:.6f}")
+        print(f"Python FTI(raw): {python_raw:.6f}")
+        print(f"Rust FTI(raw):   {rust_raw:.6f}")
+        print(f"Python FTI(xform): {python_result.fti:.6f}")
+        print(f"Rust FTI(xform):   {rust_transformed:.6f}")
 
-        # 验证范围（FTI >= 0）
-        assert python_result.fti >= 0, f"Python FTI 为负"
-        assert rust_result[0] >= 0, f"Rust FTI 为负: {rust_result[0]}"
+        # 验证范围（raw FTI >= 0）
+        assert python_raw >= 0, "Python raw FTI 为负"
+        assert rust_raw >= 0, f"Rust raw FTI 为负: {rust_raw}"
 
         # 验证一致性
-        assert np.isclose(python_result.fti, rust_result[0], rtol=1e-5, atol=1e-5), \
-            f"FTI 不一致: Python={python_result.fti}, Rust={rust_result[0]}"
+        assert np.isclose(python_raw, rust_raw, rtol=1e-5, atol=1e-5), (
+            f"FTI raw 不一致: Python={python_raw}, Rust={rust_raw}"
+        )
+        assert np.isclose(python_result.fti, rust_transformed, rtol=1e-5, atol=1e-5), (
+            f"FTI 变换值不一致: Python={python_result.fti}, Rust={rust_transformed}"
+        )
 
     except Exception as e:
         print(f"\n错误信息: {e}")
-        print(f"数据统计:")
+        print("数据统计:")
         print(f"  长度: {len(data_window)}")
         print(f"  均值: {data_window.mean():.2f}")
         print(f"  标准差: {data_window.std():.2f}")
@@ -194,29 +209,43 @@ def test_fti_edge_cases():
 
     python_calc = PythonFTI()
     python_result = python_calc.process(flat_prices[::-1])
+    python_best_idx = python_calc.sorted[0]
+    python_raw = python_calc.fti_values[python_best_idx]
     rust_result = rust_fti(flat_prices[::-1])
+    rust_raw = rust_result[0]
+    rust_transformed = 100.0 * special.gammainc(2.0, rust_raw / 3.0) - 50.0
 
-    print(f"\n=== 边界测试：平坦价格 ===")
-    print(f"Python FTI: {python_result.fti:.6f}")
-    print(f"Rust FTI:   {rust_result[0]:.6f}")
+    print("\n=== 边界测试：平坦价格 ===")
+    print(f"Python FTI(raw): {python_raw:.6f}")
+    print(f"Rust FTI(raw):   {rust_raw:.6f}")
+    print(f"Python FTI(xform): {python_result.fti:.6f}")
+    print(f"Rust FTI(xform):   {rust_transformed:.6f}")
 
-    assert python_result.fti >= 0
-    assert rust_result[0] >= 0
-    assert np.isclose(python_result.fti, rust_result[0], rtol=1e-5, atol=1e-5)
+    assert python_raw >= 0
+    assert rust_raw >= 0
+    assert np.isclose(python_raw, rust_raw, rtol=1e-5, atol=1e-5)
+    assert np.isclose(python_result.fti, rust_transformed, rtol=1e-5, atol=1e-5)
 
     # 测试2: 线性趋势
     linear_prices = np.linspace(100, 200, 150)
 
     python_result = python_calc.process(linear_prices[::-1])
+    python_best_idx = python_calc.sorted[0]
+    python_raw = python_calc.fti_values[python_best_idx]
     rust_result = rust_fti(linear_prices[::-1])
+    rust_raw = rust_result[0]
+    rust_transformed = 100.0 * special.gammainc(2.0, rust_raw / 3.0) - 50.0
 
-    print(f"\n=== 边界测试：线性趋势 ===")
-    print(f"Python FTI: {python_result.fti:.6f}")
-    print(f"Rust FTI:   {rust_result[0]:.6f}")
+    print("\n=== 边界测试：线性趋势 ===")
+    print(f"Python FTI(raw): {python_raw:.6f}")
+    print(f"Rust FTI(raw):   {rust_raw:.6f}")
+    print(f"Python FTI(xform): {python_result.fti:.6f}")
+    print(f"Rust FTI(xform):   {rust_transformed:.6f}")
 
-    assert python_result.fti >= 0
-    assert rust_result[0] >= 0
-    assert np.isclose(python_result.fti, rust_result[0], rtol=1e-5, atol=1e-5)
+    assert python_raw >= 0
+    assert rust_raw >= 0
+    assert np.isclose(python_raw, rust_raw, rtol=1e-5, atol=1e-5)
+    assert np.isclose(python_result.fti, rust_transformed, rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":

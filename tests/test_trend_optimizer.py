@@ -86,17 +86,15 @@ class TestMultiWindowEvaluator:
 
     def test_evaluate_basic(self):
         """基本评估测试"""
-        prices = _generate_random_walk(500)
+        prices = _generate_random_walk(2000)
         candles = _make_candles(prices)
 
         # 生成 fusion bars
-        container = DemoBar(threshold=0.5)
+        container = DemoBar(threshold=1e-6, clip_r=0.0)
         container.update_with_candles(candles)
         fusion_bars = container.get_fusion_bars()
 
-        # 确保有足够的 bars
-        if len(fusion_bars) < 60:
-            pytest.skip("Not enough fusion bars for evaluation")
+        assert len(fusion_bars) >= 60, "Fusion bars 数量不足，测试配置可能需要调整"
 
         evaluator = MultiWindowEvaluator(window_sizes=(20, 40, 60))
         result = evaluator.evaluate(fusion_bars)

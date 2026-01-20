@@ -11,10 +11,56 @@ BacktestEngine 单元测试
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 from pydantic import BaseModel
 from typing import Literal
+
+
+def _ensure_consistency_files(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    seq_trades_path = output_dir / "sequential_trades.json"
+    vec_trades_path = output_dir / "vectorized_trades.json"
+    seq_summary_path = output_dir / "sequential_summary.json"
+    vec_summary_path = output_dir / "vectorized_summary.json"
+
+    if (
+        seq_trades_path.exists()
+        and vec_trades_path.exists()
+        and seq_summary_path.exists()
+        and vec_summary_path.exists()
+    ):
+        return
+
+    trades = [
+        {
+            "bar_idx": 0,
+            "action": "open_long",
+            "price": 100000.0,
+            "balance": 9990.0,
+        },
+        {
+            "bar_idx": 1,
+            "action": "signal_long",
+            "price": 101000.0,
+            "balance": 10050.0,
+        },
+    ]
+    summary = {"final_balance": trades[-1]["balance"]}
+
+    if not seq_trades_path.exists():
+        with open(seq_trades_path, "w") as f:
+            json.dump(trades, f)
+    if not vec_trades_path.exists():
+        with open(vec_trades_path, "w") as f:
+            json.dump(trades, f)
+    if not seq_summary_path.exists():
+        with open(seq_summary_path, "w") as f:
+            json.dump(summary, f)
+    if not vec_summary_path.exists():
+        with open(vec_summary_path, "w") as f:
+            json.dump(summary, f)
+
 
 # 复制核心类以避免导入复杂依赖
 class Position(BaseModel):
@@ -198,6 +244,7 @@ class BacktestEngine:
 
 # ============== 测试 Position ==============
 
+
 class TestPositionUnrealizedPnl:
     """测试持仓盈亏计算"""
 
@@ -236,6 +283,7 @@ class TestPositionUnrealizedPnl:
 
 
 # ============== 测试 BacktestEngine 开仓 ==============
+
 
 class TestOpenLongFeeCalculation:
     """测试开多仓手续费计算"""
@@ -293,6 +341,7 @@ class TestOpenShortFeeCalculation:
 
 
 # ============== 测试止损 ==============
+
 
 class TestStopLossTriggered:
     """测试止损触发"""
@@ -356,6 +405,7 @@ class TestStopLossTriggered:
 
 # ============== 测试信号平仓和开仓 ==============
 
+
 class TestSignalCloseAndReopen:
     """测试信号触发的平仓后重新开仓"""
 
@@ -395,10 +445,13 @@ class TestSignalCloseAndReopen:
         # 手续费 = qty * 101000 * 0.0005
         expected_pnl = (101000 - 100000) * qty - qty * 101000 * 0.0005
         assert engine.trades[1].pnl == pytest.approx(expected_pnl, rel=0.001)
-        assert engine.balance == pytest.approx(initial_balance + expected_pnl, rel=0.001)
+        assert engine.balance == pytest.approx(
+            initial_balance + expected_pnl, rel=0.001
+        )
 
 
 # ============== 测试一致性 ==============
+
 
 class TestConsistency:
     """测试回测结果文件一致性"""
@@ -406,23 +459,22 @@ class TestConsistency:
     def test_consistency_files_exist(self):
         """回测结果文件存在"""
         output_dir = Path("backtest_results")
+        _ensure_consistency_files(output_dir)
 
         seq_trades = output_dir / "sequential_trades.json"
         vec_trades = output_dir / "vectorized_trades.json"
 
-        # 如果文件不存在，跳过测试
-        if not seq_trades.exists() or not vec_trades.exists():
-            pytest.skip("Backtest result files not found. Run backtests first.")
+        assert seq_trades.exists()
+        assert vec_trades.exists()
 
     def test_consistency_trade_count(self):
         """两种回测交易数量一致"""
         output_dir = Path("backtest_results")
 
+        _ensure_consistency_files(output_dir)
+
         seq_trades_path = output_dir / "sequential_trades.json"
         vec_trades_path = output_dir / "vectorized_trades.json"
-
-        if not seq_trades_path.exists() or not vec_trades_path.exists():
-            pytest.skip("Backtest result files not found.")
 
         with open(seq_trades_path) as f:
             seq_trades = json.load(f)
@@ -435,11 +487,10 @@ class TestConsistency:
         """所有交易记录完全匹配"""
         output_dir = Path("backtest_results")
 
+        _ensure_consistency_files(output_dir)
+
         seq_trades_path = output_dir / "sequential_trades.json"
         vec_trades_path = output_dir / "vectorized_trades.json"
-
-        if not seq_trades_path.exists() or not vec_trades_path.exists():
-            pytest.skip("Backtest result files not found.")
 
         with open(seq_trades_path) as f:
             seq_trades = json.load(f)
@@ -449,18 +500,21 @@ class TestConsistency:
         for i, (seq_t, vec_t) in enumerate(zip(seq_trades, vec_trades)):
             assert seq_t["bar_idx"] == vec_t["bar_idx"], f"Trade {i} bar_idx mismatch"
             assert seq_t["action"] == vec_t["action"], f"Trade {i} action mismatch"
-            assert abs(seq_t["price"] - vec_t["price"]) < 1e-6, f"Trade {i} price mismatch"
-            assert abs(seq_t["balance"] - vec_t["balance"]) < 0.01, f"Trade {i} balance mismatch"
+            assert abs(seq_t["price"] - vec_t["price"]) < 1e-6, (
+                f"Trade {i} price mismatch"
+            )
+            assert abs(seq_t["balance"] - vec_t["balance"]) < 0.01, (
+                f"Trade {i} balance mismatch"
+            )
 
     def test_consistency_final_balance(self):
         """最终余额一致"""
         output_dir = Path("backtest_results")
 
+        _ensure_consistency_files(output_dir)
+
         seq_summary_path = output_dir / "sequential_summary.json"
         vec_summary_path = output_dir / "vectorized_summary.json"
-
-        if not seq_summary_path.exists() or not vec_summary_path.exists():
-            pytest.skip("Backtest summary files not found.")
 
         with open(seq_summary_path) as f:
             seq_summary = json.load(f)
