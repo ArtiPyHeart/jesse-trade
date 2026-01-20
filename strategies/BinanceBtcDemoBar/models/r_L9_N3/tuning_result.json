@@ -1,0 +1,21 @@
+{
+  "cv_score": 0.7226530750002247,
+  "best_params": {
+    "objective": "regression",
+    "num_threads": -1,
+    "verbose": -1,
+    "max_depth": 8,
+    "num_leaves": 77,
+    "bagging_freq": 1,
+    "bagging_fraction": 0.795578065333303,
+    "extra_trees": false,
+    "learning_rate": 0.08669946908693854,
+    "min_gain_to_split": 0.11534461348833216,
+    "min_data_in_leaf": 57,
+    "lambda_l1": 0.27377539926948685,
+    "lambda_l2": 24.734755755422057,
+    "feature_fraction": 0.937954106397535
+  },
+  "n_latent_dims": 24,
+  "timestamp": "2026-01-17 05:36:48"
+}

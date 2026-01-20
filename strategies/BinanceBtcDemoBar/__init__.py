@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from jesse import utils
+from jesse.store import store
 from jesse.strategies import Strategy, cached
 from joblib._parallel_backends import LokyBackend  # 内部 API
 from joblib.externals.loky import get_reusable_executor
@@ -38,7 +39,8 @@ MIN_FUSION_BARS = 512
 # 模型设置
 MODELS = [
     "c_L6_N1",
-    "r_L5_N2",
+    "r_L6_N3",
+    "r_L9_N3",
 ]
 
 
@@ -241,13 +243,28 @@ class BinanceBtcDemoBar(Strategy):
         return self.model_shows_short
 
     def should_cancel_entry(self) -> bool:
-        # Only for limit orders，当提交的限价单没有成交时，是否在下一个candle取消
-        if self.should_long() or self.should_short():
-            return True
-        return False
+        entry_orders = [o for o in self.entry_orders if o.is_cancellable]
+        if not entry_orders:
+            return False
+        timestamps = [o.created_at for o in entry_orders if o.created_at is not None]
+        if not timestamps:
+            return False
+        return self.current_candle[0] - min(timestamps) >= 5 * 60_000
+
+    def _best_bid_ask_price(self) -> tuple[float, float]:
+        fallback = self.price
+        try:
+            best_ask = store.orderbooks.get_best_ask(self.exchange, self.symbol)
+            best_bid = store.orderbooks.get_best_bid(self.exchange, self.symbol)
+        except Exception:
+            return fallback, fallback
+
+        ask_price = float(best_ask[0]) if np.isfinite(best_ask[0]) else fallback
+        bid_price = float(best_bid[0]) if np.isfinite(best_bid[0]) else fallback
+        return ask_price, bid_price
 
     def go_long(self):
-        entry_price = self.price
+        entry_price, _ = self._best_bid_ask_price()
         qty = utils.size_to_qty(
             self.leveraged_available_margin * POSITION_SIZE_RATIO,
             entry_price,
@@ -257,7 +274,7 @@ class BinanceBtcDemoBar(Strategy):
         self.stop_loss = qty, entry_price * (1 - self.loss_ratio_with_leverage)
 
     def go_short(self):
-        entry_price = self.price
+        _, entry_price = self._best_bid_ask_price()
         qty = utils.size_to_qty(
             self.leveraged_available_margin * POSITION_SIZE_RATIO,
             entry_price,
