@@ -383,7 +383,9 @@ fi
 
 echo ""
 echo ">>> 步骤 4: 激活环境并检查 Python..."
+set +u
 conda activate "$ENV_NAME"
+set -u
 echo "✓ $(python --version)"
 
 echo ""
