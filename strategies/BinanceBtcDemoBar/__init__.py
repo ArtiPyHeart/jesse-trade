@@ -264,7 +264,8 @@ class BinanceBtcDemoBar(Strategy):
         return ask_price, bid_price
 
     def go_long(self):
-        entry_price, _ = self._best_bid_ask_price()
+        # 用买一价(bid)挂限价买单，作为 maker 等待成交，获得更优价格和更低手续费
+        _, entry_price = self._best_bid_ask_price()
         qty = utils.size_to_qty(
             self.leveraged_available_margin * POSITION_SIZE_RATIO,
             entry_price,
@@ -274,7 +275,8 @@ class BinanceBtcDemoBar(Strategy):
         self.stop_loss = qty, entry_price * (1 - self.loss_ratio_with_leverage)
 
     def go_short(self):
-        _, entry_price = self._best_bid_ask_price()
+        # 用卖一价(ask)挂限价卖单，作为 maker 等待成交，获得更优价格和更低手续费
+        entry_price, _ = self._best_bid_ask_price()
         qty = utils.size_to_qty(
             self.leveraged_available_margin * POSITION_SIZE_RATIO,
             entry_price,
