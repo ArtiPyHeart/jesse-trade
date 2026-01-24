@@ -120,9 +120,61 @@ np.save("data/btc_1m.npy", candles)
 print(f"保存了 {len(candles):,} 根 1 分钟 K 线")
 ```
 
+### 阶段 3.5：参数范围校准（关键步骤）
+
+**不要凭直觉设定参数范围！** 必须先用真实数据统计阈值分布，再确定 Optuna 搜索范围。
+
+1. **计算阈值分布**：用新 class 的 `get_thresholds()` 在真实数据上计算
+2. **统计关键指标**：min, max, mean, median, p5, p95
+3. **统计累积阈值**：100/1000/10000 根 K 线后的累积值
+4. **测试不同 threshold**：观察生成的 fusion bar 数量
+5. **确定搜索范围**：根据统计结果设定合理范围
+
+**校准脚本**：
+```python
+import numpy as np
+from src.bars.fusion.{module} import {ClassName}
+
+candles = np.load("data/btc_1m.npy")
+print(f"K线数量: {len(candles):,}")
+
+# 计算阈值分布（不过滤）
+bar = {ClassName}(clip_r=0, threshold=1.0)
+thresholds = bar.get_thresholds(candles[:100000])
+
+print(f"\n阈值统计 (前 100000 根 K 线):")
+print(f"  min:    {np.min(thresholds):.2e}")
+print(f"  max:    {np.max(thresholds):.2e}")
+print(f"  mean:   {np.mean(thresholds):.2e}")
+print(f"  median: {np.median(thresholds):.2e}")
+print(f"  p5:     {np.percentile(thresholds, 5):.2e}")
+print(f"  p95:    {np.percentile(thresholds, 95):.2e}")
+
+# 累积阈值
+cumsum = np.cumsum(thresholds)
+print(f"\n累积阈值:")
+print(f"  100根后:   {cumsum[99]:.2e}")
+print(f"  1000根后:  {cumsum[999]:.2e}")
+print(f"  10000根后: {cumsum[9999]:.2e}")
+
+# 测试不同 threshold 下的 bar 数量
+print(f"\n不同 threshold 下的 bar 数量:")
+for th in [cumsum[99], cumsum[999]/10, cumsum[999], cumsum[9999]/100]:
+    bar = {ClassName}(clip_r=0, threshold=th)
+    bar.update_with_candles(candles[:100000])
+    fusion = bar.get_fusion_bars()
+    print(f"  threshold={th:.2e}: {len(fusion)} bars")
+```
+
+**范围确定原则**：
+| 参数 | 范围确定方法 |
+|------|-------------|
+| clip_r | 从 p5 到 p50，使用 log scale |
+| threshold | 从 cumsum[100] 到 cumsum[1000]，根据目标 bar 数量调整 |
+
 ### 阶段 4：Optuna 优化
 1. **使用 TrendOptimizer**：从 `research.trend_optimizer.optimizer` 导入
-2. **配置参数范围**：根据阶段 1 确认的范围
+2. **配置参数范围**：**根据阶段 3.5 校准的范围**（不要用直觉！）
 3. **充分运行**：建议 1000+ trials，**必须后台运行**
 
 **优化脚本**：
@@ -142,9 +194,9 @@ optimizer = TrendOptimizer(
 
 results = optimizer.optimize(
     n_trials=1000,  # 建议 1000+
-    # 参数范围
-    clip_r=(0.0001, 0.01, "log"),
-    threshold=(0.5, 5.0),
+    # 参数范围（来自阶段 3.5 校准结果）
+    clip_r=({校准的 clip_r_min}, {校准的 clip_r_max}, "log"),
+    threshold=({校准的 threshold_min}, {校准的 threshold_max}),
 )
 
 # 输出结果
@@ -162,6 +214,7 @@ for r in results[:5]:
 1. **提取最优参数**：从优化结果中获取 rank=1 的参数
 2. **更新 class**：将最优参数作为 `__init__` 的默认值
 3. **验证**：使用 `evaluate_detailed` 生成评估报告
+4. **清理**：删除优化脚本（如 `research/optimize_{name}.py`），最优参数已固化到 class 中
 
 **验证脚本**：
 ```python
@@ -183,11 +236,19 @@ print(report)
 
 ### 阶段 6：基准对比与交付
 1. **与 DemoBar 对比**：使用相同数据生成两个评估报告
-2. **展示对比结果**：综合评分、分项得分、等级
+2. **展示对比结果**：
+   - 综合评分、分项得分、等级
+   - **Fusion bar 数量**（重要！bar 数量 = 交易机会）
+   - 压缩比（1min candles / fusion bars）
 3. **质量判定**：
-   - 新轴 ≥ DemoBar：正常交付
-   - 新轴 < DemoBar 且差距 ≤ 10 分：提示用户"略低于基准，建议谨慎使用"
-   - 新轴 < DemoBar 且差距 > 10 分：**警告用户"明显低于基准，此轴可能不适合趋势交易"**
+   - **趋势性判定**：
+     - 新轴 ≥ DemoBar：正常
+     - 新轴 < DemoBar 且差距 ≤ 10 分：提示"略低于基准，建议谨慎使用"
+     - 新轴 < DemoBar 且差距 > 10 分：**警告"明显低于基准，此轴可能不适合趋势交易"**
+   - **Bar 数量判定**（同样重要）：
+     - 新轴 bar 数量 ≥ DemoBar 的 50%：正常
+     - 新轴 bar 数量 < DemoBar 的 50%：**警告"交易机会较少"**
+     - 新轴 bar 数量 < DemoBar 的 25%：**强烈警告"交易机会极少，需确认是否符合策略需求"**
 4. **告知文件位置**：`src/bars/fusion/{name}.py`
 5. **说明后续步骤**：用户需进行机器学习建模与回测
 
@@ -204,17 +265,37 @@ evaluator = MultiWindowEvaluator()
 # DemoBar 基准
 demo = DemoBar()
 demo.update_with_candles(candles)
-demo_report = evaluator.evaluate_detailed(demo.get_fusion_bars())
+demo_fusion = demo.get_fusion_bars()
+demo_report = evaluator.evaluate_detailed(demo_fusion)
 
 # 新轴
 new_bar = {ClassName}()
 new_bar.update_with_candles(candles)
-new_report = evaluator.evaluate_detailed(new_bar.get_fusion_bars())
+new_fusion = new_bar.get_fusion_bars()
+new_report = evaluator.evaluate_detailed(new_fusion)
 
-# 对比
+# 对比：趋势性得分
+print("=== 趋势性得分 ===")
 print(f"DemoBar:  {demo_report.overall_score:.1f}/100 ({demo_report.overall_grade})")
 print(f"新轴:     {new_report.overall_score:.1f}/100 ({new_report.overall_grade})")
 print(f"差距:     {new_report.overall_score - demo_report.overall_score:+.1f}")
+
+# 对比：Bar 数量（交易机会）
+print("\n=== Bar 数量（交易机会）===")
+print(f"原始 K 线:   {len(candles):,}")
+print(f"DemoBar:     {len(demo_fusion):,} bars (压缩比 {len(candles)/len(demo_fusion):.1f}:1)")
+print(f"新轴:        {len(new_fusion):,} bars (压缩比 {len(candles)/len(new_fusion):.1f}:1)")
+bar_ratio = len(new_fusion) / len(demo_fusion)
+print(f"新轴/DemoBar: {bar_ratio:.1%}")
+
+# 质量判定
+print("\n=== 质量判定 ===")
+if bar_ratio < 0.25:
+    print("⚠️ 强烈警告：交易机会极少（< DemoBar 的 25%），需确认是否符合策略需求")
+elif bar_ratio < 0.5:
+    print("⚠️ 警告：交易机会较少（< DemoBar 的 50%）")
+else:
+    print("✓ Bar 数量正常")
 ```
 
 ## 重要提醒
@@ -298,16 +379,16 @@ print(f"差距:     {new_report.overall_score - demo_report.overall_score:+.1f}"
 **场景**：首次创建此 skill
 **内容**：基于 DemoBar 和 TrendOptimizer 的现有实现，整理出标准化的 6 阶段流程
 
-<!--
-未来经验记录示例：
+### [2026-01] 参数范围必须通过数据统计确定，不能凭直觉
+**场景**：开发 LogReturnBar 时，直接套用 DemoBar 的参数范围 `threshold=(0.5, 5.0)`，导致 Optuna 优化时所有 trial 的 fusion_bar_count 都是 0 或 1
+**根因**：LogReturnBar 的公式 `|ln(C_t/C_{t-1})| × ln(H_t/L_t)` 量级约 1e-6，而 DemoBar 的公式量级约 1e-3，相差 1000 倍
+**解决方案**：新增「阶段 3.5：参数范围校准」，强制要求在 Optuna 优化前先统计阈值分布，用实际数据确定搜索范围
+**教训**：不同公式的量级可能差异巨大，凭直觉设定范围必然踩坑。数据驱动优于直觉判断
 
-### [2025-02] 数据获取需在项目根目录运行
-**场景**：在子目录运行数据获取脚本时，jesse 无法读取 .env 配置
-**解决方案**：确保所有涉及 jesse.research.get_candles 的脚本都在项目根目录运行
-**教训**：CLAUDE.md 中已有此提醒，但容易遗忘
-
-### [2025-03] clip_r 参数建议使用 log 采样
-**场景**：clip_r 范围 [0.0001, 0.01] 跨越两个数量级
-**解决方案**：使用 `clip_r=(0.0001, 0.01, "log")` 而非线性采样
-**教训**：跨数量级的参数优先考虑对数采样
--->
+### [2026-01] 趋势性得分相近不代表质量相近，必须同时考虑 bar 数量
+**场景**：LogReturnBar 优化后趋势性得分 68.0/100，与 DemoBar 的 68.6/100 几乎相同，但 bar 数量只有 5,091 vs 20,605（仅 25%）
+**问题**：bar 数量少 = 交易机会少
+**解决方案**：
+1. 更新阶段 6 对比脚本，增加 bar 数量和压缩比的展示
+2. 新增 bar 数量质量判定：< 50% 警告，< 25% 强烈警告
+**教训**：评价 fusion bar 质量需要多维度考量，趋势性只是其中一个维度。bar 数量决定交易机会，压缩比决定信息密度，都应纳入评估
