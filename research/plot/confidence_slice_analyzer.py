@@ -133,7 +133,7 @@ class ConfidenceSliceAnalyzer:
             )
             print(f"  - 占比: {out_ratio:.2%}")
             print(f"  - 实际范围: [{min_val:.4f}, {max_val:.4f}]")
-            print(f"  - 超出范围的值将被归类到最近的边界切片\n")
+            print("  - 超出范围的值将被归类到最近的边界切片\n")
 
         # 检查粒度值的合理性
         range_size = self.upper_bound - self.lower_bound
@@ -191,7 +191,7 @@ class ConfidenceSliceAnalyzer:
         self.data_size = len(self.data)
 
         # 打印时序对齐信息
-        print(f"\n📊 时序对齐信息:")
+        print("\n📊 时序对齐信息:")
         print(f"  - pred_next: {self.pred_next} (预测未来第{self.pred_next}根K线)")
         print(f"  - 原始数据长度: {len(time_data)}")
         print(f"  - 对齐后数据长度: {self.data_size}")
@@ -375,7 +375,7 @@ class ConfidenceSliceAnalyzer:
             try:
                 time_series = pd.to_datetime(time_series)
                 is_datetime = True
-            except:
+            except Exception:
                 is_datetime = False
 
             tick_indices = np.linspace(

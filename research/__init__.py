@@ -6,7 +6,7 @@ try:
     project_root = Path(__file__).parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    import pytorch_config
+    import pytorch_config  # noqa: F401 - imported for side effects
 except ImportError:
     # PyTorch may not be installed, which is fine for non-ML components
     pass
