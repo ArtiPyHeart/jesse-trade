@@ -71,11 +71,24 @@ cd /Users/yangqiuyu/Github/jesse-trade && codex exec "问题描述"
 - **必须附带文件路径**：让 codex 聚焦于具体文件和问题
 - 复杂问题设置长超时（600000ms）或后台运行
 
+**多轮讨论最佳实践**：
+当需要与 codex 进行多轮深度讨论时，由于每次 `codex exec` 调用独立、无法感知上下文：
+1. 将讨论背景、已有结论、待解决问题写入一个 markdown 文件（如 `docs/codex_context_<topic>.md`）
+2. 在后续 `codex exec` 调用中引用该文件：
+   ```bash
+   codex exec "请先阅读 docs/codex_context_evaluation.md 了解背景，然后回答：..."
+   ```
+3. 每轮讨论后更新该文件，记录新的结论和待解决问题
+
 ```bash
-# 示例
+# 单次调用示例
 codex exec "Review src/models/deep_ssm/deep_ssm.py lines 200-300
 Context: This implements ELBO computation for a VAE model.
 Question: Is this numerically stable?"
+
+# 多轮讨论示例
+codex exec "请先阅读 research/trend_optimizer/IMPROVEMENT_NOTES.md 了解评价体系背景，
+然后评审 research/trend_optimizer/evaluator.py 中 EvaluationReport 的设计是否合理"
 ```
 
 ## 关键提醒

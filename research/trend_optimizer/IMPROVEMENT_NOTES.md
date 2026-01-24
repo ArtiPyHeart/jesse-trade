@@ -2,6 +2,38 @@
 
 > 基于 2025-01 与 Codex 的深度讨论整理
 
+## 零、已实现功能
+
+### EvaluationReport (详细评估报告)
+
+新增 `MultiWindowEvaluator.evaluate_detailed()` 方法，返回 `EvaluationReport` 对象：
+
+```python
+report = evaluator.evaluate_detailed(fusion_bars)
+print(report)  # 格式化输出
+```
+
+**报告结构**：
+- **综合评分**: 0-100 分 + A/B/C/D/F 等级
+- **分项得分** (0-5):
+  - 趋势性: 各窗口 mean_score 均值
+  - 一致性: 基于窗口得分标准差（归一化）
+  - 稳定性: 基于高分/低分比例
+- **窗口得分**: 各窗口详细得分
+- **统计概览**: Bar 数量、评估窗口数等
+- **三重检验统计**: Hurst/ADF/KPSS 各项比例
+
+**综合评分公式**：
+```python
+overall_score = trend * 10 + consistency * 6 + stability * 4
+# 满分 = 50 + 30 + 20 = 100
+# 权重: 趋势性 50%, 一致性 30%, 稳定性 20%
+```
+
+**等级划分**：A ≥ 80 | B ≥ 65 | C ≥ 50 | D ≥ 35 | F < 35
+
+---
+
 ## 一、现有方法评估
 
 ### 1.1 当前评价体系
