@@ -12,9 +12,9 @@ import numpy as np
 from jesse.helpers import get_candle_source
 
 try:
-    from ._operators import ts_delta, ts_max, ts_rank, signed_power, get_vwap
+    from ._operators import ts_delta, ts_max, ts_rank, get_vwap
 except ImportError:
-    from _operators import ts_delta, ts_max, ts_rank, signed_power, get_vwap
+    from _operators import ts_delta, ts_max, ts_rank, get_vwap
 
 
 def alpha_084(
@@ -91,10 +91,14 @@ if __name__ == "__main__":
 
     print("Testing Alpha #84...")
     _, candles = research.get_candles(
-        "Binance Perpetual Futures", "BTC-USDT", "1m",
+        "Binance Perpetual Futures",
+        "BTC-USDT",
+        "1m",
         helpers.date_to_timestamp("2024-01-01"),
         helpers.date_to_timestamp("2024-01-07"),
-        warmup_candles_num=0, caching=True, is_for_jesse=False,
+        warmup_candles_num=0,
+        caching=True,
+        is_for_jesse=False,
     )
     print(f"  Loaded {len(candles)} candles")
 

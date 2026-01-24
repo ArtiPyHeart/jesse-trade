@@ -7,7 +7,6 @@
 import numpy as np
 import pywt
 from jesse.helpers import get_candle_source
-from joblib import delayed, Parallel
 
 from src.indicators.prod._indicator_base._cls_ind import IndicatorBase
 from pyrs_indicators.ind_wavelets import cwt as rust_cwt

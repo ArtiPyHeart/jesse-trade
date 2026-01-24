@@ -133,10 +133,10 @@ if __name__ == "__main__":
     for threshold in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]:
         study.enqueue_trial({"THRESHOLD": threshold})
 
-    print(f"已添加12个手动探索点以确保搜索空间覆盖")
-    print(f"搜索范围: THRESHOLD ∈ [0.2, 10.0]")
-    print(f"优化目标: 最小化Kurtosis（峰度）")
-    print(f"约束条件: Fusion Bar数量 ≥ 4小时K线数量")
+    print("已添加12个手动探索点以确保搜索空间覆盖")
+    print("搜索范围: THRESHOLD ∈ [0.2, 10.0]")
+    print("优化目标: 最小化Kurtosis（峰度）")
+    print("约束条件: Fusion Bar数量 ≥ 4小时K线数量")
     print("=" * 60)
 
     # 运行优化，增加到1000次试验
@@ -155,12 +155,12 @@ if __name__ == "__main__":
 
     best_trial = study.best_trial
 
-    print(f"\n最优参数：")
+    print("\n最优参数：")
     print(f"  - THRESHOLD: {best_trial.params['THRESHOLD']:.6f}")
     print(f"  - Kurtosis: {best_trial.value:.6f}")
 
     # 获取最优参数下的详细信息
-    print(f"\n最优参数下的统计信息：")
+    print("\n最优参数下的统计信息：")
     print(f"  - Fusion Bar数量: {best_trial.user_attrs.get('fusion_bar_count', 'N/A')}")
     print(
         f"  - 4小时K线理论数量: {best_trial.user_attrs.get('four_hour_candle_count', 'N/A')}"
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     )
 
     # 重新计算最优参数下的fusion bar以获取更多统计信息
-    print(f"\n重新计算最优参数下的Fusion Bar详细统计...")
+    print("\n重新计算最优参数下的Fusion Bar详细统计...")
     best_bar_container = DemoBar(max_bars=-1)
     best_bar_container.THRESHOLD = best_trial.params["THRESHOLD"]
     best_bar_container.update_with_candles(candles)
@@ -179,7 +179,7 @@ if __name__ == "__main__":
     # 计算fusion bar的时间间隔统计
     if len(best_fusion_bar) > 1:
         time_intervals = np.diff(best_fusion_bar[:, 0]) / (60 * 1000)  # 转换为分钟
-        print(f"\nFusion Bar时间间隔统计（分钟）：")
+        print("\nFusion Bar时间间隔统计（分钟）：")
         print(f"  - 平均间隔: {np.mean(time_intervals):.2f}")
         print(f"  - 中位数间隔: {np.median(time_intervals):.2f}")
         print(f"  - 最小间隔: {np.min(time_intervals):.2f}")
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     # 计算收益率统计
     ret = np.log(best_fusion_bar[4:, 2]) - np.log(best_fusion_bar[:-4, 2])
     standard = (ret - ret.mean()) / ret.std()
-    print(f"\nLag收益率统计：")
+    print("\nLag收益率统计：")
     print(f"  - 平均收益率: {ret.mean():.6f}")
     print(f"  - 收益率标准差: {ret.std():.6f}")
     print(
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     )
 
     # 显示优化过程统计
-    print(f"\n优化过程统计：")
+    print("\n优化过程统计：")
     print(f"  - 总试验次数: {len(study.trials)}")
     print(f"  - 有效试验次数: {len([t for t in study.trials if t.value < 1e10])}")
     print(
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     )
 
     # 显示前10个最优参数（增加到10个以看到更多可能性）
-    print(f"\n前10个最优参数组合：")
+    print("\n前10个最优参数组合：")
     sorted_trials = sorted(
         [t for t in study.trials if t.value < 1e10], key=lambda x: x.value
     )[:10]
@@ -223,7 +223,7 @@ if __name__ == "__main__":
         )
 
     # 添加参数探索分布分析
-    print(f"\n参数探索分布分析：")
+    print("\n参数探索分布分析：")
     valid_trials = [t for t in study.trials if t.value < 1e10]
     if valid_trials:
         all_thresholds = [t.params["THRESHOLD"] for t in valid_trials]
@@ -232,7 +232,7 @@ if __name__ == "__main__":
         bins = np.linspace(0.2, 10.0, 11)
         hist, _ = np.histogram(all_thresholds, bins=bins)
 
-        print(f"  搜索空间覆盖率（按区间）：")
+        print("  搜索空间覆盖率（按区间）：")
         for i in range(len(bins) - 1):
             bar_length = int(hist[i] * 50 / max(hist))  # 归一化到50字符宽度
             bar = "█" * bar_length
@@ -245,7 +245,7 @@ if __name__ == "__main__":
         print(f"  实际探索范围: [{min(all_thresholds):.3f}, {max(all_thresholds):.3f}]")
 
     # 显示收敛情况分析
-    print(f"\n优化收敛分析：")
+    print("\n优化收敛分析：")
     checkpoints = [100, 200, 300, 500, 700, 1000]
     for checkpoint in checkpoints:
         if checkpoint <= len(study.trials):

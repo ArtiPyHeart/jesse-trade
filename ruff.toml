@@ -1,0 +1,7 @@
+# Ruff configuration for jesse-trade
+# https://docs.astral.sh/ruff/configuration/
+
+[lint]
+# Ignore E741: ambiguous variable name (l, O, I)
+# In trading code, o/h/l/c (open/high/low/close) is standard convention
+ignore = ["E741"]

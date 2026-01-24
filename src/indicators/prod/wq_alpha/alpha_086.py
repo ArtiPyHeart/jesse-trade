@@ -36,7 +36,6 @@ def alpha_086(
     Returns:
         Alpha values array
     """
-    open_ = get_candle_source(candles, "open")
     close = get_candle_source(candles, "close")
     high = get_candle_source(candles, "high")
     low = get_candle_source(candles, "low")
@@ -64,10 +63,14 @@ if __name__ == "__main__":
 
     print("Testing Alpha #86...")
     _, candles = research.get_candles(
-        "Binance Perpetual Futures", "BTC-USDT", "1m",
+        "Binance Perpetual Futures",
+        "BTC-USDT",
+        "1m",
         helpers.date_to_timestamp("2024-01-01"),
         helpers.date_to_timestamp("2024-01-07"),
-        warmup_candles_num=0, caching=True, is_for_jesse=False,
+        warmup_candles_num=0,
+        caching=True,
+        is_for_jesse=False,
     )
     print(f"  Loaded {len(candles)} candles")
 
@@ -80,5 +83,7 @@ if __name__ == "__main__":
 
     valid = seq_result[~np.isnan(seq_result)]
     if len(valid) > 0:
-        print(f"  Signal distribution: -1 count: {np.sum(valid == -1)}, 0 count: {np.sum(valid == 0)}")
+        print(
+            f"  Signal distribution: -1 count: {np.sum(valid == -1)}, 0 count: {np.sum(valid == 0)}"
+        )
     print("\nAlpha #86 all tests passed!")

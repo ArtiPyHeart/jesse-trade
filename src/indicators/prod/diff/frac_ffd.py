@@ -32,7 +32,7 @@ import time
 
 import numpy as np
 import pandas as pd
-from jesse.helpers import get_candle_source, slice_candles
+from jesse.helpers import get_candle_source
 from numba import jit, prange
 from statsmodels.tsa.stattools import adfuller
 
