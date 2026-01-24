@@ -54,9 +54,8 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 - EasyLanguage角度→Python弧度：用`src/utils/math_tools.py`
 
 ## SKILL文档（位于 `.claude/skills/`）
-- `model-screening-analysis`：模型快速筛选与质量评估
-- `confidence-slice-analysis`：置信度切片分析与过滤器配置
 - `rust-indicators-development`：Rust高性能指标开发与集成
+- `find-best-fusion-bar`：自定义趋势轴（Fusion Bar）开发与优化，触发短语："构建新的趋势轴"/"寻找最佳fusion bar"/"开发自定义轴"
 
 ## 开发工具
 
