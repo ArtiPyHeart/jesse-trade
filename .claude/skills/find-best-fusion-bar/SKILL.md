@@ -181,10 +181,41 @@ report = evaluator.evaluate_detailed(fusion_bars)
 print(report)
 ```
 
-### 阶段 6：交付
-1. **展示评估报告**：综合评分、分项得分、窗口得分
-2. **告知文件位置**：`src/bars/fusion/{name}.py`
-3. **说明后续步骤**：用户需进行机器学习建模与回测
+### 阶段 6：基准对比与交付
+1. **与 DemoBar 对比**：使用相同数据生成两个评估报告
+2. **展示对比结果**：综合评分、分项得分、等级
+3. **质量判定**：
+   - 新轴 ≥ DemoBar：正常交付
+   - 新轴 < DemoBar 且差距 ≤ 10 分：提示用户"略低于基准，建议谨慎使用"
+   - 新轴 < DemoBar 且差距 > 10 分：**警告用户"明显低于基准，此轴可能不适合趋势交易"**
+4. **告知文件位置**：`src/bars/fusion/{name}.py`
+5. **说明后续步骤**：用户需进行机器学习建模与回测
+
+**对比脚本**：
+```python
+import numpy as np
+from src.bars.fusion.demo import DemoBar
+from src.bars.fusion.{module} import {ClassName}
+from research.trend_optimizer.evaluator import MultiWindowEvaluator
+
+candles = np.load("data/btc_1m.npy")
+evaluator = MultiWindowEvaluator()
+
+# DemoBar 基准
+demo = DemoBar()
+demo.update_with_candles(candles)
+demo_report = evaluator.evaluate_detailed(demo.get_fusion_bars())
+
+# 新轴
+new_bar = {ClassName}()
+new_bar.update_with_candles(candles)
+new_report = evaluator.evaluate_detailed(new_bar.get_fusion_bars())
+
+# 对比
+print(f"DemoBar:  {demo_report.overall_score:.1f}/100 ({demo_report.overall_grade})")
+print(f"新轴:     {new_report.overall_score:.1f}/100 ({new_report.overall_grade})")
+print(f"差距:     {new_report.overall_score - demo_report.overall_score:+.1f}")
+```
 
 ## 重要提醒
 
