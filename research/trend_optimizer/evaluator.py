@@ -4,7 +4,7 @@
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import pandas as pd
@@ -134,6 +134,7 @@ class MultiWindowEvaluator:
         self,
         window_sizes: tuple[int, ...] = (20, 40, 60),
         step: int = 5,
+        n_jobs: Optional[int] = None,
         min_bar_ratio_minutes: int = 360,  # 6h = 360 min
     ):
         """初始化评估器
@@ -141,6 +142,7 @@ class MultiWindowEvaluator:
         Args:
             window_sizes: 评估窗口大小元组
             step: TrendValidator 滑动步长
+            n_jobs: TrendValidator 并行进程数（None 使用默认值）
             min_bar_ratio_minutes: 最小 bar 数量基准（分钟）
         """
         assert len(window_sizes) > 0, "window_sizes must not be empty"
@@ -150,7 +152,15 @@ class MultiWindowEvaluator:
 
         self.window_sizes = window_sizes
         self.step = step
+        self.n_jobs = n_jobs
         self.min_bar_ratio_minutes = min_bar_ratio_minutes
+
+    def _build_validator(self, window_size: int) -> TrendValidator:
+        if self.n_jobs is None:
+            return TrendValidator(window_size=window_size, step=self.step)
+        return TrendValidator(
+            window_size=window_size, step=self.step, n_jobs=self.n_jobs
+        )
 
     def check_constraints(
         self,
@@ -195,7 +205,7 @@ class MultiWindowEvaluator:
         window_summaries = {}
 
         for ws in self.window_sizes:
-            validator = TrendValidator(window_size=ws, step=self.step)
+            validator = self._build_validator(ws)
             results = validator.validate(fusion_bars)
             summary = validator.summarize(results)
             window_scores[ws] = summary["mean_score"]
@@ -225,7 +235,7 @@ class MultiWindowEvaluator:
 
         # 收集各窗口的评估结果
         for ws in self.window_sizes:
-            validator = TrendValidator(window_size=ws, step=self.step)
+            validator = self._build_validator(ws)
             results = validator.validate(fusion_bars)
             summary = validator.summarize(results)
 

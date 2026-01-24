@@ -10,7 +10,6 @@ from typing import Optional
 
 import numpy as np
 from numba import njit
-from scipy.stats import linregress
 
 
 @njit(cache=True)
@@ -63,6 +62,32 @@ def _compute_rs_values(
     return rs_values, count
 
 
+@njit(cache=True)
+def _linear_regression_slope(x: np.ndarray, y: np.ndarray) -> float:
+    n = len(x)
+    if n == 0 or n != len(y):
+        return np.nan
+
+    x_mean = 0.0
+    y_mean = 0.0
+    for i in range(n):
+        x_mean += x[i]
+        y_mean += y[i]
+    x_mean /= n
+    y_mean /= n
+
+    sxx = 0.0
+    sxy = 0.0
+    for i in range(n):
+        dx = x[i] - x_mean
+        sxx += dx * dx
+        sxy += dx * (y[i] - y_mean)
+
+    if sxx == 0.0:
+        return np.nan
+    return sxy / sxx
+
+
 def _calculate_hurst_from_log_returns(
     log_returns: np.ndarray,
     min_lag: int,
@@ -101,7 +126,8 @@ def _calculate_hurst_from_log_returns(
     valid_log_lags = log_lags[:count][valid_mask]
     valid_rs = rs_values[valid_mask]
 
-    slope, _, _, _, _ = linregress(valid_log_lags, np.log(valid_rs))
+    log_valid_rs = np.log(valid_rs)
+    slope = _linear_regression_slope(valid_log_lags, log_valid_rs)
     return float(slope)
 
 

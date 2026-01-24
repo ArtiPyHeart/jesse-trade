@@ -11,7 +11,10 @@
 """
 
 import os
-from concurrent.futures import ProcessPoolExecutor
+import sys
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from functools import partial
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -26,13 +29,54 @@ def _run_stationarity_tests(series: np.ndarray) -> tuple[float, float]:
     return adf_pvalue, kpss_pvalue
 
 
+_WORKER_CLOSE: Optional[np.ndarray] = None
+_WORKER_WINDOW_SIZE: Optional[int] = None
+
+
+def _init_stationarity_worker(close: np.ndarray, window_size: int) -> None:
+    global _WORKER_CLOSE, _WORKER_WINDOW_SIZE
+    _WORKER_CLOSE = close
+    _WORKER_WINDOW_SIZE = window_size
+
+
+def _run_stationarity_chunk(start_indices: np.ndarray) -> np.ndarray:
+    close = _WORKER_CLOSE
+    window_size = _WORKER_WINDOW_SIZE
+    if close is None or window_size is None:
+        raise RuntimeError("Stationarity worker not initialized")
+
+    results = np.empty((len(start_indices), 2), dtype=np.float64)
+    for idx, start_idx in enumerate(start_indices):
+        window_data = close[start_idx : start_idx + window_size]
+        adf_pvalue, kpss_pvalue = _run_stationarity_tests(window_data)
+        results[idx, 0] = adf_pvalue
+        results[idx, 1] = kpss_pvalue
+
+    return results
+
+
+def _run_stationarity_chunk_local(
+    close: np.ndarray, window_size: int, start_indices: np.ndarray
+) -> np.ndarray:
+    results = np.empty((len(start_indices), 2), dtype=np.float64)
+    for idx, start_idx in enumerate(start_indices):
+        window_data = close[start_idx : start_idx + window_size]
+        adf_pvalue, kpss_pvalue = _run_stationarity_tests(window_data)
+        results[idx, 0] = adf_pvalue
+        results[idx, 1] = kpss_pvalue
+
+    return results
+
+
 class TrendValidator:
     """三重趋势验证器
 
     对Jesse style的K线数据执行滑动窗口三重检验。
     """
 
-    def __init__(self, window_size: int, step: int = 5, n_jobs: int = os.cpu_count()):
+    def __init__(
+        self, window_size: int, step: int = 5, n_jobs: int = os.cpu_count() or 1
+    ):
         """初始化验证器
 
         Args:
@@ -47,6 +91,14 @@ class TrendValidator:
         self.window_size = window_size
         self.step = step
         self.n_jobs = n_jobs
+        self._use_thread_pool = sys.platform == "darwin"
+
+        min_lag, max_lag = get_lag_params(window_size)
+        max_lag = min(max_lag, window_size // 2)
+        self._min_lag = min_lag
+        self._max_lag = max_lag
+        self._lags = np.arange(min_lag, max_lag + 1)
+        self._log_lags = np.log(self._lags) if len(self._lags) > 0 else self._lags
 
     def validate(self, candles: np.ndarray) -> pd.DataFrame:
         """对K线数据执行滑动窗口三重检验
@@ -59,32 +111,31 @@ class TrendValidator:
             包含检验结果的DataFrame
         """
         assert candles.ndim == 2, f"candles must be 2D, got {candles.ndim}D"
-        assert (
-            candles.shape[1] == 6
-        ), f"candles must have 6 columns, got {candles.shape[1]}"
+        assert candles.shape[1] == 6, (
+            f"candles must have 6 columns, got {candles.shape[1]}"
+        )
 
-        close = candles[:, 2]  # close价格在索引2
+        close = np.ascontiguousarray(candles[:, 2])  # close价格在索引2
         n = len(close)
 
         if n < self.window_size:
             raise ValueError(f"candles length({n}) < window_size({self.window_size})")
 
-        min_lag, max_lag = get_lag_params(self.window_size)
-        max_lag = min(max_lag, self.window_size // 2)
-        lags = np.arange(min_lag, max_lag + 1)
-        log_lags = np.log(lags) if len(lags) > 0 else lags
+        min_lag = self._min_lag
+        max_lag = self._max_lag
+        lags = self._lags
+        log_lags = self._log_lags
 
         with np.errstate(divide="ignore", invalid="ignore"):
             log_returns = np.diff(np.log(close))
-        start_indices = list(range(0, n - self.window_size + 1, self.step))
-        window_slices = []
-        hurst_values = []
+        start_indices = np.arange(0, n - self.window_size + 1, self.step, dtype=int)
+        total_windows = len(start_indices)
+        end_indices = start_indices + self.window_size
+        hurst_values = np.empty(total_windows, dtype=np.float64)
 
-        for start_idx in start_indices:
-            end_idx = start_idx + self.window_size
-            window_data = close[start_idx:end_idx]
+        for idx, start_idx in enumerate(start_indices):
+            end_idx = end_indices[idx]
             window_log_returns = log_returns[start_idx : end_idx - 1]
-
             hurst = _calculate_hurst_from_log_returns(
                 window_log_returns,
                 min_lag,
@@ -93,51 +144,117 @@ class TrendValidator:
                 lags=lags,
                 log_lags=log_lags,
             )
-            hurst_values.append(hurst)
-            window_slices.append(window_data)
-
-        total_windows = len(window_slices)
+            hurst_values[idx] = hurst
         worker_limit = os.cpu_count() or 1
         worker_count = min(self.n_jobs, worker_limit, total_windows)
-
         if worker_count > 1:
             chunk_size = max(1, total_windows // (worker_count * 4))
-            with ProcessPoolExecutor(max_workers=worker_count) as executor:
-                stationarity_results = list(
-                    executor.map(
-                        _run_stationarity_tests,
-                        window_slices,
-                        chunksize=chunk_size,
-                    )
-                )
-        else:
-            stationarity_results = [
-                _run_stationarity_tests(window_data) for window_data in window_slices
+            chunks = [
+                start_indices[i : i + chunk_size]
+                for i in range(0, total_windows, chunk_size)
             ]
-
-        results = []
-        for idx, start_idx in enumerate(start_indices):
-            end_idx = start_idx + self.window_size
-            adf_pvalue, kpss_pvalue = stationarity_results[idx]
-            hurst = hurst_values[idx]
-
-            score = self._calculate_score(hurst, adf_pvalue, kpss_pvalue)
-            trend_type = self._classify_trend(hurst, adf_pvalue, kpss_pvalue)
-
-            results.append(
-                {
-                    "window_idx": idx,
-                    "start_idx": start_idx,
-                    "end_idx": end_idx,
-                    "hurst": hurst,
-                    "adf_pvalue": adf_pvalue,
-                    "kpss_pvalue": kpss_pvalue,
-                    "score": score,
-                    "trend_type": trend_type,
-                }
+            if self._use_thread_pool:
+                worker_fn = partial(
+                    _run_stationarity_chunk_local,
+                    close,
+                    self.window_size,
+                )
+                with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                    stationarity_chunks = list(
+                        executor.map(worker_fn, chunks, chunksize=1)
+                    )
+            else:
+                with ProcessPoolExecutor(
+                    max_workers=worker_count,
+                    initializer=_init_stationarity_worker,
+                    initargs=(close, self.window_size),
+                ) as executor:
+                    stationarity_chunks = list(
+                        executor.map(
+                            _run_stationarity_chunk,
+                            chunks,
+                            chunksize=1,
+                        )
+                    )
+            stationarity_results = np.vstack(stationarity_chunks)
+        else:
+            stationarity_results = _run_stationarity_chunk_local(
+                close, self.window_size, start_indices
             )
 
-        return pd.DataFrame(results)
+        adf_pvalues = stationarity_results[:, 0]
+        kpss_pvalues = stationarity_results[:, 1]
+
+        scores, trend_types = self._calculate_scores_and_trends(
+            hurst_values, adf_pvalues, kpss_pvalues
+        )
+
+        return pd.DataFrame(
+            {
+                "window_idx": np.arange(total_windows, dtype=int),
+                "start_idx": start_indices,
+                "end_idx": end_indices,
+                "hurst": hurst_values,
+                "adf_pvalue": adf_pvalues,
+                "kpss_pvalue": kpss_pvalues,
+                "score": scores,
+                "trend_type": trend_types,
+            }
+        )
+
+    def _calculate_scores_and_trends(
+        self,
+        hurst_values: np.ndarray,
+        adf_pvalues: np.ndarray,
+        kpss_pvalues: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """向量化评分与趋势分类"""
+        assert hurst_values.ndim == 1, (
+            f"hurst_values must be 1D, got {hurst_values.ndim}D"
+        )
+        assert adf_pvalues.shape == hurst_values.shape, (
+            "adf_pvalues must match hurst_values shape"
+        )
+        assert kpss_pvalues.shape == hurst_values.shape, (
+            "kpss_pvalues must match hurst_values shape"
+        )
+
+        valid_hurst = ~np.isnan(hurst_values)
+        adf_nonstationary = ~np.isnan(adf_pvalues) & (adf_pvalues > 0.05)
+        kpss_nonstationary = ~np.isnan(kpss_pvalues) & (kpss_pvalues < 0.05)
+        adf_stationary = ~np.isnan(adf_pvalues) & (adf_pvalues < 0.05)
+        kpss_stationary = ~np.isnan(kpss_pvalues) & (kpss_pvalues > 0.05)
+        hurst_gt_06 = hurst_values > 0.6
+        hurst_gt_055 = hurst_values > 0.55
+
+        scores = np.zeros(len(hurst_values), dtype=np.int64)
+        scores += np.where(hurst_gt_06, 2, np.where(hurst_gt_055, 1, 0)).astype(
+            np.int64
+        )
+        scores += adf_nonstationary.astype(np.int64)
+        scores += kpss_nonstationary.astype(np.int64)
+        consensus = hurst_gt_055 & adf_nonstationary & kpss_nonstationary
+        scores += consensus.astype(np.int64)
+        scores = np.minimum(scores, 5)
+        scores[~valid_hurst] = 0
+
+        trend_types = np.full(len(hurst_values), "弱趋势或反趋势", dtype=object)
+        trend_types[~valid_hurst] = "无法确定（Hurst指数计算失败）"
+        valid_mask = valid_hurst
+
+        mask = valid_mask & hurst_gt_055 & adf_nonstationary & kpss_nonstationary
+        trend_types[mask] = "强趋势且非平稳（适合趋势策略）"
+
+        mask = valid_mask & hurst_gt_055 & adf_stationary & kpss_stationary
+        trend_types[mask] = "趋势但平稳（短期趋势可能）"
+
+        mask = valid_mask & (hurst_values < 0.5) & adf_stationary & kpss_stationary
+        trend_types[mask] = "震荡平稳（不适合趋势策略）"
+
+        mask = valid_mask & hurst_gt_055 & adf_nonstationary & kpss_stationary
+        trend_types[mask] = "矛盾（需进一步验证）"
+
+        return scores, trend_types
 
     def _calculate_score(self, hurst: float, adf_p: float, kpss_p: float) -> int:
         """计算趋势适配性评分 (0-5分)"""
