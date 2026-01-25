@@ -15,6 +15,11 @@ class DemoBar(FusionBarContainerBase):
         最大bar数量，-1表示不限制。
     threshold : float
         累积阈值，达到此值时生成新bar。
+
+    Benchmark (BTC 2022-2025, 1min):
+    --------------------------------
+    1,576,765 根 1min K线 → 20,605 根 Fusion Bar
+    压缩比 76.5:1，约 1.3 小时生成一根
     """
 
     def __init__(

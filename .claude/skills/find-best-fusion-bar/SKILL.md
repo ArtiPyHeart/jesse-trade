@@ -73,6 +73,11 @@ class {ClassName}(FusionBarContainerBase):
     Parameters:
     -----------
     {参数文档}
+
+    Benchmark (BTC 2022-2025, 1min):
+    --------------------------------
+    {原始K线数} 根 1min K线 → {FusionBar数} 根 Fusion Bar
+    压缩比 {压缩比}:1，约 {平均时长} 生成一根
     """
 
     def __init__(
@@ -312,7 +317,15 @@ print("请查看 CSV 后选择一个配置，告诉我 tier + rank 用于设置�
 #### 用户确认后再更新
 
 1. **等待用户选择**：明确询问用户选择哪个 tier + rank
-2. **更新 class**：将用户选择的参数作为 `__init__` 的默认值
+2. **更新 class**：
+   - 将用户选择的参数作为 `__init__` 的默认值
+   - 更新 docstring 中的 Benchmark section，填入实际压缩比例：
+     ```
+     Benchmark (BTC 2022-2025, 1min):
+     --------------------------------
+     1,576,765 根 1min K线 → 20,605 根 Fusion Bar
+     压缩比 76.5:1，约 1.3 小时生成一根
+     ```
 3. **验证**：使用 `evaluate_detailed` 生成评估报告
 4. **清理**：删除优化脚本和 CSV 文件（如 `research/optimize_{name}.py`、`research/{name}_tiered_top15.csv`）
 
