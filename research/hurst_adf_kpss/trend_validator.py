@@ -321,6 +321,12 @@ class TrendValidator:
             统计汇总字典
         """
         scores = results["score"]
+        n = len(scores)
+
+        # 计算 1-5 分各占比例
+        score_distribution = {
+            i: float((scores == i).sum() / n) for i in range(1, 6)
+        }
 
         return {
             "window_size": self.window_size,
@@ -329,6 +335,7 @@ class TrendValidator:
             "mean_score": float(scores.mean()),
             "median_score": float(scores.median()),
             "std_score": float(scores.std()),
-            "high_score_ratio": float((scores == 5).sum() / len(scores)),
-            "low_score_ratio": float((scores <= 2).sum() / len(scores)),
+            "high_score_ratio": float((scores == 5).sum() / n),
+            "low_score_ratio": float((scores <= 2).sum() / n),
+            "score_distribution": score_distribution,  # {1: 0.1, 2: 0.2, 3: 0.3, 4: 0.25, 5: 0.15}
         }
