@@ -243,7 +243,7 @@ optimizer = TrendOptimizer(
 )
 
 results = optimizer.optimize(
-    n_trials=1000,  # 建议 1000+
+    n_trials=2500,  # 最低 1000，推荐 2500+
     # 参数范围（来自阶段 3.5 校准结果）
     clip_r=({校准的 clip_r_min}, {校准的 clip_r_max}, "log"),
     threshold=({校准的 threshold_min}, {校准的 threshold_max}),
@@ -396,10 +396,17 @@ PYTHONPATH=/path/to/jesse-trade python research/optimize_xxx.py
 **为什么需要**：脚本中使用 `from src.bars.fusion.xxx import XxxBar` 导入，如果不设置 PYTHONPATH 会报 `ModuleNotFoundError: No module named 'src.bars'`。
 
 ### 优化时间要求
-- **最低要求**：500 trials
-- **推荐配置**：1000+ trials
+- **最低要求**：1000 trials
+- **推荐配置**：2500+ trials（实测表明更多 trials 能找到显著更优的参数）
+- **探索策略**：95% 随机探索 + 5% 收束（找轴过程探索比精细微调更重要）
 - **后台运行**：必须使用 `run_in_background=True`
 - **不要偷懒**：宁愿多等几小时，也不要提前终止
+
+### 后台任务管理最佳实践
+1. **启动后短暂检查**：发起后台任务后，用 `tail` 检查输出确认任务正常运行（看到 trial 开始打印即可）
+2. **确认后停止等待**：确认正常运行后，不再主动轮询，停下来等待用户通知
+3. **用户通知后检查结果**：当用户告知任务完成时，读取输出文件和 CSV 结果
+4. **避免不必要的轮询**：优化任务可能运行数小时，频繁检查没有意义
 
 ### 多公式处理
 如果用户提供多个公式：
@@ -502,3 +509,15 @@ PYTHONPATH=/path/to/jesse-trade python research/optimize_xxx.py
 **根因**：脚本中使用 `from src.bars.fusion.rs_gate import RSGateBar`，Python 默认不把项目根目录加入 sys.path
 **解决方案**：运行脚本时设置 `PYTHONPATH=/path/to/jesse-trade python script.py`
 **教训**：所有在 `research/` 目录下的脚本如果导入 `src.*` 模块，都需要设置 PYTHONPATH
+
+### [2026-01] 探索比微调更重要：95% 随机探索 + 5% 收束
+**场景**：用户观察到更多 trials 能找到显著更优的参数（如 Trial 221 的 3.2919 vs 早期最优值）
+**决策**：
+1. 将 `EXPLORATION_STARTUP_RATIO` 从 0.8 提高到 0.95
+2. 推荐 trials 数量从 1000 提高到 2500+
+**原理**：
+- 找轴是一个高维搜索问题，参数空间复杂
+- TPE 采样器的 `n_startup_trials` 决定了随机探索阶段的长度
+- 过早收束会陷入局部最优，错过更好的参数组合
+**实现**：`optimizer.py` 中 `EXPLORATION_STARTUP_RATIO = 0.95`，95% 的 trials 用于随机探索，只有最后 5% 用于贝叶斯优化收束
+**教训**：对于复杂参数空间，宁愿多探索也不要过早精细化

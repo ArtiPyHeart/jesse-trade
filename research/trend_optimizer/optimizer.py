@@ -15,7 +15,7 @@ from .evaluator import MultiWindowEvaluator, TrialResult, extract_top_n
 
 # 约束违反时的惩罚值（direction=maximize 时使用负值）
 PENALTY_SCORE = -1e6
-EXPLORATION_STARTUP_RATIO = 0.8
+EXPLORATION_STARTUP_RATIO = 0.95  # 只有最后 5% 用于收束，探索比微调更重要
 MIN_STARTUP_TRIALS = 50
 MIN_EI_CANDIDATES = 64
 MAX_EI_CANDIDATES = 256
