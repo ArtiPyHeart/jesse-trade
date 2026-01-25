@@ -15,7 +15,7 @@ from .evaluator import MultiWindowEvaluator, TrialResult, extract_top_n
 
 # 约束违反时的惩罚值（direction=maximize 时使用负值）
 PENALTY_SCORE = -1e6
-EXPLORATION_STARTUP_RATIO = 0.95  # 只有最后 5% 用于收束，探索比微调更重要
+EXPLORATION_STARTUP_RATIO = 0.99  # 只有最后 1% 用于收束，探索比微调更重要
 MIN_STARTUP_TRIALS = 50
 MIN_EI_CANDIDATES = 64
 MAX_EI_CANDIDATES = 256
@@ -159,6 +159,65 @@ class TrendOptimizer:
         )
 
         return extract_top_n(study, self.n_top_results)
+
+    def optimize_and_return_study(
+        self,
+        n_trials: int = 100,
+        n_startup_trials: int | None = None,
+        show_progress: bool = True,
+        **param_ranges: tuple[Any, ...],
+    ) -> optuna.Study:
+        """运行优化并返回 study 对象（用于分层提取）
+
+        与 optimize() 相同，但返回 study 对象而非 top N 列表。
+        调用方可使用 extract_top_n_by_tiers() 进行分层提取。
+
+        Args:
+            n_trials: 试验次数
+            n_startup_trials: 随机采样次数（None 表示按探索比例自动计算）
+            show_progress: 显示进度条
+            **param_ranges: 参数搜索范围
+
+        Returns:
+            Optuna Study 对象
+        """
+        assert n_trials >= 1, f"n_trials must be >= 1, got {n_trials}"
+        if n_startup_trials is not None:
+            assert (
+                n_startup_trials >= 1
+            ), f"n_startup_trials must be >= 1, got {n_startup_trials}"
+
+        self._validate_param_names(param_ranges)
+
+        startup_trials = _resolve_startup_trials(n_trials, n_startup_trials)
+        ei_candidates = _resolve_ei_candidates(n_trials)
+
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=optuna.samplers.TPESampler(
+                n_startup_trials=startup_trials,
+                n_ei_candidates=ei_candidates,
+                gamma=_exploration_gamma,
+                multivariate=True,
+                group=True,
+                constant_liar=True,
+                consider_endpoints=True,
+                consider_magic_clip=False,
+                warn_independent_sampling=False,
+            ),
+        )
+
+        def objective(trial: optuna.Trial) -> float:
+            return self._objective(trial, param_ranges)
+
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            show_progress_bar=show_progress,
+            catch=(Exception,),
+        )
+
+        return study
 
     def _validate_param_names(self, param_ranges: dict[str, Any]) -> None:
         """校验参数名和范围格式是否合法（Fail-fast）"""

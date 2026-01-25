@@ -229,11 +229,16 @@ print(f"  threshold: ({th_for_max_bars:.2e}, {th_for_min_bars:.2e}, 'log')")
 
 **优化脚本**：
 ```python
+import csv
 import numpy as np
 from src.bars.fusion.{module} import {ClassName}
 from research.trend_optimizer.optimizer import TrendOptimizer
+from research.trend_optimizer.evaluator import extract_top_n_by_tiers
 
 candles = np.load("data/btc_1m.npy")
+
+# 目标 bar 范围（来自校准）
+TARGET_BAR_RANGE = ({min_bars}, {max_bars})
 
 optimizer = TrendOptimizer(
     fusion_bar_cls={ClassName},
@@ -242,17 +247,48 @@ optimizer = TrendOptimizer(
     n_top_results=10,
 )
 
-results = optimizer.optimize(
+# 运行优化（返回 study 对象用于分层提取）
+study = optimizer.optimize_and_return_study(
     n_trials=2500,  # 最低 1000，推荐 2500+
     # 参数范围（来自阶段 3.5 校准结果）
-    clip_r=({校准的 clip_r_min}, {校准的 clip_r_max}, "log"),
-    threshold=({校准的 threshold_min}, {校准的 threshold_max}),
+    param1=(...),
+    param2=(...),
 )
 
+# 分层提取结果（长/中/短周期各 top 5）
+tiered_results = extract_top_n_by_tiers(study, TARGET_BAR_RANGE, n_per_tier=5)
+
 # 输出结果
-print("\n最优参数：")
-for r in results[:5]:
-    print(f"  rank={r.rank}, score={r.final_score:.3f}, params={r.params}")
+print("\n" + "=" * 80)
+for tier in tiered_results:
+    print(f"\n=== {tier.tier_name.upper()} 周期 ({tier.tier_range[0]:,} ~ {tier.tier_range[1]:,} bars) ===")
+    print(f"{'Rank':<6}{'Score':<10}{'Bars':<12}{'压缩比':<10}{'params'}")
+    print("-" * 70)
+    for r in tier.results:
+        compression = len(candles) / r.fusion_bar_count if r.fusion_bar_count > 0 else 0
+        print(f"{r.rank:<6}{r.final_score:<10.3f}{r.fusion_bar_count:<12,}{compression:<10.1f}{r.params}")
+
+# 保存分层 CSV（共 15 行）
+csv_path = "research/{name}_tiered_top15.csv"
+with open(csv_path, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["tier", "rank", "score", "bars", "compression", "param1", "param2"])
+    for tier in tiered_results:
+        for r in tier.results:
+            compression = len(candles) / r.fusion_bar_count if r.fusion_bar_count > 0 else 0
+            writer.writerow([
+                tier.tier_name,
+                r.rank,
+                f"{r.final_score:.4f}",
+                r.fusion_bar_count,
+                f"{compression:.1f}",
+                # 根据实际参数调整
+                f"{r.params['param1']:.6e}",
+                f"{r.params['param2']:.6e}",
+            ])
+
+print(f"\n结果已保存到: {csv_path}")
+print("请查看 CSV 后选择一个配置，告诉我 tier + rank 用于设置默认参数。")
 ```
 
 **关键要求**：
@@ -264,43 +300,21 @@ for r in results[:5]:
 
 **重要：最终参数由用户决定，不要自动选择最高分！**
 
-分数高和 bar 数量多往往是权衡关系：
-- 分数高 → 趋势性强，但 bar 可能较少（交易机会少）
-- Bar 多 → 交易机会多，但分数可能略低
+分层结果便于分析权衡：
+- **Long 周期**（bar 少）：趋势性可能更强，但交易机会少
+- **Medium 周期**：平衡选择
+- **Short 周期**（bar 多）：交易机会多，但趋势性可能略低
 
-#### 输出 CSV 供用户选择
-
-优化完成后，保存 **Top 10 结果到 CSV 文件**，包含分数、bar 数量、压缩比、参数：
-
-```python
-# 保存 CSV 供用户查看
-import csv
-csv_path = "research/{name}_top10.csv"
-with open(csv_path, "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["rank", "score", "bars", "compression", "alpha", "threshold"])
-    for r in results:
-        compression = len(candles) / r.fusion_bar_count if r.fusion_bar_count > 0 else 0
-        writer.writerow([
-            r.rank,
-            f"{r.final_score:.4f}",
-            r.fusion_bar_count,
-            f"{compression:.1f}",
-            # 根据实际参数调整
-            f"{r.params['alpha']:.6f}",
-            f"{r.params['threshold']:.6e}",
-        ])
-
-print(f"结果已保存到: {csv_path}")
-print("请查看 CSV 后选择一个 rank，告诉我用于设置默认参数。")
-```
+**如果发现 Long 周期始终显著占优势**，这是一个重要信号：
+- 该自定义轴可能不适合频繁交易
+- 需要考虑是否符合策略需求
 
 #### 用户确认后再更新
 
-1. **等待用户选择**：明确询问用户选择哪个 rank
+1. **等待用户选择**：明确询问用户选择哪个 tier + rank
 2. **更新 class**：将用户选择的参数作为 `__init__` 的默认值
 3. **验证**：使用 `evaluate_detailed` 生成评估报告
-4. **清理**：删除优化脚本和 CSV 文件（如 `research/optimize_{name}.py`、`research/{name}_top10.csv`）
+4. **清理**：删除优化脚本和 CSV 文件（如 `research/optimize_{name}.py`、`research/{name}_tiered_top15.csv`）
 
 **验证脚本**：
 ```python
@@ -398,7 +412,7 @@ PYTHONPATH=/path/to/jesse-trade python research/optimize_xxx.py
 ### 优化时间要求
 - **最低要求**：1000 trials
 - **推荐配置**：2500+ trials（实测表明更多 trials 能找到显著更优的参数）
-- **探索策略**：95% 随机探索 + 5% 收束（找轴过程探索比精细微调更重要）
+- **探索策略**：99% 随机探索 + 1% 收束（找轴过程探索比精细微调更重要）
 - **后台运行**：必须使用 `run_in_background=True`
 - **不要偷懒**：宁愿多等几小时，也不要提前终止
 
@@ -510,14 +524,31 @@ PYTHONPATH=/path/to/jesse-trade python research/optimize_xxx.py
 **解决方案**：运行脚本时设置 `PYTHONPATH=/path/to/jesse-trade python script.py`
 **教训**：所有在 `research/` 目录下的脚本如果导入 `src.*` 模块，都需要设置 PYTHONPATH
 
-### [2026-01] 探索比微调更重要：95% 随机探索 + 5% 收束
+### [2026-01] 探索比微调更重要：99% 随机探索 + 1% 收束
 **场景**：用户观察到更多 trials 能找到显著更优的参数（如 Trial 221 的 3.2919 vs 早期最优值）
 **决策**：
-1. 将 `EXPLORATION_STARTUP_RATIO` 从 0.8 提高到 0.95
+1. 将 `EXPLORATION_STARTUP_RATIO` 从 0.8 提高到 0.99
 2. 推荐 trials 数量从 1000 提高到 2500+
 **原理**：
 - 找轴是一个高维搜索问题，参数空间复杂
 - TPE 采样器的 `n_startup_trials` 决定了随机探索阶段的长度
 - 过早收束会陷入局部最优，错过更好的参数组合
-**实现**：`optimizer.py` 中 `EXPLORATION_STARTUP_RATIO = 0.95`，95% 的 trials 用于随机探索，只有最后 5% 用于贝叶斯优化收束
+**实现**：`optimizer.py` 中 `EXPLORATION_STARTUP_RATIO = 0.99`，99% 的 trials 用于随机探索，只有最后 1% 用于贝叶斯优化收束
 **教训**：对于复杂参数空间，宁愿多探索也不要过早精细化
+
+### [2026-01] 分层提取避免 bar 少的配置总是占优势
+**场景**：优化结果中 bar 数量少的配置总是得分更高，因为长周期自然趋势性更强
+**根因**：
+- 更少的 bar = 更长的周期 = 噪声被自然平滑
+- Hurst/ADF/KPSS 在长周期数据上更容易显示"趋势性强"
+- 这是时间尺度的固有特性，不是 fusion bar 公式的优势
+**解决方案**：
+1. 新增 `extract_top_n_by_tiers()` 函数，按 bar 数量分层（long/medium/short）
+2. 每层独立提取 top 5，共 15 个结果
+3. 探索比例提高到 99%，确保各区间均匀采样
+**实现**：
+- `evaluator.py` 新增 `TieredResult` 和 `extract_top_n_by_tiers()`
+- `optimizer.py` 新增 `optimize_and_return_study()` 返回 study 对象
+**教训**：
+- 如果 long 周期始终显著占优势，说明该轴可能不适合频繁交易
+- 分层分析能暴露这个信号，帮助用户做出明智决策

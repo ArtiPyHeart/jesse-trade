@@ -405,3 +405,92 @@ def extract_top_n(
         )
 
     return results
+
+
+@dataclass
+class TieredResult:
+    """分层提取结果"""
+
+    tier_name: str  # "long" / "medium" / "short"
+    tier_range: tuple[int, int]  # (min_bars, max_bars)
+    results: list[TrialResult]
+
+
+def extract_top_n_by_tiers(
+    study: "optuna.Study",
+    total_bar_range: tuple[int, int],
+    n_per_tier: int = 5,
+) -> list[TieredResult]:
+    """从 study 按 bar 数量分层提取 Top-N 结果
+
+    将 bar 数量空间分为 3 个区间（长/中/短周期），每个区间提取 top N。
+    用于分析不同 bar 密度下的最优参数，避免低 bar 配置总是占优势。
+
+    Args:
+        study: Optuna study 对象
+        total_bar_range: 目标 bar 数量范围 (min_bars, max_bars)，如 (4383, 52604)
+        n_per_tier: 每个区间提取的 top N 数量（默认 5）
+
+    Returns:
+        包含 3 个 TieredResult 的列表，分别对应长/中/短周期
+    """
+    import optuna
+
+    min_bars, max_bars = total_bar_range
+
+    # 三等分（对数空间更均匀，但简单起见用线性等分）
+    tier_size = (max_bars - min_bars) // 3
+    tiers = [
+        ("long", (min_bars, min_bars + tier_size)),  # 长周期（bar 少）
+        ("medium", (min_bars + tier_size, min_bars + 2 * tier_size)),  # 中周期
+        ("short", (min_bars + 2 * tier_size, max_bars + 1)),  # 短周期（bar 多）
+    ]
+
+    # 筛选已完成且约束满足的试验
+    completed = [
+        t
+        for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE
+        and t.user_attrs.get("constraint_satisfied", False)
+    ]
+
+    tiered_results = []
+    for tier_name, (tier_min, tier_max) in tiers:
+        # 筛选该区间的试验
+        tier_trials = [
+            t
+            for t in completed
+            if tier_min <= t.user_attrs.get("fusion_bar_count", 0) < tier_max
+        ]
+
+        # 按得分降序排列
+        sorted_trials = sorted(
+            tier_trials,
+            key=lambda t: t.value if t.value is not None else -1e10,
+            reverse=True,
+        )
+
+        # 提取 top N
+        results = []
+        for rank, trial in enumerate(sorted_trials[:n_per_tier], start=1):
+            results.append(
+                TrialResult(
+                    rank=rank,
+                    params=dict(trial.params),
+                    final_score=trial.value if trial.value is not None else 0.0,
+                    window_scores=trial.user_attrs.get("window_scores", {}),
+                    fusion_bar_count=trial.user_attrs.get("fusion_bar_count", 0),
+                    constraint_satisfied=True,
+                    constraint_reason="ok",
+                )
+            )
+
+        tiered_results.append(
+            TieredResult(
+                tier_name=tier_name,
+                tier_range=(tier_min, tier_max),
+                results=results,
+            )
+        )
+
+    return tiered_results
