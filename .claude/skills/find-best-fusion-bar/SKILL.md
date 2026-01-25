@@ -124,10 +124,27 @@ print(f"保存了 {len(candles):,} 根 1 分钟 K 线")
 
 **不要凭直觉设定参数范围！** 必须先用真实数据统计阈值分布，再确定 Optuna 搜索范围。
 
-1. **计算阈值分布**：用新 class 的 `get_thresholds()` 在真实数据上计算
+#### 目标 Bar 数量范围（重要！）
+
+Fusion bar 数量应控制在 **30分钟 K线数量** 到 **6小时 K线数量** 之间：
+
+| 基准 | 计算方式 | 100,000 根 1min K线 |
+|------|----------|---------------------|
+| 上限（30min）| `candle_count / 30` | ~3,333 bars |
+| 下限（6h）| `candle_count / 360` | ~278 bars |
+
+**为什么要限制这个范围**：
+- **Bar 太多**（> 30min 基准）→ TrendValidator 评估极慢，单个 trial 可能从 7 秒变成 100+ 秒，严重影响调参效率
+- **Bar 太少**（< 6h 基准）→ 交易机会太少，没有实际意义
+
+#### 校准步骤
+
+**重要：校准必须使用全量数据！** 校准数据量必须与 Optuna 优化时使用的数据量一致，否则 threshold 范围会出现严重偏差。
+
+1. **计算阈值分布**：用新 class 的 `get_thresholds()` 在**全量数据**上计算
 2. **统计关键指标**：min, max, mean, median, p5, p95
-3. **统计累积阈值**：100/1000/10000 根 K 线后的累积值
-4. **测试不同 threshold**：观察生成的 fusion bar 数量
+3. **统计累积阈值**：100/500/1000/5000 根 K 线后的累积值
+4. **测试不同 threshold**：观察生成的 fusion bar 数量，**确保落在目标范围内**
 5. **确定搜索范围**：根据统计结果设定合理范围
 
 **校准脚本**：
@@ -135,14 +152,22 @@ print(f"保存了 {len(candles):,} 根 1 分钟 K 线")
 import numpy as np
 from src.bars.fusion.{module} import {ClassName}
 
+# 使用全量数据！
 candles = np.load("data/btc_1m.npy")
-print(f"K线数量: {len(candles):,}")
+n_candles = len(candles)
+print(f"K线数量: {n_candles:,}")
+print(f"时间跨度: {n_candles / 60 / 24:.1f} 天 ({n_candles / 60 / 24 / 365:.1f} 年)")
 
-# 计算阈值分布（不过滤）
-bar = {ClassName}(clip_r=0, threshold=1.0)
-thresholds = bar.get_thresholds(candles[:100000])
+# 目标 bar 数量范围
+bar_max = n_candles // 30   # 30min 基准（上限）
+bar_min = n_candles // 360  # 6h 基准（下限）
+print(f"目标 bar 数量范围: {bar_min:,} ~ {bar_max:,}")
 
-print(f"\n阈值统计 (前 100000 根 K 线):")
+# 计算阈值分布
+bar = {ClassName}(threshold=1.0)
+thresholds = bar.get_thresholds(candles[:n_candles])
+
+print(f"\n阈值统计:")
 print(f"  min:    {np.min(thresholds):.2e}")
 print(f"  max:    {np.max(thresholds):.2e}")
 print(f"  mean:   {np.mean(thresholds):.2e}")
@@ -153,24 +178,49 @@ print(f"  p95:    {np.percentile(thresholds, 95):.2e}")
 # 累积阈值
 cumsum = np.cumsum(thresholds)
 print(f"\n累积阈值:")
-print(f"  100根后:   {cumsum[99]:.2e}")
-print(f"  1000根后:  {cumsum[999]:.2e}")
-print(f"  10000根后: {cumsum[9999]:.2e}")
+for i in [100, 500, 1000, 5000]:
+    if i <= len(cumsum):
+        print(f"  {i}根后: {cumsum[i-1]:.2e}")
 
-# 测试不同 threshold 下的 bar 数量
-print(f"\n不同 threshold 下的 bar 数量:")
-for th in [cumsum[99], cumsum[999]/10, cumsum[999], cumsum[9999]/100]:
-    bar = {ClassName}(clip_r=0, threshold=th)
-    bar.update_with_candles(candles[:100000])
+# 二分搜索找到目标范围对应的 threshold
+def find_threshold_for_bar_count(target_bars, lo, hi, candles, BarClass):
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        bar = BarClass(threshold=mid)
+        bar.update_with_candles(candles)
+        fusion = bar.get_fusion_bars()
+        if len(fusion) > target_bars:
+            lo = mid
+        else:
+            hi = mid
+    return mid
+
+# 找到目标范围的 threshold 边界
+print(f"\n搜索目标 bar 数量对应的 threshold...")
+th_for_max_bars = find_threshold_for_bar_count(bar_max, 1e-10, 1e-1, candles[:n_candles], {ClassName})
+th_for_min_bars = find_threshold_for_bar_count(bar_min, 1e-10, 1e-1, candles[:n_candles], {ClassName})
+
+print(f"  {bar_max:,} bars (30min) → threshold ≈ {th_for_max_bars:.2e}")
+print(f"  {bar_min:,} bars (6h)    → threshold ≈ {th_for_min_bars:.2e}")
+
+# 验证
+print(f"\n验证 threshold 范围内的 bar 数量:")
+for th in [th_for_max_bars, (th_for_max_bars + th_for_min_bars) / 2, th_for_min_bars]:
+    bar = {ClassName}(threshold=th)
+    bar.update_with_candles(candles[:n_candles])
     fusion = bar.get_fusion_bars()
-    print(f"  threshold={th:.2e}: {len(fusion)} bars")
+    in_range = "✓" if bar_min <= len(fusion) <= bar_max else "✗"
+    print(f"  threshold={th:.2e}: {len(fusion):,} bars {in_range}")
+
+print(f"\n=== 建议的 Optuna 搜索范围 ===")
+print(f"  threshold: ({th_for_max_bars:.2e}, {th_for_min_bars:.2e}, 'log')")
 ```
 
 **范围确定原则**：
 | 参数 | 范围确定方法 |
 |------|-------------|
 | clip_r | 从 p5 到 p50，使用 log scale |
-| threshold | 从 cumsum[100] 到 cumsum[1000]，根据目标 bar 数量调整 |
+| threshold | **必须确保 bar 数量落在 30min~6h 范围内**，使用 log scale |
 
 ### 阶段 4：Optuna 优化
 1. **使用 TrendOptimizer**：从 `research.trend_optimizer.optimizer` 导入
@@ -210,11 +260,47 @@ for r in results[:5]:
 - 运行时间可能需要数小时，不要中途停止
 - 使用 `Read` 工具定期检查 output 文件查看进度
 
-### 阶段 5：填入默认参数
-1. **提取最优参数**：从优化结果中获取 rank=1 的参数
-2. **更新 class**：将最优参数作为 `__init__` 的默认值
+### 阶段 5：用户选择参数
+
+**重要：最终参数由用户决定，不要自动选择最高分！**
+
+分数高和 bar 数量多往往是权衡关系：
+- 分数高 → 趋势性强，但 bar 可能较少（交易机会少）
+- Bar 多 → 交易机会多，但分数可能略低
+
+#### 输出 CSV 供用户选择
+
+优化完成后，保存 **Top 10 结果到 CSV 文件**，包含分数、bar 数量、压缩比、参数：
+
+```python
+# 保存 CSV 供用户查看
+import csv
+csv_path = "research/{name}_top10.csv"
+with open(csv_path, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["rank", "score", "bars", "compression", "alpha", "threshold"])
+    for r in results:
+        compression = len(candles) / r.fusion_bar_count if r.fusion_bar_count > 0 else 0
+        writer.writerow([
+            r.rank,
+            f"{r.final_score:.4f}",
+            r.fusion_bar_count,
+            f"{compression:.1f}",
+            # 根据实际参数调整
+            f"{r.params['alpha']:.6f}",
+            f"{r.params['threshold']:.6e}",
+        ])
+
+print(f"结果已保存到: {csv_path}")
+print("请查看 CSV 后选择一个 rank，告诉我用于设置默认参数。")
+```
+
+#### 用户确认后再更新
+
+1. **等待用户选择**：明确询问用户选择哪个 rank
+2. **更新 class**：将用户选择的参数作为 `__init__` 的默认值
 3. **验证**：使用 `evaluate_detailed` 生成评估报告
-4. **清理**：删除优化脚本（如 `research/optimize_{name}.py`），最优参数已固化到 class 中
+4. **清理**：删除优化脚本和 CSV 文件（如 `research/optimize_{name}.py`、`research/{name}_top10.csv`）
 
 **验证脚本**：
 ```python
@@ -299,6 +385,15 @@ else:
 ```
 
 ## 重要提醒
+
+### 脚本运行环境
+运行校准脚本和优化脚本时，必须设置 `PYTHONPATH`：
+```bash
+PYTHONPATH=/path/to/jesse-trade python research/calibrate_xxx.py
+PYTHONPATH=/path/to/jesse-trade python research/optimize_xxx.py
+```
+
+**为什么需要**：脚本中使用 `from src.bars.fusion.xxx import XxxBar` 导入，如果不设置 PYTHONPATH 会报 `ModuleNotFoundError: No module named 'src.bars'`。
 
 ### 优化时间要求
 - **最低要求**：500 trials
@@ -392,3 +487,18 @@ else:
 1. 更新阶段 6 对比脚本，增加 bar 数量和压缩比的展示
 2. 新增 bar 数量质量判定：< 50% 警告，< 25% 强烈警告
 **教训**：评价 fusion bar 质量需要多维度考量，趋势性只是其中一个维度。bar 数量决定交易机会，压缩比决定信息密度，都应纳入评估
+
+### [2026-01] threshold 搜索范围过宽会导致 Optuna 优化极慢
+**场景**：RSGateBar 校准时使用 `threshold=(1e-6, 1e-3, "log")` 范围，导致部分 trial 产生过多 fusion bars（数万根），TrendValidator 评估时间从 7 秒暴增到 100+ 秒
+**根因**：threshold 越小 → fusion bars 越多 → TrendValidator 滑动窗口越多 → ADF/KPSS 计算量剧增
+**解决方案**：
+1. 在阶段 3.5 增加「目标 Bar 数量范围」约束：30min K线数量（上限）到 6h K线数量（下限）
+2. 校准脚本增加二分搜索，自动找到目标范围对应的 threshold 边界
+3. 只在该范围内搜索，避免产生过多或过少的 bars
+**教训**：搜索范围不仅要考虑数值正确性，还要考虑计算效率。bar 数量是连接参数和计算成本的关键桥梁
+
+### [2026-01] 运行脚本必须设置 PYTHONPATH
+**场景**：后台运行 `python research/optimize_rs_gate.py` 失败，报错 `ModuleNotFoundError: No module named 'src.bars'`
+**根因**：脚本中使用 `from src.bars.fusion.rs_gate import RSGateBar`，Python 默认不把项目根目录加入 sys.path
+**解决方案**：运行脚本时设置 `PYTHONPATH=/path/to/jesse-trade python script.py`
+**教训**：所有在 `research/` 目录下的脚本如果导入 `src.*` 模块，都需要设置 PYTHONPATH

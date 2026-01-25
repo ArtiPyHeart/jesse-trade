@@ -237,7 +237,7 @@ class TrendOptimizer:
             return PENALTY_SCORE
 
         fusion_bar_count = 0 if fusion_bars is None else len(fusion_bars)
-        print(f"trial={trial.number} fusion_bar_count={fusion_bar_count}")
+        print(f"\ntrial={trial.number} bars={fusion_bar_count}", flush=True)
 
         # 3. 检查 bars 是否有效
         if fusion_bar_count == 0:
