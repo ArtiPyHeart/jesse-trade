@@ -76,6 +76,7 @@ class {ClassName}(FusionBarContainerBase):
 
     Benchmark (BTC 2022-2025, 1min):
     --------------------------------
+    配置: {tier} rank {rank} (Optuna score: {score})
     输入: {原始K线数} 根 1min K线
     输出: {FusionBar数} 根 Fusion Bar
     压缩比: {压缩比}:1 (约 {平均时长} 小时/根)
@@ -271,21 +272,21 @@ study = optimizer.optimize_and_return_study(
     param2=(...),
 )
 
-# 分层提取结果（长/中/短周期各 top 5）
+# 分层提取结果（5 段 × top 5 = 25 条）
 tiered_results = extract_top_n_by_tiers(study, TARGET_BAR_RANGE, n_per_tier=5)
 
 # 输出结果
 print("\n" + "=" * 80)
 for tier in tiered_results:
-    print(f"\n=== {tier.tier_name.upper()} 周期 ({tier.tier_range[0]:,} ~ {tier.tier_range[1]:,} bars) ===")
+    print(f"\n=== {tier.tier_name.upper()} ({tier.tier_range[0]:,} ~ {tier.tier_range[1]:,} bars) ===")
     print(f"{'Rank':<6}{'Score':<10}{'Bars':<12}{'压缩比':<10}{'params'}")
     print("-" * 70)
     for r in tier.results:
         compression = len(candles) / r.fusion_bar_count if r.fusion_bar_count > 0 else 0
         print(f"{r.rank:<6}{r.final_score:<10.3f}{r.fusion_bar_count:<12,}{compression:<10.1f}{r.params}")
 
-# 保存分层 CSV（共 15 行）
-csv_path = "research/{name}_tiered_top15.csv"
+# 保存分层 CSV（共 25 行）
+csv_path = "research/{name}_tiered.csv"
 with open(csv_path, "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerow(["tier", "rank", "score", "bars", "compression", "param1", "param2"])
@@ -316,12 +317,12 @@ print("请查看 CSV 后选择一个配置，告诉我 tier + rank 用于设置�
 
 **重要：最终参数由用户决定，不要自动选择最高分！**
 
-分层结果便于分析权衡：
-- **Long 周期**（bar 少）：趋势性可能更强，但交易机会少
-- **Medium 周期**：平衡选择
-- **Short 周期**（bar 多）：交易机会多，但趋势性可能略低
+分层结果（5 段）便于分析权衡：
+- **tier1**（bar 最少）：趋势性可能最强，但交易机会最少
+- **tier2-tier4**：中间地带，平衡选择
+- **tier5**（bar 最多）：交易机会多，但趋势性可能略低
 
-**如果发现 Long 周期始终显著占优势**，这是一个重要信号：
+**如果发现 tier1/tier2 始终显著占优势**，这是一个重要信号：
 - 该自定义轴可能不适合频繁交易
 - 需要考虑是否符合策略需求
 
@@ -334,6 +335,7 @@ print("请查看 CSV 后选择一个配置，告诉我 tier + rank 用于设置�
      ```
      Benchmark (BTC 2022-2025, 1min):
      --------------------------------
+     配置: medium rank 1 (Optuna score: 3.282)
      输入: 1,578,136 根 1min K线
      输出: 20,605 根 Fusion Bar
      压缩比: 76.6:1 (约 1.28 小时/根)
@@ -349,7 +351,7 @@ print("请查看 CSV 后选择一个配置，告诉我 tier + rank 用于设置�
        60:  3.41 |  8.1% | 21.3% | 25.9% |  7.0% | 37.0%
      ```
 3. **验证**：使用 `evaluate_detailed` 生成评估报告
-4. **清理**：删除优化脚本和 CSV 文件（如 `research/optimize_{name}.py`、`research/{name}_tiered_top15.csv`）
+4. **清理**：删除临时文件（`research/calibrate_{name}.py`、`research/optimize_{name}.py`、`research/{name}_tiered.csv`）
 
 **验证脚本**：
 ```python
@@ -599,14 +601,14 @@ PYTHONPATH=/path/to/jesse-trade python research/optimize_xxx.py
 - Hurst/ADF/KPSS 在长周期数据上更容易显示"趋势性强"
 - 这是时间尺度的固有特性，不是 fusion bar 公式的优势
 **解决方案**：
-1. 新增 `extract_top_n_by_tiers()` 函数，按 bar 数量分层（long/medium/short）
-2. 每层独立提取 top 5，共 15 个结果
+1. 新增 `extract_top_n_by_tiers()` 函数，按 bar 数量分 5 层（tier1~tier5）
+2. 每层独立提取 top 5，共 25 个结果
 3. 探索比例提高到 99%，确保各区间均匀采样
 **实现**：
 - `evaluator.py` 新增 `TieredResult` 和 `extract_top_n_by_tiers()`
 - `optimizer.py` 新增 `optimize_and_return_study()` 返回 study 对象
 **教训**：
-- 如果 long 周期始终显著占优势，说明该轴可能不适合频繁交易
+- 如果 tier1/tier2 始终显著占优势，说明该轴可能不适合频繁交易
 - 分层分析能暴露这个信号，帮助用户做出明智决策
 
 ### [2026-01] 好的趋势轴要求 ≥3分 的窗口占绝大多数

@@ -24,13 +24,30 @@ class LogReturnBar(FusionBarContainerBase):
         小于此阈值的波动将被压缩为0，用于过滤噪声。
     threshold : float
         累积阈值，达到此值时生成新bar。
+
+    Benchmark (BTC 2022-2025, 1min):
+    --------------------------------
+    配置: long rank 1 (Optuna score: 3.289)
+    输入: 1,578,136 根 1min K线
+    输出: 5,336 根 Fusion Bar
+    压缩比: 295.8:1 (约 4.93 小时/根)
+
+    评估结果:
+      综合评分: 68.7/100 (B)
+      趋势性: 3.29/5 | 一致性: 4.55/5 | 稳定性: 2.13/5
+      Hurst均值: 0.699 | 三重共识: 35.0%
+
+    评分分布 (窗口/均分/1分/2分/3分/4分/5分):
+      20:  3.00 |  9.1% | 21.6% | 44.8% |  2.5% | 20.6%
+      40:  3.38 |  4.1% | 17.8% | 42.3% |  4.9% | 30.4%
+      60:  3.49 |  7.6% | 20.0% | 24.5% |  5.2% | 41.4%
     """
 
     def __init__(
         self,
         max_bars: int = -1,
-        clip_r: float = 3.91e-08,  # Optuna优化 (2026-01-24, BTC 1m, score=3.284)
-        threshold: float = 0.000252,  # Optuna优化 (2026-01-24, BTC 1m, score=3.284)
+        clip_r: float = 1.729268e-09,
+        threshold: float = 2.407565e-04,
     ):
         super().__init__(max_bars, threshold)
         self.clip_r = clip_r

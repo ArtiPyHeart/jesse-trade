@@ -516,7 +516,7 @@ def extract_top_n_by_tiers(
 ) -> list[TieredResult]:
     """从 study 按 bar 数量分层提取 Top-N 结果
 
-    将 bar 数量空间分为 3 个区间（长/中/短周期），每个区间提取 top N。
+    将 bar 数量空间分为 5 个区间，每个区间提取 top N。
     用于分析不同 bar 密度下的最优参数，避免低 bar 配置总是占优势。
 
     Args:
@@ -525,19 +525,20 @@ def extract_top_n_by_tiers(
         n_per_tier: 每个区间提取的 top N 数量（默认 5）
 
     Returns:
-        包含 3 个 TieredResult 的列表，分别对应长/中/短周期
+        包含 5 个 TieredResult 的列表
     """
     import optuna
 
     min_bars, max_bars = total_bar_range
 
-    # 三等分（对数空间更均匀，但简单起见用线性等分）
-    tier_size = (max_bars - min_bars) // 3
-    tiers = [
-        ("long", (min_bars, min_bars + tier_size)),  # 长周期（bar 少）
-        ("medium", (min_bars + tier_size, min_bars + 2 * tier_size)),  # 中周期
-        ("short", (min_bars + 2 * tier_size, max_bars + 1)),  # 短周期（bar 多）
-    ]
+    # 5 等分
+    tier_names = ["tier1", "tier2", "tier3", "tier4", "tier5"]
+    tier_size = (max_bars - min_bars) // 5
+    tiers = []
+    for i in range(5):
+        tier_min = min_bars + i * tier_size
+        tier_max = min_bars + (i + 1) * tier_size if i < 4 else max_bars + 1
+        tiers.append((tier_names[i], (tier_min, tier_max)))
 
     # 筛选已完成且约束满足的试验
     completed = [
