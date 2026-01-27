@@ -28,13 +28,15 @@ from src.features.simple_feature_calculator import SimpleFeatureCalculator
 from src.features.simple_feature_calculator.buildin.feature_names import (
     BUILDIN_FEATURES,
 )
+from src.utils.env_dates import get_env_date, load_env_values
 
 # ============================================================================
 # 配置参数
 # ============================================================================
 # 数据范围
-START = "2022-08-01"
-END = "2025-06-01"
+ENV_VALUES = load_env_values(Path(".env"))
+TRAIN_START = get_env_date("TRAIN_START_DATE", ENV_VALUES)
+TRAIN_END = get_env_date("TRAIN_END_DATE", ENV_VALUES)
 
 # 搜索参数
 LOG_RETURN_LAGS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]  # GMMLabeler 的 lag_n
@@ -202,8 +204,8 @@ def _build_or_load_feature_store(
         "dtype": dtype_name,
         "feature_hash": feature_hash,
         "candles_hash": candles_hash,
-        "start": START,
-        "end": END,
+        "start": TRAIN_START,
+        "end": TRAIN_END,
     }
     with FEATURE_STORE_META_PATH.open("w", encoding="utf-8") as f:
         json.dump(meta_out, f)
@@ -293,7 +295,7 @@ def main():
     print("=" * 60)
     print("Flow Feature Select - 批量特征筛选")
     print("=" * 60)
-    print(f"数据范围: {START} ~ {END}")
+    print(f"数据范围: {TRAIN_START} ~ {TRAIN_END}")
     print(f"LOG_RETURN_LAGS: {LOG_RETURN_LAGS}")
     print(f"PRED_NEXT_STEPS: {PRED_NEXT_STEPS}")
     print(f"LABEL_TYPES: {LABEL_TYPES}")
@@ -311,8 +313,8 @@ def main():
         "Binance Perpetual Futures",
         "BTC-USDT",
         "1m",
-        helpers.date_to_timestamp(START),
-        helpers.date_to_timestamp(END),
+        helpers.date_to_timestamp(TRAIN_START),
+        helpers.date_to_timestamp(TRAIN_END),
         warmup_candles_num=0,
         caching=False,
         is_for_jesse=False,
