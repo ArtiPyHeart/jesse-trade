@@ -219,24 +219,6 @@ merge_conda_env_files() {
     ' "$base_file" "$dev_file" > "$out_file"
 }
 
-find_jesse_spec() {
-    local deps_file="$1"
-    if [ -z "$deps_file" ] || [ ! -f "$deps_file" ]; then
-        return 0
-    fi
-    awk 'BEGIN{IGNORECASE=1}
-        {
-            line=$0
-            sub(/#.*/, "", line)
-            gsub(/^[ \t]+|[ \t]+$/, "", line)
-            if (line == "") next
-            name=line
-            gsub(/\[.*\]/, "", name)
-            sub(/[<>=!~].*$/, "", name)
-            if (tolower(name) == "jesse") {print line; exit}
-        }' "$deps_file"
-}
-
 MODE="prod"
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -347,14 +329,6 @@ fi
 sort -u "$CONDA_NAMES_FILE" | awk 'NF {if ($0 != "python" && $0 != "pip") print $0}' > "$CONDA_NAMES_FILE.sorted"
 mv "$CONDA_NAMES_FILE.sorted" "$CONDA_NAMES_FILE"
 
-JESSE_SPEC="$(find_jesse_spec "$BASE_PIP_DEPS_FILE")"
-if [ -z "$JESSE_SPEC" ] && [ "$MODE" = "dev" ]; then
-    JESSE_SPEC="$(find_jesse_spec "$DEV_PIP_DEPS_FILE")"
-fi
-if [ -z "$JESSE_SPEC" ]; then
-    JESSE_SPEC="jesse"
-fi
-
 CONDA_EXE="$(command -v conda)"
 eval "$("$CONDA_EXE" shell.posix hook)"
 
@@ -389,8 +363,36 @@ set -u
 echo "✓ $(python --version)"
 
 echo ""
+echo ">>> 步骤 4.5: 更新 jesse submodule (patch 分支)..."
+JESSE_SUBMODULE_DIR="$ROOT_DIR/jesse"
+if [ ! -d "$JESSE_SUBMODULE_DIR" ]; then
+    echo "❌ 错误: jesse submodule 目录不存在: $JESSE_SUBMODULE_DIR"
+    echo "   请运行: git submodule update --init jesse"
+    exit 1
+fi
+
+# 初始化 submodule（如果尚未初始化）
+if [ ! -f "$JESSE_SUBMODULE_DIR/.git" ] && [ ! -d "$JESSE_SUBMODULE_DIR/.git" ]; then
+    echo "   初始化 jesse submodule..."
+    git submodule update --init jesse
+fi
+
+# 切换到 patch 分支并拉取最新
+(
+    cd "$JESSE_SUBMODULE_DIR"
+    git fetch origin patch
+    git checkout patch
+    git reset --hard origin/patch
+)
+JESSE_COMMIT="$(cd "$JESSE_SUBMODULE_DIR" && git rev-parse --short HEAD)"
+echo "✓ jesse submodule 已同步到 origin/patch ($JESSE_COMMIT)"
+
+# jesse 从本地 submodule 安装
+JESSE_SPEC="$JESSE_SUBMODULE_DIR"
+
+echo ""
 echo ">>> 步骤 5: 解析 jesse 依赖并对齐 Conda 版本..."
-echo "   使用 $JESSE_SPEC 作为依赖基准"
+echo "   使用本地 submodule: $JESSE_SPEC"
 
 JESSE_CONDA_SPECS_FILE="$TMP_DIR/jesse.conda.specs.txt"
 JESSE_PIP_SPECS_FILE="$TMP_DIR/jesse.pip.specs.txt"
@@ -402,17 +404,11 @@ JESSE_SPEC="$JESSE_SPEC" python - "$CONDA_NAMES_FILE" "$JESSE_CONDA_SPECS_FILE" 
 import os
 import re
 import sys
-import tarfile
-import tempfile
-import zipfile
-from email.parser import Parser
 from packaging.requirements import Requirement
 from packaging.markers import default_environment
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 import shlex
-import subprocess
-import shutil
 
 conda_names_file = sys.argv[1]
 conda_specs_file = sys.argv[2]
@@ -423,26 +419,6 @@ jesse_spec = os.environ.get("JESSE_SPEC", "jesse")
 
 with open(conda_names_file, "r", encoding="utf-8") as f:
     conda_names = {line.strip().lower() for line in f if line.strip()}
-
-tmp_dir = tempfile.mkdtemp()
-
-def _read_metadata_from_wheel(path: str) -> str:
-    with zipfile.ZipFile(path) as zf:
-        meta_name = next(name for name in zf.namelist() if name.endswith(".dist-info/METADATA"))
-        return zf.read(meta_name).decode("utf-8")
-
-def _read_metadata_from_sdist(path: str) -> str:
-    if path.endswith(".zip"):
-        with zipfile.ZipFile(path) as zf:
-            meta_name = next((name for name in zf.namelist() if name.endswith("PKG-INFO")), None)
-            if not meta_name:
-                raise RuntimeError("PKG-INFO not found in sdist zip")
-            return zf.read(meta_name).decode("utf-8")
-    with tarfile.open(path, "r:*") as tf:
-        member = next((m for m in tf.getmembers() if m.name.endswith("PKG-INFO")), None)
-        if not member:
-            raise RuntimeError("PKG-INFO not found in sdist")
-        return tf.extractfile(member).read().decode("utf-8")
 
 def _compatible_upper_bound(version: str) -> str:
     ver = Version(version)
@@ -477,36 +453,26 @@ def _conda_spec(spec_set: SpecifierSet) -> str:
             converted.append(f"{op}{ver}")
     return ",".join(converted)
 
-try:
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "download", "--no-deps", "--dest", tmp_dir, jesse_spec]
-    )
-    candidates = [os.path.join(tmp_dir, f) for f in os.listdir(tmp_dir)]
-    wheel = next((f for f in candidates if f.endswith(".whl")), None)
-    if wheel:
-        meta_text = _read_metadata_from_wheel(wheel)
-    else:
-        sdist = next((f for f in candidates if f.endswith((".tar.gz", ".tgz", ".zip"))), None)
-        if not sdist:
-            raise RuntimeError("jesse package archive not found after download")
-        meta_text = _read_metadata_from_sdist(sdist)
-except Exception as exc:
-    raise SystemExit(f"解析 jesse 元数据失败: {exc}") from exc
-finally:
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+# 从本地 submodule 读取依赖
+req_file = os.path.join(jesse_spec, "requirements.txt")
+version_file = os.path.join(jesse_spec, "jesse", "version.py")
 
-metadata = Parser().parsestr(meta_text)
-version = metadata.get("Version", "")
-requires_python = metadata.get("Requires-Python", "")
-requires_dist = metadata.get_all("Requires-Dist") or []
+if not os.path.isfile(req_file):
+    raise SystemExit(f"找不到 jesse requirements.txt: {req_file}")
 
-if requires_python:
-    spec = SpecifierSet(requires_python)
-    current = Version(".".join(map(str, sys.version_info[:3])))
-    if not spec.contains(current, prereleases=True):
-        raise SystemExit(
-            f"当前 Python {current} 不满足 jesse Requires-Python: {requires_python}"
-        )
+# 读取版本号
+version = ""
+if os.path.isfile(version_file):
+    with open(version_file, "r", encoding="utf-8") as f:
+        for line in f:
+            m = re.match(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", line)
+            if m:
+                version = m.group(1)
+                break
+
+# 读取依赖
+with open(req_file, "r", encoding="utf-8") as f:
+    req_lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 env = default_environment()
 env["extra"] = ""
@@ -519,8 +485,12 @@ mapping = {
 conda_specs = []
 pip_specs = []
 
-for req_str in requires_dist:
-    req = Requirement(req_str)
+for req_str in req_lines:
+    try:
+        req = Requirement(req_str)
+    except Exception:
+        # 无法解析的行跳过
+        continue
     if req.marker and not req.marker.evaluate(env):
         continue
     name = req.name.lower()
@@ -544,17 +514,13 @@ with open(pip_specs_file, "w", encoding="utf-8") as f:
 
 with open(meta_file, "w", encoding="utf-8") as f:
     f.write(f"JESSE_VERSION={shlex.quote(version)}\n")
-    f.write(f"JESSE_REQUIRES_PYTHON={shlex.quote(requires_python)}\n")
 PY
 
 if [ -f "$JESSE_META_FILE" ]; then
     # shellcheck disable=SC1090
     source "$JESSE_META_FILE"
     if [ -n "${JESSE_VERSION:-}" ]; then
-        echo "   jesse 版本: $JESSE_VERSION"
-    fi
-    if [ -n "${JESSE_REQUIRES_PYTHON:-}" ]; then
-        echo "   Requires-Python: $JESSE_REQUIRES_PYTHON"
+        echo "   jesse 版本: $JESSE_VERSION (patch)"
     fi
 fi
 
@@ -598,7 +564,9 @@ if [ -s "$PIP_INSTALL_FILE" ]; then
     fi
 fi
 
+# 从本地 submodule 安装 jesse（--no-deps 避免重复安装依赖）
 python -m pip install --no-deps "$JESSE_SPEC"
+echo "✓ jesse 已从本地 submodule 安装"
 
 if [ "$(uname)" = "Darwin" ]; then
     echo ""

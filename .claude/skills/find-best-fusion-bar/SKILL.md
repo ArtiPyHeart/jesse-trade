@@ -6,61 +6,39 @@ description: Guided development of custom Fusion Bars (trend axes) with statisti
 # 寻找最佳趋势轴 (Fusion Bar)
 
 ## 任务概述
+
 通过统计验证，帮助用户构建并优化自定义趋势轴（Fusion Bar），验证其是否适合趋势交易。
 
 **核心原则**：
-- 输入的原始 K 线固定为 1 分钟 Jesse candles
+- 输入固定为 1 分钟 Jesse candles
 - 每个公式独立开发、独立优化，逐一完成
-- Optuna 优化必须充分运行（建议 1000+ trials，可后台运行数小时）
+- Optuna 优化必须充分运行（2500+ trials，后台运行）
 - 最终交付带有优化后默认参数的 FusionBar class
 
 ## 触发条件
-用户消息包含以下**完整短语**时触发此 skill（避免误触发）：
+
+用户消息包含以下**完整短语**时触发：
 - "构建新的趋势轴" / "开发新的趋势轴" / "寻找最佳趋势轴"
 - "构建新的 fusion bar" / "寻找最佳 fusion bar"
 - "开发自定义轴" / "构建自定义轴"
 - "帮我优化 fusion bar 参数"
 
-**不触发**的情况（仅讨论概念）：
-- "什么是趋势轴" / "fusion bar 是什么"
-- "查看 DemoBar 代码"
+**不触发**："什么是趋势轴"、"fusion bar 是什么"、"查看 DemoBar 代码"
+
+---
 
 ## 工作流程
 
 ### 阶段 1：公式确认
+
 1. **提取公式**：从用户描述或 md 文件中提取阈值计算公式
-2. **与用户确认**：
-   - 公式的数学表达式
-   - 公式中各参数的含义和搜索范围
-   - 阈值合并条件（`threshold` 的语义）
-3. **多公式处理**：如有多个公式，创建 md 文件记录，逐一处理
-
-**确认模板**：
-```markdown
-## 公式确认
-
-### 阈值计算公式
-`threshold_value = abs(close - close_lag1) * (high - low) / close`
-
-### 参数说明
-| 参数名 | 含义 | 搜索范围 | 类型 |
-|--------|------|----------|------|
-| clip_r | 噪声过滤阈值 | [0.0001, 0.01] | float (log) |
-| threshold | 累积阈值 | [0.5, 5.0] | float |
-
-### 合并逻辑
-当 `sum(threshold_values) >= threshold` 时，生成新的 Fusion Bar
-```
+2. **与用户确认**：公式表达式、参数含义、阈值合并条件
+3. **多公式处理**：创建 `research/fusion_bar_drafts/{日期}_{主题}.md` 记录，逐一处理
 
 ### 阶段 2：开发 FusionBar Class
-1. **创建文件**：`src/bars/fusion/{name}.py`
-2. **继承基类**：`FusionBarContainerBase`
-3. **实现方法**：
-   - `__init__`: 初始化参数（暂用默认值）
-   - `max_lookback`: 返回公式需要的历史 K 线数量
-   - `get_thresholds`: 实现阈值计算公式
 
-**代码模板**：
+创建 `src/bars/fusion/{name}.py`，继承 `FusionBarContainerBase`：
+
 ```python
 import numpy as np
 from src.bars.fusion.base import FusionBarContainerBase
@@ -70,326 +48,181 @@ class {ClassName}(FusionBarContainerBase):
     """
     {公式描述}
 
-    Parameters:
-    -----------
-    {参数文档}
+    公式：{数学表达式}
 
-    Benchmark (BTC 2022-2025, 1min):
-    --------------------------------
+    Parameters
+    ----------
+    max_bars : int
+        最大bar数量，-1表示不限制
+    {其他参数说明}
+    threshold : float
+        累积阈值
+
+    Benchmark (BTC 2022-2025, 1min)
+    -------------------------------
     配置: {tier} rank {rank} (Optuna score: {score})
-    输入: {原始K线数} 根 1min K线
-    输出: {FusionBar数} 根 Fusion Bar
-    压缩比: {压缩比}:1 (约 {平均时长} 小时/根)
+    输入: {n} 根 1min K线 → 输出: {m} 根 Fusion Bar
+    压缩比: {ratio}:1 (约 {hours} 小时/根)
 
     评估结果:
-      综合评分: {评分}/100 ({等级})
-      趋势性: {趋势性}/5 | 一致性: {一致性}/5 | 稳定性: {稳定性}/5
-      Hurst均值: {Hurst} | 三重共识: {共识率}%
-
-    评分分布 (窗口/均分/1分/2分/3分/4分/5分):
-      20:  {均分} | {1分}% | {2分}% | {3分}% | {4分}% | {5分}%
-      40:  {均分} | {1分}% | {2分}% | {3分}% | {4分}% | {5分}%
-      60:  {均分} | {1分}% | {2分}% | {3分}% | {4分}% | {5分}%
+      综合评分: {score}/100 ({grade})
+      趋势性: {t}/5 | 一致性: {c}/5 | 稳定性: {s}/5
     """
 
     def __init__(
         self,
         max_bars: int = -1,
-        # 其他参数（暂用占位默认值）
-        threshold: float = 1.0,
+        # 门控参数（暂用占位值，优化后替换）
+        param: float = 0.4,
+        threshold: float = 1e-6,
+        epsilon: float = 1e-10,
     ):
         super().__init__(max_bars, threshold)
-        # 存储其他参数
+        self.param = param
+        self.epsilon = epsilon
 
     @property
     def max_lookback(self) -> int:
-        return {需要的历史 K 线数量}
+        return {需要的历史K线数量}
 
     def get_thresholds(self, candles: np.ndarray) -> np.ndarray:
-        # 实现阈值计算公式
         # candles: [timestamp, open, close, high, low, volume]
+        # 返回每根K线的阈值贡献
         pass
 ```
 
 ### 阶段 3：准备数据
-1. **获取 K 线数据**：使用 `research.get_candles`
-2. **保存到本地**：`data/{symbol}_1m.npy`
 
-**数据获取脚本**（在项目根目录运行）：
+**数据获取脚本**（项目根目录运行）：
 ```python
 import numpy as np
 import jesse.helpers as helpers
 from jesse.research import get_candles
 
-# 获取 BTC 三年数据
 _, candles = get_candles(
-    "Binance Perpetual Futures",
-    "BTC-USDT",
-    "1m",
+    "Binance Perpetual Futures", "BTC-USDT", "1m",
     helpers.date_to_timestamp("2022-01-01"),
     helpers.date_to_timestamp("2025-01-01"),
-    warmup_candles_num=0,
-    caching=True,
-    is_for_jesse=False,
+    warmup_candles_num=0, caching=True, is_for_jesse=False,
 )
-candles = candles[candles[:, 5] > 0]  # 过滤无效数据
+candles = candles[candles[:, 5] > 0]
 np.save("data/btc_1m.npy", candles)
 print(f"保存了 {len(candles):,} 根 1 分钟 K 线")
 ```
 
-### 阶段 3.5：参数范围校准（关键步骤）
+### 阶段 3.5：参数范围校准（关键！）
 
-**不要凭直觉设定参数范围！** 必须先用真实数据统计阈值分布，再确定 Optuna 搜索范围。
+**不要凭直觉设定参数范围！** 必须先用真实数据统计阈值分布。
 
-#### 目标 Bar 数量范围（重要！）
+#### 目标 Bar 数量范围
 
-Fusion bar 数量应控制在 **30分钟 K线数量** 到 **6小时 K线数量** 之间：
+| 基准 | 计算方式 | 说明 |
+|------|----------|------|
+| 上限（30min）| `n_candles // 30` | Bar 太多 → 评估极慢 |
+| 下限（6h）| `n_candles // 360` | Bar 太少 → 交易机会不足 |
 
-| 基准 | 计算方式 | 100,000 根 1min K线 |
-|------|----------|---------------------|
-| 上限（30min）| `candle_count / 30` | ~3,333 bars |
-| 下限（6h）| `candle_count / 360` | ~278 bars |
+#### 校准脚本
 
-**为什么要限制这个范围**：
-- **Bar 太多**（> 30min 基准）→ TrendValidator 评估极慢，单个 trial 可能从 7 秒变成 100+ 秒，严重影响调参效率
-- **Bar 太少**（< 6h 基准）→ 交易机会太少，没有实际意义
-
-#### 校准步骤
-
-**重要：校准必须使用全量数据！** 校准数据量必须与 Optuna 优化时使用的数据量一致，否则 threshold 范围会出现严重偏差。
-
-1. **计算阈值分布**：用新 class 的 `get_thresholds()` 在**全量数据**上计算
-2. **统计关键指标**：min, max, mean, median, p5, p95
-3. **统计累积阈值**：100/500/1000/5000 根 K 线后的累积值
-4. **测试不同 threshold**：观察生成的 fusion bar 数量，**确保落在目标范围内**
-5. **确定搜索范围**：根据统计结果设定合理范围
-
-**校准脚本**：
 ```python
 import numpy as np
 from src.bars.fusion.{module} import {ClassName}
 
-# 使用全量数据！
 candles = np.load("data/btc_1m.npy")
-n_candles = len(candles)
-print(f"K线数量: {n_candles:,}")
-print(f"时间跨度: {n_candles / 60 / 24:.1f} 天 ({n_candles / 60 / 24 / 365:.1f} 年)")
+n = len(candles)
+bar_max, bar_min = n // 30, n // 360
+print(f"K线: {n:,}, 目标bar范围: {bar_min:,} ~ {bar_max:,}")
 
-# 目标 bar 数量范围
-bar_max = n_candles // 30   # 30min 基准（上限）
-bar_min = n_candles // 360  # 6h 基准（下限）
-print(f"目标 bar 数量范围: {bar_min:,} ~ {bar_max:,}")
-
-# 计算阈值分布
+# 阈值分布
 bar = {ClassName}(threshold=1.0)
-thresholds = bar.get_thresholds(candles[:n_candles])
+th = bar.get_thresholds(candles)
+print(f"阈值: min={np.min(th):.2e}, max={np.max(th):.2e}, median={np.median(th):.2e}")
 
-print(f"\n阈值统计:")
-print(f"  min:    {np.min(thresholds):.2e}")
-print(f"  max:    {np.max(thresholds):.2e}")
-print(f"  mean:   {np.mean(thresholds):.2e}")
-print(f"  median: {np.median(thresholds):.2e}")
-print(f"  p5:     {np.percentile(thresholds, 5):.2e}")
-print(f"  p95:    {np.percentile(thresholds, 95):.2e}")
-
-# 累积阈值
-cumsum = np.cumsum(thresholds)
-print(f"\n累积阈值:")
-for i in [100, 500, 1000, 5000]:
-    if i <= len(cumsum):
-        print(f"  {i}根后: {cumsum[i-1]:.2e}")
-
-# 二分搜索找到目标范围对应的 threshold
-def find_threshold_for_bar_count(target_bars, lo, hi, candles, BarClass):
+# 二分搜索目标threshold
+def find_th(target, lo, hi):
     for _ in range(30):
         mid = (lo + hi) / 2
-        bar = BarClass(threshold=mid)
+        bar = {ClassName}(threshold=mid)
         bar.update_with_candles(candles)
-        fusion = bar.get_fusion_bars()
-        if len(fusion) > target_bars:
+        if len(bar.get_fusion_bars()) > target:
             lo = mid
         else:
             hi = mid
     return mid
 
-# 找到目标范围的 threshold 边界
-print(f"\n搜索目标 bar 数量对应的 threshold...")
-th_for_max_bars = find_threshold_for_bar_count(bar_max, 1e-10, 1e-1, candles[:n_candles], {ClassName})
-th_for_min_bars = find_threshold_for_bar_count(bar_min, 1e-10, 1e-1, candles[:n_candles], {ClassName})
-
-print(f"  {bar_max:,} bars (30min) → threshold ≈ {th_for_max_bars:.2e}")
-print(f"  {bar_min:,} bars (6h)    → threshold ≈ {th_for_min_bars:.2e}")
-
-# 验证
-print(f"\n验证 threshold 范围内的 bar 数量:")
-for th in [th_for_max_bars, (th_for_max_bars + th_for_min_bars) / 2, th_for_min_bars]:
-    bar = {ClassName}(threshold=th)
-    bar.update_with_candles(candles[:n_candles])
-    fusion = bar.get_fusion_bars()
-    in_range = "✓" if bar_min <= len(fusion) <= bar_max else "✗"
-    print(f"  threshold={th:.2e}: {len(fusion):,} bars {in_range}")
-
-print(f"\n=== 建议的 Optuna 搜索范围 ===")
-print(f"  threshold: ({th_for_max_bars:.2e}, {th_for_min_bars:.2e}, 'log')")
+th_max = find_th(bar_max, 1e-10, 1e-1)
+th_min = find_th(bar_min, 1e-10, 1e-1)
+print(f"建议范围: threshold=({th_max:.2e}, {th_min:.2e}, 'log')")
 ```
 
-**范围确定原则**：
-| 参数 | 范围确定方法 |
-|------|-------------|
-| clip_r | 从 p5 到 p50，使用 log scale |
-| threshold | **必须确保 bar 数量落在 30min~6h 范围内**，使用 log scale |
-
 ### 阶段 4：Optuna 优化
-1. **使用 TrendOptimizer**：从 `research.trend_optimizer.optimizer` 导入
-2. **配置参数范围**：**根据阶段 3.5 校准的范围**（不要用直觉！）
-3. **充分运行**：建议 1000+ trials，**必须后台运行**
 
-**优化脚本**：
+**优化脚本**（必须使用 `optimize_and_return_study` + pandas 保存 CSV）：
+
 ```python
-import csv
 import numpy as np
+import pandas as pd
 from src.bars.fusion.{module} import {ClassName}
 from research.trend_optimizer.optimizer import TrendOptimizer
 from research.trend_optimizer.evaluator import extract_top_n_by_tiers
 
 candles = np.load("data/btc_1m.npy")
-
-# 目标 bar 范围（来自校准）
-TARGET_BAR_RANGE = ({min_bars}, {max_bars})
+n_candles = len(candles)
+TARGET_BAR_RANGE = (n_candles // 360, n_candles // 30)
 
 optimizer = TrendOptimizer(
     fusion_bar_cls={ClassName},
     candles=candles,
     window_sizes=(20, 40, 60),
-    n_top_results=10,
+    n_top_results=5,
 )
 
-# 运行优化（返回 study 对象用于分层提取）
+# 必须用 optimize_and_return_study，不要用 optimize！
 study = optimizer.optimize_and_return_study(
-    n_trials=2500,  # 最低 1000，推荐 2500+
-    # 参数范围（来自阶段 3.5 校准结果）
-    param1=(...),
-    param2=(...),
+    n_trials=2500,
+    param=(...),  # 来自校准
+    threshold=(..., ..., "log"),
 )
 
-# 分层提取结果（5 段 × top 5 = 25 条）
-tiered_results = extract_top_n_by_tiers(study, TARGET_BAR_RANGE, n_per_tier=5)
+# 分层提取 (5 tier × 5 rank = 25 条)
+tiered = extract_top_n_by_tiers(study, TARGET_BAR_RANGE, n_per_tier=5)
 
-# 输出结果
-print("\n" + "=" * 80)
-for tier in tiered_results:
-    print(f"\n=== {tier.tier_name.upper()} ({tier.tier_range[0]:,} ~ {tier.tier_range[1]:,} bars) ===")
-    print(f"{'Rank':<6}{'Score':<10}{'Bars':<12}{'压缩比':<10}{'params'}")
-    print("-" * 70)
+# 用 pandas 保存 CSV（简洁！）
+rows = []
+for tier in tiered:
     for r in tier.results:
-        compression = len(candles) / r.fusion_bar_count if r.fusion_bar_count > 0 else 0
-        print(f"{r.rank:<6}{r.final_score:<10.3f}{r.fusion_bar_count:<12,}{compression:<10.1f}{r.params}")
-
-# 保存分层 CSV（共 25 行）
-csv_path = "research/{name}_tiered.csv"
-with open(csv_path, "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["tier", "rank", "score", "bars", "compression", "param1", "param2"])
-    for tier in tiered_results:
-        for r in tier.results:
-            compression = len(candles) / r.fusion_bar_count if r.fusion_bar_count > 0 else 0
-            writer.writerow([
-                tier.tier_name,
-                r.rank,
-                f"{r.final_score:.4f}",
-                r.fusion_bar_count,
-                f"{compression:.1f}",
-                # 根据实际参数调整
-                f"{r.params['param1']:.6e}",
-                f"{r.params['param2']:.6e}",
-            ])
-
-print(f"\n结果已保存到: {csv_path}")
-print("请查看 CSV 后选择一个配置，告诉我 tier + rank 用于设置默认参数。")
+        rows.append({
+            "tier": tier.tier_name,
+            "rank": r.rank,
+            "score": r.final_score,
+            "bars": r.fusion_bar_count,
+            "compression": n_candles / r.fusion_bar_count if r.fusion_bar_count > 0 else 0,
+            **r.params,
+        })
+df = pd.DataFrame(rows)
+print("\n" + df.to_string(index=False))
+df.to_csv("research/{name}_tiered.csv", index=False)
 ```
 
-**关键要求**：
-- 使用 `run_in_background=True` 后台运行
-- 运行时间可能需要数小时，不要中途停止
-- 使用 `Read` 工具定期检查 output 文件查看进度
+**运行命令**：
+```bash
+PYTHONPATH=/path/to/jesse-trade python research/optimize_{name}.py
+```
 
 ### 阶段 5：用户选择参数
 
-**重要：最终参数由用户决定，不要自动选择最高分！**
+**重要：最终参数由用户决定，不要自动选择！**
 
-分层结果（5 段）便于分析权衡：
+分层结果（5 tier）便于权衡：
 - **tier1**（bar 最少）：趋势性可能最强，但交易机会最少
-- **tier2-tier4**：中间地带，平衡选择
 - **tier5**（bar 最多）：交易机会多，但趋势性可能略低
 
-**如果发现 tier1/tier2 始终显著占优势**，这是一个重要信号：
-- 该自定义轴可能不适合频繁交易
-- 需要考虑是否符合策略需求
-
-#### 用户确认后再更新
-
-1. **等待用户选择**：明确询问用户选择哪个 tier + rank
-2. **更新 class**：
-   - 将用户选择的参数作为 `__init__` 的默认值
-   - 更新 docstring 中的 Benchmark section，运行评估后填入完整信息：
-     ```
-     Benchmark (BTC 2022-2025, 1min):
-     --------------------------------
-     配置: medium rank 1 (Optuna score: 3.282)
-     输入: 1,578,136 根 1min K线
-     输出: 20,605 根 Fusion Bar
-     压缩比: 76.6:1 (约 1.28 小时/根)
-
-     评估结果:
-       综合评分: 68.6/100 (B)
-       趋势性: 3.27/5 | 一致性: 4.56/5 | 稳定性: 2.11/5
-       Hurst均值: 0.697 | 三重共识: 35.0%
-
-     评分分布 (窗口/均分/1分/2分/3分/4分/5分):
-       20:  2.98 | 10.0% | 21.1% | 43.4% |  2.8% | 20.9%
-       40:  3.43 |  5.5% | 14.5% | 42.0% |  4.3% | 33.1%
-       60:  3.41 |  8.1% | 21.3% | 25.9% |  7.0% | 37.0%
-     ```
-3. **验证**：使用 `evaluate_detailed` 生成评估报告
-4. **清理**：删除临时文件（`research/calibrate_{name}.py`、`research/optimize_{name}.py`、`research/{name}_tiered.csv`）
-
-**验证脚本**：
-```python
-from src.bars.fusion.{module} import {ClassName}
-from research.trend_optimizer.evaluator import MultiWindowEvaluator
-
-candles = np.load("data/btc_1m.npy")
-
-# 使用最优参数
-container = {ClassName}()  # 使用默认参数
-container.update_with_candles(candles)
-fusion_bars = container.get_fusion_bars()
-
-# 生成详细报告
-evaluator = MultiWindowEvaluator()
-report = evaluator.evaluate_detailed(fusion_bars)
-print(report)
-```
+用户选择后：
+1. 更新 class 默认参数
+2. 运行评估，填充 docstring 中的 Benchmark
+3. 清理临时文件：`research/calibrate_{name}.py`、`research/optimize_{name}.py`、`research/{name}_tiered.csv`
 
 ### 阶段 6：基准对比与交付
-1. **与 DemoBar 对比**：使用相同数据生成两个评估报告
-2. **展示对比结果**：
-   - 综合评分、分项得分、等级
-   - **Fusion bar 数量**（重要！bar 数量 = 交易机会）
-   - 压缩比（1min candles / fusion bars）
-3. **质量判定**：
-   - **趋势性判定**：
-     - 新轴 ≥ DemoBar：正常
-     - 新轴 < DemoBar 且差距 ≤ 10 分：提示"略低于基准，建议谨慎使用"
-     - 新轴 < DemoBar 且差距 > 10 分：**警告"明显低于基准，此轴可能不适合趋势交易"**
-   - **Bar 数量判定**（同样重要）：
-     - 新轴 bar 数量 ≥ DemoBar 的 50%：正常
-     - 新轴 bar 数量 < DemoBar 的 50%：**警告"交易机会较少"**
-     - 新轴 bar 数量 < DemoBar 的 25%：**强烈警告"交易机会极少，需确认是否符合策略需求"**
-4. **告知文件位置**：`src/bars/fusion/{name}.py`
-5. **说明后续步骤**：用户需进行机器学习建模与回测
 
-**对比脚本**：
 ```python
 import numpy as np
 from src.bars.fusion.demo import DemoBar
@@ -402,234 +235,76 @@ evaluator = MultiWindowEvaluator()
 # DemoBar 基准
 demo = DemoBar()
 demo.update_with_candles(candles)
-demo_fusion = demo.get_fusion_bars()
-demo_report = evaluator.evaluate_detailed(demo_fusion)
+demo_bars = demo.get_fusion_bars()
 
 # 新轴
-new_bar = {ClassName}()
-new_bar.update_with_candles(candles)
-new_fusion = new_bar.get_fusion_bars()
-new_report = evaluator.evaluate_detailed(new_fusion)
+new = {ClassName}()
+new.update_with_candles(candles)
+new_bars = new.get_fusion_bars()
 
-# 对比：趋势性得分
-print("=== 趋势性得分 ===")
-print(f"DemoBar:  {demo_report.overall_score:.1f}/100 ({demo_report.overall_grade})")
-print(f"新轴:     {new_report.overall_score:.1f}/100 ({new_report.overall_grade})")
-print(f"差距:     {new_report.overall_score - demo_report.overall_score:+.1f}")
+print(f"DemoBar: {len(demo_bars):,} bars")
+print(f"新轴: {len(new_bars):,} bars ({len(new_bars)/len(demo_bars):.0%} of DemoBar)")
 
-# 对比：Bar 数量（交易机会）
-print("\n=== Bar 数量（交易机会）===")
-print(f"原始 K 线:   {len(candles):,}")
-print(f"DemoBar:     {len(demo_fusion):,} bars (压缩比 {len(candles)/len(demo_fusion):.1f}:1)")
-print(f"新轴:        {len(new_fusion):,} bars (压缩比 {len(candles)/len(new_fusion):.1f}:1)")
-bar_ratio = len(new_fusion) / len(demo_fusion)
-print(f"新轴/DemoBar: {bar_ratio:.1%}")
-
-# 质量判定
-print("\n=== 质量判定 ===")
-if bar_ratio < 0.25:
-    print("⚠️ 强烈警告：交易机会极少（< DemoBar 的 25%），需确认是否符合策略需求")
-elif bar_ratio < 0.5:
-    print("⚠️ 警告：交易机会较少（< DemoBar 的 50%）")
-else:
-    print("✓ Bar 数量正常")
+demo_report = evaluator.evaluate_detailed(demo_bars)
+new_report = evaluator.evaluate_detailed(new_bars)
+print(f"DemoBar: {demo_report.overall_score:.1f}/100")
+print(f"新轴: {new_report.overall_score:.1f}/100")
 ```
+
+**质量判定**：
+- Bar 数量 < DemoBar 25%：⚠️ 交易机会极少
+- 评分 < DemoBar - 10：⚠️ 趋势性不足
+
+---
 
 ## 重要提醒
 
 ### 脚本运行环境
-运行校准脚本和优化脚本时，必须设置 `PYTHONPATH`：
+所有 `research/` 脚本必须设置 PYTHONPATH：
 ```bash
-PYTHONPATH=/path/to/jesse-trade python research/calibrate_xxx.py
-PYTHONPATH=/path/to/jesse-trade python research/optimize_xxx.py
+PYTHONPATH=/path/to/jesse-trade python research/xxx.py
 ```
 
-**为什么需要**：脚本中使用 `from src.bars.fusion.xxx import XxxBar` 导入，如果不设置 PYTHONPATH 会报 `ModuleNotFoundError: No module named 'src.bars'`。
+### 优化配置
+- **trials**: 2500+（探索比微调更重要）
+- **探索比例**: 99% 随机探索 + 1% 收束
+- **后台运行**: 必须使用 `run_in_background=True`
 
-### 优化时间要求
-- **最低要求**：1000 trials
-- **推荐配置**：2500+ trials（实测表明更多 trials 能找到显著更优的参数）
-- **探索策略**：99% 随机探索 + 1% 收束（找轴过程探索比精细微调更重要）
-- **后台运行**：必须使用 `run_in_background=True`
-- **不要偷懒**：宁愿多等几小时，也不要提前终止
-
-### 后台任务管理最佳实践
-1. **启动后短暂检查**：发起后台任务后，用 `tail` 检查输出确认任务正常运行（看到 trial 开始打印即可）
-2. **确认后停止等待**：确认正常运行后，不再主动轮询，停下来等待用户通知
-3. **用户通知后检查结果**：当用户告知任务完成时，读取输出文件和 CSV 结果
-4. **避免不必要的轮询**：优化任务可能运行数小时，频繁检查没有意义
-
-### 多公式处理
-如果用户提供多个公式：
-1. 创建 `research/fusion_bar_drafts/{日期}_{主题}.md` 记录所有公式
-2. 逐一完成：确认 → 开发 → 优化 → 交付
-3. 每完成一个，向用户报告进度
-
-### 参数范围约定
-| 参数类型 | Optuna 格式 | 示例 |
-|----------|-------------|------|
-| 普通浮点 | `(min, max)` | `threshold=(0.5, 5.0)` |
-| 对数浮点 | `(min, max, "log")` | `clip_r=(0.0001, 0.01, "log")` |
+### 参数格式
+| 类型 | 格式 | 示例 |
+|------|------|------|
+| 普通浮点 | `(min, max)` | `beta=(0.1, 2.0)` |
+| 对数浮点 | `(min, max, "log")` | `threshold=(1e-5, 1e-3, "log")` |
 | 整数 | `(min, max, "int")` | `window=(10, 100, "int")` |
-| 分类 | `([v1, v2, ...], "category")` | `mode=(["fast", "slow"], "category")` |
 
 ### 文件位置
 - FusionBar 类：`src/bars/fusion/{name}.py`
 - 基类：`src/bars/fusion/base.py`
-- 参考实现：`src/bars/fusion/demo.py` (DemoBar)
 - 评估器：`research/trend_optimizer/evaluator.py`
 - 优化器：`research/trend_optimizer/optimizer.py`
 - 数据：`data/{symbol}_1m.npy`
-
-### 三重验证评分系统 (0-5分)
-
-评估报告中的分数分布基于 Hurst指数/ADF检验/KPSS检验 三重验证：
-
-| 分数 | 条件 | 含义 | 建议 |
-|------|------|------|------|
-| **5分** | Hurst>0.6 + ADF非平稳 + KPSS非平稳 + 三重共识 | 最强趋势 | 非常适合趋势策略 |
-| **4分** | 0.55<Hurst≤0.6 + ADF非平稳 + KPSS非平稳 + 三重共识 | 强趋势 | 适合趋势策略 |
-| **3分** | Hurst>0.6 + 只有一个检验通过 | 中等趋势 | 可用，需配合确认 |
-| **2分** | 趋势性与平稳性检验结果矛盾 | 弱/矛盾 | 不推荐趋势策略 |
-| **1分** | Hurst≤0.55 + 只有一个检验通过 | 极弱趋势 | 不适合趋势策略 |
-| **0分** | Hurst≤0.55 + ADF平稳 + KPSS平稳 | 无趋势 | 趋势策略会亏损 |
-
-**评分规则**：
-- Hurst > 0.6: +2 分 | Hurst > 0.55: +1 分
-- ADF p > 0.05 (非平稳): +1 分
-- KPSS p < 0.05 (非平稳): +1 分
-- 三重共识加分: +1 分
-
-**完整评分系统文档**：参见 `research/trend_optimizer/evaluator.py` 头部注释
-
-## 示例对话
-
-**用户**：我想构建一个新的趋势轴，公式是 `abs(close - open) / (high - low + 1e-8)`，用 BTC 三年数据优化
-
-**Claude**：
-1. 确认公式和参数范围
-2. 创建 `src/bars/fusion/body_ratio.py`
-3. 获取并保存 BTC 数据
-4. 后台运行 1000+ trials 优化
-5. 填入最优参数并交付
-
----
-
-## 自更新机制
-
-**本 skill 是一个持续迭代的文档**，在实践中不断积累最佳实践。
-
-### 何时更新此文档
-遇到以下情况时，Claude 应主动更新本 skill：
-
-1. **被用户纠正**：用户指出流程中的错误或更好的做法
-2. **频繁出错**：某个步骤反复失败，找到根本原因后记录解决方案
-3. **发现更优方法**：实践中发现比文档描述更高效的方法
-4. **新增公式类型**：遇到需要特殊处理的公式模式
-5. **工具/API 变更**：依赖的代码接口发生变化
-
-### 更新内容格式
-更新时应添加到下方「实践经验」章节，格式：
-```markdown
-### [日期] 经验标题
-**场景**：简述遇到的问题或情况
-**解决方案**：具体的解决方法
-**教训**：总结性的经验（可选）
-```
-
-### 更新原则
-- **只记录验证过的成功经验**，不记录猜测
-- **保持简洁**，避免冗余描述
-- **标注日期**，便于追溯
-- **如涉及流程变更**，同步更新上方「工作流程」章节
 
 ---
 
 ## 实践经验
 
-> 此章节记录实践中积累的经验教训，由 Claude 在执行任务时自动更新。
+> 此章节记录关键教训，避免重复踩坑。
 
-### [2025-01] 初始版本
-**场景**：首次创建此 skill
-**内容**：基于 DemoBar 和 TrendOptimizer 的现有实现，整理出标准化的 6 阶段流程
+### 参数范围必须数据驱动
+**问题**：直接套用其他轴的参数范围，导致所有 trial 的 bar 数量都是 0 或 1
+**原因**：不同公式的量级可能差异 1000 倍以上
+**方案**：阶段 3.5 强制校准
 
-### [2026-01] 参数范围必须通过数据统计确定，不能凭直觉
-**场景**：开发 LogReturnBar 时，直接套用 DemoBar 的参数范围 `threshold=(0.5, 5.0)`，导致 Optuna 优化时所有 trial 的 fusion_bar_count 都是 0 或 1
-**根因**：LogReturnBar 的公式 `|ln(C_t/C_{t-1})| × ln(H_t/L_t)` 量级约 1e-6，而 DemoBar 的公式量级约 1e-3，相差 1000 倍
-**解决方案**：新增「阶段 3.5：参数范围校准」，强制要求在 Optuna 优化前先统计阈值分布，用实际数据确定搜索范围
-**教训**：不同公式的量级可能差异巨大，凭直觉设定范围必然踩坑。数据驱动优于直觉判断
+### 必须用 optimize_and_return_study
+**问题**：使用 `optimize()` 只返回 top 5，无法获取 5-tier 分层结果
+**方案**：必须用 `optimize_and_return_study()` + `extract_top_n_by_tiers()`
+**代价**：2500 trials 需要 16-19 小时，方法用错只能重跑
 
-### [2026-01] 趋势性得分相近不代表质量相近，必须同时考虑 bar 数量
-**场景**：LogReturnBar 优化后趋势性得分 68.0/100，与 DemoBar 的 68.6/100 几乎相同，但 bar 数量只有 5,091 vs 20,605（仅 25%）
-**问题**：bar 数量少 = 交易机会少
-**解决方案**：
-1. 更新阶段 6 对比脚本，增加 bar 数量和压缩比的展示
-2. 新增 bar 数量质量判定：< 50% 警告，< 25% 强烈警告
-**教训**：评价 fusion bar 质量需要多维度考量，趋势性只是其中一个维度。bar 数量决定交易机会，压缩比决定信息密度，都应纳入评估
+### 用 pandas 保存 CSV
+**问题**：用 csv 模块手动写 CSV 代码冗长易错
+**方案**：整理为 `list[dict]` → `pd.DataFrame(rows)` → `df.to_csv()`
 
-### [2026-01] threshold 搜索范围过宽会导致 Optuna 优化极慢
-**场景**：RSGateBar 校准时使用 `threshold=(1e-6, 1e-3, "log")` 范围，导致部分 trial 产生过多 fusion bars（数万根），TrendValidator 评估时间从 7 秒暴增到 100+ 秒
-**根因**：threshold 越小 → fusion bars 越多 → TrendValidator 滑动窗口越多 → ADF/KPSS 计算量剧增
-**解决方案**：
-1. 在阶段 3.5 增加「目标 Bar 数量范围」约束：30min K线数量（上限）到 6h K线数量（下限）
-2. 校准脚本增加二分搜索，自动找到目标范围对应的 threshold 边界
-3. 只在该范围内搜索，避免产生过多或过少的 bars
-**教训**：搜索范围不仅要考虑数值正确性，还要考虑计算效率。bar 数量是连接参数和计算成本的关键桥梁
-
-### [2026-01] 运行脚本必须设置 PYTHONPATH
-**场景**：后台运行 `python research/optimize_rs_gate.py` 失败，报错 `ModuleNotFoundError: No module named 'src.bars'`
-**根因**：脚本中使用 `from src.bars.fusion.rs_gate import RSGateBar`，Python 默认不把项目根目录加入 sys.path
-**解决方案**：运行脚本时设置 `PYTHONPATH=/path/to/jesse-trade python script.py`
-**教训**：所有在 `research/` 目录下的脚本如果导入 `src.*` 模块，都需要设置 PYTHONPATH
-
-### [2026-01] 探索比微调更重要：99% 随机探索 + 1% 收束
-**场景**：用户观察到更多 trials 能找到显著更优的参数（如 Trial 221 的 3.2919 vs 早期最优值）
-**决策**：
-1. 将 `EXPLORATION_STARTUP_RATIO` 从 0.8 提高到 0.99
-2. 推荐 trials 数量从 1000 提高到 2500+
-**原理**：
-- 找轴是一个高维搜索问题，参数空间复杂
-- TPE 采样器的 `n_startup_trials` 决定了随机探索阶段的长度
-- 过早收束会陷入局部最优，错过更好的参数组合
-**实现**：`optimizer.py` 中 `EXPLORATION_STARTUP_RATIO = 0.99`，99% 的 trials 用于随机探索，只有最后 1% 用于贝叶斯优化收束
-**教训**：对于复杂参数空间，宁愿多探索也不要过早精细化
-
-### [2026-01] 分层提取避免 bar 少的配置总是占优势
-**场景**：优化结果中 bar 数量少的配置总是得分更高，因为长周期自然趋势性更强
-**根因**：
-- 更少的 bar = 更长的周期 = 噪声被自然平滑
-- Hurst/ADF/KPSS 在长周期数据上更容易显示"趋势性强"
-- 这是时间尺度的固有特性，不是 fusion bar 公式的优势
-**解决方案**：
-1. 新增 `extract_top_n_by_tiers()` 函数，按 bar 数量分 5 层（tier1~tier5）
-2. 每层独立提取 top 5，共 25 个结果
-3. 探索比例提高到 99%，确保各区间均匀采样
-**实现**：
-- `evaluator.py` 新增 `TieredResult` 和 `extract_top_n_by_tiers()`
-- `optimizer.py` 新增 `optimize_and_return_study()` 返回 study 对象
-**教训**：
-- 如果 tier1/tier2 始终显著占优势，说明该轴可能不适合频繁交易
-- 分层分析能暴露这个信号，帮助用户做出明智决策
-
-### [2026-01] 好的趋势轴要求 ≥3分 的窗口占绝大多数
-**场景**：分析 DemoBar 的评估报告，发现其评分分布有明显规律
-**观察**：DemoBar 在各窗口的评分分布：
-```
-窗口    均分   1分    2分    3分    4分    5分
- 20    2.98   10.0%  21.1%  43.4%   2.8%  20.9%  → ≥3分: 67.1%
- 40    3.43    5.5%  14.5%  42.0%   4.3%  33.1%  → ≥3分: 79.4%
- 60    3.41    8.1%  21.3%  25.9%   7.0%  37.0%  → ≥3分: 69.9%
-```
-**结论**：好的趋势轴特征：
-- ≥3分 的窗口比例应占 **绝大多数**（DemoBar 约 67%~80%）
-- 1分+2分 的窗口比例应控制在 **30% 以下**
-- 均分应在 **3.0 以上**
-**教训**：评估 fusion bar 质量时，不仅看综合评分，还要检查评分分布。如果 1分+2分 占比过高（>40%），说明该轴在相当多的市场状态下趋势性不足
-
-### [2026-01] 可按年份纵向分析趋势轴的时间稳定性
-**想法**：将原始 candles 按年份分割（如 2022/2023/2024），分别运行评估，对比各年份的评分分布
-**用途**：
-- 检测趋势轴是否存在"过拟合历史"（早期高分、近期衰减）
-- 分析市场结构变化对该轴的影响
-- 判断该轴的长期适用性
-**实现**：无需新增代码，直接将 candles 按年份切片后分别调用 `evaluate_detailed()` 即可
+### 好的趋势轴特征
+- ≥3分 窗口占比 > 65%
+- 1分+2分 窗口占比 < 35%
+- 均分 > 3.0

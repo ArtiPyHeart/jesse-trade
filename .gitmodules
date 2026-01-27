@@ -7,3 +7,7 @@
 [submodule "extern/AlphaForge"]
 	path = extern/AlphaForge
 	url = https://github.com/DulyHao/AlphaForge.git
+[submodule "jesse"]
+	path = jesse
+	url = https://github.com/ArtiPyHeart/jesse.git
+	branch = patch
