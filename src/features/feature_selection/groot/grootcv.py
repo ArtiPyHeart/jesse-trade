@@ -74,6 +74,8 @@ class GrootCV(SelectorMixin, BaseEstimator):
         计算 SHAP 的最大样本数（可选，下采样减少内存）
     shap_batch_size : int, optional
         计算 SHAP 的批大小（可选，分批减少峰值内存）
+    shap_backend : str, default="auto"
+        SHAP 计算后端: "auto" (默认 shap/fasttreeshap), "shap", "lgb"
 
     Attributes
     ----------
@@ -108,6 +110,7 @@ class GrootCV(SelectorMixin, BaseEstimator):
         random_state: Optional[int] = None,
         shap_max_samples: Optional[int] = None,
         shap_batch_size: Optional[int] = None,
+        shap_backend: Literal["auto", "shap", "lgb"] = "auto",
     ):
         if cutoff <= 0:
             raise ValueError("cutoff 必须大于 0")
@@ -129,6 +132,7 @@ class GrootCV(SelectorMixin, BaseEstimator):
         self.random_state = random_state
         self.shap_max_samples = shap_max_samples
         self.shap_batch_size = shap_batch_size
+        self.shap_backend = shap_backend
 
         # Fitted attributes
         self.feature_names_in_: Optional[np.ndarray] = None
@@ -303,6 +307,7 @@ class GrootCV(SelectorMixin, BaseEstimator):
                 max_samples=self.shap_max_samples,
                 batch_size=self.shap_batch_size,
                 random_state=shap_seed,
+                backend=self.shap_backend,
             )
 
             # 归一化并合并

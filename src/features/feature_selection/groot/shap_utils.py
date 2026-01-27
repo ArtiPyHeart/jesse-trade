@@ -58,6 +58,7 @@ def compute_shap_importance(
     max_samples: Optional[int] = None,
     batch_size: Optional[int] = None,
     random_state: Optional[int] = None,
+    backend: str = "auto",
 ) -> Dict[str, float]:
     """
     计算 SHAP 特征重要性
@@ -80,13 +81,16 @@ def compute_shap_importance(
         SHAP 分批计算的批大小
     random_state : int, optional
         采样随机种子
+    backend : str, default="auto"
+        SHAP 计算后端: "auto" (默认, shap/fasttreeshap), "shap", "lgb"
 
     Returns
     -------
     Dict[str, float]
         特征名到重要性的映射
     """
-    explainer = get_shap_explainer(model, fastshap=fastshap)
+    if backend not in {"auto", "shap", "lgb"}:
+        raise ValueError(f"Invalid backend: {backend}")
 
     if max_samples is not None and len(X) > max_samples:
         X = X.sample(n=max_samples, random_state=random_state)
@@ -95,23 +99,22 @@ def compute_shap_importance(
         batch_size = None if batch_size is None or batch_size <= 0 else batch_size
         n_rows = len(X)
         n_features = X.shape[1]
-        new_shap = _is_new_shap_version()
-        if batch_size is None or batch_size >= n_rows:
-            shap_matrix = explainer.shap_values(X)
-            shap_imp = _aggregate_shap_values(
-                shap_matrix=shap_matrix,
+
+        if backend == "lgb":
+            shap_imp = _compute_lgb_contrib_importance(
+                X=X,
+                model=model,
                 objective=objective,
                 n_features=n_features,
-                new_shap=new_shap,
-                fastshap=fastshap,
                 num_class=num_class,
+                batch_size=batch_size,
             )
         else:
-            shap_sum = None
-            for start in range(0, n_rows, batch_size):
-                X_batch = X.iloc[start : start + batch_size]
-                shap_matrix = explainer.shap_values(X_batch)
-                batch_imp = _aggregate_shap_values(
+            explainer = get_shap_explainer(model, fastshap=fastshap)
+            new_shap = _is_new_shap_version()
+            if batch_size is None or batch_size >= n_rows:
+                shap_matrix = explainer.shap_values(X)
+                shap_imp = _aggregate_shap_values(
                     shap_matrix=shap_matrix,
                     objective=objective,
                     n_features=n_features,
@@ -119,12 +122,29 @@ def compute_shap_importance(
                     fastshap=fastshap,
                     num_class=num_class,
                 )
-                batch_weight = len(X_batch)
-                if shap_sum is None:
-                    shap_sum = np.asarray(batch_imp, dtype=np.float64) * batch_weight
-                else:
-                    shap_sum += np.asarray(batch_imp, dtype=np.float64) * batch_weight
-            shap_imp = shap_sum / n_rows
+            else:
+                shap_sum = None
+                for start in range(0, n_rows, batch_size):
+                    X_batch = X.iloc[start : start + batch_size]
+                    shap_matrix = explainer.shap_values(X_batch)
+                    batch_imp = _aggregate_shap_values(
+                        shap_matrix=shap_matrix,
+                        objective=objective,
+                        n_features=n_features,
+                        new_shap=new_shap,
+                        fastshap=fastshap,
+                        num_class=num_class,
+                    )
+                    batch_weight = len(X_batch)
+                    if shap_sum is None:
+                        shap_sum = (
+                            np.asarray(batch_imp, dtype=np.float64) * batch_weight
+                        )
+                    else:
+                        shap_sum += (
+                            np.asarray(batch_imp, dtype=np.float64) * batch_weight
+                        )
+                shap_imp = shap_sum / n_rows
     except Exception as e:
         raise RuntimeError(f"SHAP 计算失败: {str(e)}")
 
@@ -214,11 +234,86 @@ def _aggregate_shap_values(
             if len(shap_imp) == n_features * num_class:
                 shap_imp = shap_imp.reshape(num_class, n_features).sum(axis=0)
             return shap_imp
-        else:
-            # 二分类或回归
-            if isinstance(shap_matrix, list):
-                shap_matrix = shap_matrix[1]  # 取正类
-            return np.mean(np.abs(shap_matrix[:, :-1]), axis=0)
+        # 二分类或回归
+        if isinstance(shap_matrix, list):
+            shap_matrix = shap_matrix[1]  # 取正类
+        return np.mean(np.abs(shap_matrix[:, :-1]), axis=0)
+
+
+def _compute_lgb_contrib_importance(
+    X: pd.DataFrame,
+    model: lgb.Booster,
+    objective: str,
+    n_features: int,
+    num_class: int = 0,
+    batch_size: Optional[int] = None,
+) -> np.ndarray:
+    """
+    使用 LightGBM 原生 pred_contrib 计算特征重要性（TreeSHAP）
+
+    Returns
+    -------
+    np.ndarray
+        每个特征的重要性分数
+    """
+    n_rows = len(X)
+    if batch_size is None or batch_size >= n_rows:
+        contrib = model.predict(X, pred_contrib=True)
+        shap_sum = _sum_abs_lgb_contrib(
+            contrib=contrib,
+            n_features=n_features,
+            num_class=num_class,
+            objective=objective,
+        )
+        return shap_sum / n_rows
+
+    shap_sum = np.zeros(n_features, dtype=np.float64)
+    for start in range(0, n_rows, batch_size):
+        X_batch = X.iloc[start : start + batch_size]
+        contrib = model.predict(X_batch, pred_contrib=True)
+        shap_sum += _sum_abs_lgb_contrib(
+            contrib=contrib,
+            n_features=n_features,
+            num_class=num_class,
+            objective=objective,
+        )
+    return shap_sum / n_rows
+
+
+def _sum_abs_lgb_contrib(
+    contrib: np.ndarray,
+    n_features: int,
+    num_class: int,
+    objective: str,
+) -> np.ndarray:
+    is_multiclass = objective in [
+        "softmax",
+        "multiclass",
+        "multi_logloss",
+        "multiclassova",
+        "multiclass_ova",
+    ]
+    if num_class > 2:
+        is_multiclass = True
+
+    if is_multiclass:
+        if contrib.ndim == 3:
+            # (n_rows, n_classes, n_features + 1)
+            contrib = contrib[:, :, :n_features]
+            return np.abs(contrib).sum(axis=1).sum(axis=0)
+        n_rows = contrib.shape[0]
+        total_cols = contrib.shape[1]
+        expected = (n_features + 1) * num_class
+        if total_cols != expected:
+            raise ValueError(
+                f"Unexpected contrib shape: {contrib.shape}, expected last dim {expected}"
+            )
+        contrib = contrib.reshape(n_rows, num_class, n_features + 1)[:, :, :n_features]
+        return np.abs(contrib).sum(axis=1).sum(axis=0)
+
+    if contrib.ndim != 2:
+        raise ValueError(f"Unexpected contrib shape: {contrib.shape}")
+    return np.abs(contrib[:, :n_features]).sum(axis=0)
 
 
 def normalize_importance(importance: Dict[str, float]) -> Dict[str, float]:

@@ -8,15 +8,18 @@ Usage:
     python flow_feature_select.py
 """
 
+import gc
+import hashlib
 import json
 from datetime import datetime
 from itertools import product
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-from jesse import helpers, research
 
+from jesse import helpers, research
 from research.labeler.gmm_labeler import GMMLabeler
 from research.utils import align_features_labels
 from src.bars.fusion.demo import DemoBar
@@ -44,9 +47,21 @@ LABEL_TYPES: list[Literal["hard", "direction", "directional_prob"]] = [
 
 # 特征筛选配置
 GROOTCV_CUTOFF = 5
+GROOTCV_SHAP_BACKEND = "lgb"
+GROOTCV_SHAP_BATCH_SIZE = 256
+GROOTCV_SHAP_MAX_SAMPLES = None
+GROOTCV_FASTSHAP = False
 
 # 输出文件
 OUTPUT_FILE = "feature_selection_results.csv"
+
+# 临时特征缓存（memmap）
+TEMP_DIR = Path("temp")
+FEATURE_STORE_PATH = TEMP_DIR / "feature_store.mmap"
+FEATURE_STORE_META_PATH = TEMP_DIR / "feature_store_meta.json"
+FEATURE_STORE_DTYPE = np.float32
+FEATURE_STORE_CLEAR_CACHE_EVERY = 128
+FEATURE_STORE_FORCE_REBUILD = False
 
 # ============================================================================
 # 特征列表构建
@@ -124,6 +139,78 @@ lag_feats = [f"{i}_lag{lag}" for i in _feats for lag in range(1, 4)]
 FEATURE_NAMES = _feats + phent_feats + lag_feats
 
 
+def _hash_feature_names(feature_names: list[str]) -> str:
+    hasher = hashlib.sha256()
+    for name in feature_names:
+        hasher.update(name.encode("utf-8"))
+        hasher.update(b"\n")
+    return hasher.hexdigest()
+
+
+def _load_feature_store_meta(meta_path: Path) -> dict | None:
+    if not meta_path.exists():
+        return None
+    try:
+        with meta_path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _build_or_load_feature_store(
+    calc: SimpleFeatureCalculator,
+    candles: np.ndarray,
+    feature_names: list[str],
+) -> np.memmap:
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    n_rows = len(candles)
+    n_cols = len(feature_names)
+    feature_hash = _hash_feature_names(feature_names)
+    candles_hash = hashlib.sha256(candles.tobytes()).hexdigest()
+    dtype_name = np.dtype(FEATURE_STORE_DTYPE).name
+
+    meta = _load_feature_store_meta(FEATURE_STORE_META_PATH)
+    if (
+        not FEATURE_STORE_FORCE_REBUILD
+        and meta is not None
+        and meta.get("n_rows") == n_rows
+        and meta.get("n_cols") == n_cols
+        and meta.get("dtype") == dtype_name
+        and meta.get("feature_hash") == feature_hash
+        and meta.get("candles_hash") == candles_hash
+        and FEATURE_STORE_PATH.exists()
+    ):
+        return np.memmap(
+            FEATURE_STORE_PATH,
+            dtype=FEATURE_STORE_DTYPE,
+            mode="r",
+            shape=(n_rows, n_cols),
+        )
+
+    print("\n[2/3] 计算全局特征并写入 memmap...")
+    mmap = calc.compute_to_memmap(
+        feature_names,
+        FEATURE_STORE_PATH,
+        dtype=FEATURE_STORE_DTYPE,
+        clear_cache_every=FEATURE_STORE_CLEAR_CACHE_EVERY,
+    )
+    calc.clear_cache()
+
+    meta_out = {
+        "n_rows": n_rows,
+        "n_cols": n_cols,
+        "dtype": dtype_name,
+        "feature_hash": feature_hash,
+        "candles_hash": candles_hash,
+        "start": START,
+        "end": END,
+    }
+    with FEATURE_STORE_META_PATH.open("w", encoding="utf-8") as f:
+        json.dump(meta_out, f)
+
+    return mmap
+
+
 def run_single_selection(
     features_df: pd.DataFrame,
     candles: np.ndarray,
@@ -177,7 +264,13 @@ def run_single_selection(
     print(f"对齐后: {len(aligned_features)} 样本, {aligned_features.shape[1]} 特征")
 
     # 3. 特征筛选
-    groot_config = GrootCVConfig(cutoff=cutoff)
+    groot_config = GrootCVConfig(
+        cutoff=cutoff,
+        shap_backend=GROOTCV_SHAP_BACKEND,
+        shap_batch_size=GROOTCV_SHAP_BATCH_SIZE,
+        shap_max_samples=GROOTCV_SHAP_MAX_SAMPLES,
+        fastshap=GROOTCV_FASTSHAP,
+    )
     selector = GrootCVSelector(config=groot_config, verbose=True)
     selector.fit(aligned_features, aligned_labels)
 
@@ -205,6 +298,10 @@ def main():
     print(f"PRED_NEXT_STEPS: {PRED_NEXT_STEPS}")
     print(f"LABEL_TYPES: {LABEL_TYPES}")
     print(f"GROOTCV_CUTOFF: {GROOTCV_CUTOFF}")
+    print(f"GROOTCV_SHAP_BACKEND: {GROOTCV_SHAP_BACKEND}")
+    print(f"GROOTCV_SHAP_BATCH_SIZE: {GROOTCV_SHAP_BATCH_SIZE}")
+    print(f"GROOTCV_SHAP_MAX_SAMPLES: {GROOTCV_SHAP_MAX_SAMPLES}")
+    print(f"GROOTCV_FASTSHAP: {GROOTCV_FASTSHAP}")
     print(f"特征数量: {len(FEATURE_NAMES)}")
     print("=" * 60)
 
@@ -229,14 +326,20 @@ def main():
     print(f"Fusion K 线数据: {candles.shape}")
 
     # 2. 计算全局特征（只计算一次）
-    print("\n[2/3] 计算全局特征...")
+    print("\n[2/3] 准备全局特征...")
     calc = SimpleFeatureCalculator(verbose=True)
     calc.load(candles, sequential=True)
 
-    # 批量获取特征
-    features_dict = calc.get(FEATURE_NAMES)
-    features_df = pd.DataFrame(features_dict)
-    print(f"全局特征: {features_df.shape}")
+    feature_store = _build_or_load_feature_store(calc, candles, FEATURE_NAMES)
+    features_df = pd.DataFrame(feature_store, columns=FEATURE_NAMES, copy=False)
+    print(
+        f"全局特征: {features_df.shape}, dtype={FEATURE_STORE_DTYPE}, "
+        f"memmap={FEATURE_STORE_PATH}"
+    )
+    calc.clear_cache()
+    del calc
+
+    gc.collect()
 
     # 3. 遍历所有参数组合进行筛选
     print("\n[3/3] 开始批量特征筛选...")
