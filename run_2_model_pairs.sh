@@ -68,7 +68,7 @@ if $CLEAN; then
         models_part="${dir_name%_vectorized_*}"
 
         # 计算模型数量（通过匹配模型名模式）
-        model_count=$(echo "$models_part" | grep -oE '[cr]_L[0-9]+_N[0-9]+' | wc -l | tr -d ' ')
+        model_count=$(echo "$models_part" | grep -oE '(c|r2|r)_L[0-9]+_N[0-9]+' | wc -l | tr -d ' ')
 
         # 只处理2模型组合
         [[ "$model_count" -ne 2 ]] && continue
@@ -180,7 +180,7 @@ is_pair_completed() {
 
 # 获取所有模型名称
 MODELS_FILE=$(mktemp)
-ls "$MODEL_DIR" | grep -E '^[cr]_L[0-9]+_N[0-9]+$' | sort > "$MODELS_FILE"
+ls "$MODEL_DIR" | grep -E '^(c|r2|r)_L[0-9]+_N[0-9]+$' | sort > "$MODELS_FILE"
 
 NUM_MODELS=$(wc -l < "$MODELS_FILE" | tr -d ' ')
 TOTAL_PAIRS=$((NUM_MODELS * (NUM_MODELS - 1) / 2))

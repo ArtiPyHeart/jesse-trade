@@ -34,9 +34,13 @@ START = "2022-08-01"
 END = "2025-06-01"
 
 # 搜索参数
-LOG_RETURN_LAGS = [4, 5, 6, 7, 8, 9]  # GMMLabeler 的 lag_n
+LOG_RETURN_LAGS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]  # GMMLabeler 的 lag_n
 PRED_NEXT_STEPS = [1, 2, 3]  # 预测时间范围
-LABEL_TYPES: list[Literal["hard", "direction"]] = ["hard", "direction"]
+LABEL_TYPES: list[Literal["hard", "direction", "directional_prob"]] = [
+    "hard",
+    "direction",
+    "directional_prob",
+]
 
 # 特征筛选配置
 GROOTCV_CUTOFF = 5
@@ -47,7 +51,7 @@ OUTPUT_FILE = "feature_selection_results.csv"
 # ============================================================================
 # 特征列表构建
 # ============================================================================
-WINDOW = 20
+WINDOWS = [20, 40, 60]
 
 # 基础 OHLC dt 特征
 BASIC = ["bar_open_dt", "bar_high_dt", "bar_low_dt", "bar_close_dt"]
@@ -57,30 +61,30 @@ KEY_VOLATILITY_INDICATORS = ["natr", "bekker_parkinson_vol", "corwin_schultz_est
 KEY_MOMENTUM_INDICATORS = ["williams_r", "fisher", "mod_rsi", "adaptive_rsi"]
 KEY_INDICATORS = BASIC + KEY_VOLATILITY_INDICATORS + KEY_MOMENTUM_INDICATORS
 
-# 基础 OHLC 的高级变换特征
-basic_hurst_feats = [f"{i}_hurst{WINDOW}" for i in BASIC]
-basic_curv_feats = [f"{i}_curv{WINDOW}" for i in BASIC]
-basic_phent_feats = [f"{i}_phent{WINDOW}" for i in BASIC]
+# 基础 OHLC 的高级变换特征（多窗口）
+basic_hurst_feats = [f"{i}_hurst{w}" for i in BASIC for w in WINDOWS]
+basic_curv_feats = [f"{i}_curv{w}" for i in BASIC for w in WINDOWS]
+basic_phent_feats = [f"{i}_phent{w}" for i in BASIC for w in WINDOWS]
 
-# 所有 BUILDIN_FEATURES 的统计特征
-mean_feats = [f"{i}_mean{WINDOW}" for i in BUILDIN_FEATURES]
-median_feats = [f"{i}_median{WINDOW}" for i in BUILDIN_FEATURES]
-std_feats = [f"{i}_std{WINDOW}" for i in BUILDIN_FEATURES]
-skew_feats = [f"{i}_skew{WINDOW}" for i in BUILDIN_FEATURES]
-kurt_feats = [f"{i}_kurt{WINDOW}" for i in BUILDIN_FEATURES]
+# 所有 BUILDIN_FEATURES 的统计特征（多窗口）
+mean_feats = [f"{i}_mean{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
+median_feats = [f"{i}_median{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
+std_feats = [f"{i}_std{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
+skew_feats = [f"{i}_skew{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
+kurt_feats = [f"{i}_kurt{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
 
-# 极值特征（支撑阻力、突破检测）
-max_feats = [f"{i}_max{WINDOW}" for i in KEY_INDICATORS]
-min_feats = [f"{i}_min{WINDOW}" for i in KEY_INDICATORS]
+# 极值特征（支撑阻力、突破检测）（多窗口）
+max_feats = [f"{i}_max{w}" for i in KEY_INDICATORS for w in WINDOWS]
+min_feats = [f"{i}_min{w}" for i in KEY_INDICATORS for w in WINDOWS]
 
-# 归一化特征（相对位置、超买超卖）
-norm_feats = [f"{i}_norm{WINDOW}" for i in KEY_INDICATORS]
-zscore_feats = [f"{i}_zscore{WINDOW}" for i in KEY_INDICATORS]
+# 归一化特征（相对位置、超买超卖）（多窗口）
+norm_feats = [f"{i}_norm{w}" for i in KEY_INDICATORS for w in WINDOWS]
+zscore_feats = [f"{i}_zscore{w}" for i in KEY_INDICATORS for w in WINDOWS]
 
-# 高级拓扑/分形特征
-hurst_feats = [f"{i}_hurst{WINDOW}" for i in BUILDIN_FEATURES]
-curv_feats = [f"{i}_curv{WINDOW}" for i in BUILDIN_FEATURES]
-phent_feats = [f"{i}_phent{WINDOW}" for i in BUILDIN_FEATURES]
+# 高级拓扑/分形特征（多窗口）
+hurst_feats = [f"{i}_hurst{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
+curv_feats = [f"{i}_curv{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
+phent_feats = [f"{i}_phent{w}" for i in BUILDIN_FEATURES for w in WINDOWS]
 
 # 差分特征（动量）
 dt_feats = [f"{i}_dt" for i in BUILDIN_FEATURES]
@@ -125,7 +129,7 @@ def run_single_selection(
     candles: np.ndarray,
     log_return_lag: int,
     pred_next: int,
-    label_type: Literal["hard", "direction"],
+    label_type: Literal["hard", "direction", "directional_prob"],
     cutoff: float,
 ) -> dict:
     """
@@ -154,8 +158,12 @@ def run_single_selection(
     gmm_random_state = labeler.random_state  # 记录 GMM 的 seed，供后续 build 复现
     if label_type == "hard":
         raw_labels = labeler.label_hard_state
-    else:
+    elif label_type == "direction":
         raw_labels = labeler.label_direction_force
+    elif label_type == "directional_prob":
+        raw_labels = labeler.label_directional_prob
+    else:
+        raise ValueError(f"Unknown label_type: {label_type}")
 
     print(f"标签生成完成: {len(raw_labels)} 样本, GMM seed={gmm_random_state}")
 

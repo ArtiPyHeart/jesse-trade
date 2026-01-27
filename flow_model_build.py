@@ -346,7 +346,7 @@ def build_single_model(
     candles: np.ndarray,
     log_return_lag: int,
     pred_next: int,
-    label_type: Literal["hard", "direction"],
+    label_type: Literal["hard", "direction", "directional_prob"],
     selected_features: list[str],
     gmm_random_state: int,
     models_dir: Path,
@@ -368,7 +368,15 @@ def build_single_model(
         包含构建结果的字典
     """
     # 1. 确定模型类型和名称
-    model_type = "c" if label_type == "hard" else "r"
+    # hard -> c (分类), direction -> r (回归), directional_prob -> r2 (回归)
+    if label_type == "hard":
+        model_type = "c"
+    elif label_type == "direction":
+        model_type = "r"
+    elif label_type == "directional_prob":
+        model_type = "r2"
+    else:
+        raise ValueError(f"Unknown label_type: {label_type}")
     model_name = f"{model_type}_L{log_return_lag}_N{pred_next}"
     model_dir = models_dir / model_name
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -386,8 +394,12 @@ def build_single_model(
     )
     if label_type == "hard":
         raw_labels = labeler.label_hard_state
-    else:
+    elif label_type == "direction":
         raw_labels = labeler.label_direction_force
+    elif label_type == "directional_prob":
+        raw_labels = labeler.label_directional_prob
+    else:
+        raise ValueError(f"Unknown label_type: {label_type}")
 
     # 3. 提取选定特征并对齐
     print("\n[2/6] 对齐特征和标签...")
@@ -424,9 +436,11 @@ def build_single_model(
     if label_type == "hard":
         best_params, cv_score = tune_classifier(reduced_df, aligned_labels)
         print(f"最优 F1: {cv_score:.4f}")
-    else:
+    elif label_type in ("direction", "directional_prob"):
         best_params, cv_score = tune_regressor(reduced_df, aligned_labels)
         print(f"最优 R²: {cv_score:.4f}")
+    else:
+        raise ValueError(f"Unknown label_type: {label_type}")
 
     # 6. 全量训练最终模型
     print("\n[5/6] 全量训练...")
@@ -543,9 +557,14 @@ def main():
             results.append(result)
         except Exception as e:
             print(f"[ERROR] 构建失败: {e}")
+            # 根据 label_type 确定模型前缀
+            lt = row["label_type"]
+            prefix = (
+                "c" if lt == "hard" else ("r2" if lt == "directional_prob" else "r")
+            )
             results.append(
                 {
-                    "model_name": f"{row['label_type'][0]}_L{row['log_return_lag']}_N{row['pred_next']}",
+                    "model_name": f"{prefix}_L{row['log_return_lag']}_N{row['pred_next']}",
                     "error": str(e),
                 }
             )

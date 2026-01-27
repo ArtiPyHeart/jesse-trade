@@ -31,6 +31,18 @@
 原始 Candles -> Fusion Bars -> 特征计算 -> 模型预测
 ```
 
+### 模型类型与标签
+| 前缀 | label_type | 标签方法 | threshold | 说明 |
+|------|-----------|---------|-----------|------|
+| `c_` | hard | `label_hard_state` | 0.5 | 二分类 (0/1) |
+| `r_` | direction | `label_direction_force` | 0.0 | 回归 [-1,1], 对称分布 |
+| `r2_` | directional_prob | `label_directional_prob` | 0.0 | 回归, 非对称概率 |
+
+- 模型命名: `{type}_L{lag}_N{pred_next}` (如 `c_L4_N3`, `r_L4_N2`, `r2_L5_N3`)
+- 特征筛选: `flow_feature_select.py`
+- 模型构建: `flow_model_build.py`
+- 配置解析: `strategies/BinanceBtcDemoBar/models/config.py`
+
 ### 特征计算
 - 原始特征: `SimpleFeatureCalculator` (普通特征直接用, fracdiff 需进一步处理)
 - SSM 推理: fracdiff 特征 -> `SSM.inference()` -> SSM 特征

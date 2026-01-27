@@ -33,6 +33,18 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 原始 Candles → Fusion Bars → 特征计算 → 模型预测
 ```
 
+### 模型类型与标签
+| 前缀 | label_type | 标签方法 | threshold | 说明 |
+|------|-----------|---------|-----------|------|
+| `c_` | hard | `label_hard_state` | 0.5 | 二分类 (0/1) |
+| `r_` | direction | `label_direction_force` | 0.0 | 回归 [-1,1]，对称分布 |
+| `r2_` | directional_prob | `label_directional_prob` | 0.0 | 回归，非对称概率 |
+
+- 模型命名格式：`{type}_L{lag}_N{pred_next}`，如 `c_L4_N3`、`r_L4_N2`、`r2_L5_N3`
+- 相关文件：`flow_feature_select.py`（特征筛选）、`flow_model_build.py`（模型构建）
+- 配置解析：`strategies/BinanceBtcDemoBar/models/config.py` 的 `model_name_to_params()`
+
+### 特征计算流程
 1. **计算原始特征**（SimpleFeatureCalculator）：普通特征直接用于模型，fracdiff特征需SSM处理
 2. **SSM 推理**：fracdiff特征 → `SSM.inference()` → SSM特征
 3. **特征拼接**：`[SSM特征, 原始特征]` → 完整特征DataFrame
