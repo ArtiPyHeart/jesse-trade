@@ -38,16 +38,16 @@ from src.bars.fusion.demo import DemoBar
 from src.features.dimensionality_reduction import ARDVAE, ARDVAEConfig
 from src.features.simple_feature_calculator import SimpleFeatureCalculator
 from src.utils.drop_na import drop_na_and_align_x_and_y
-from src.utils.env_dates import get_env_date, load_env_values
+from src.utils.env_dates import get_env_date, get_env_value, load_env_values
 
 # ============================================================================
 # 配置参数
 # ============================================================================
 # 策略设定
-STRATEGY = "BnBtcDemoBar"
+ENV_VALUES = load_env_values(Path(".env"))
+STRATEGY = get_env_value("STRATEGY_NAME", ENV_VALUES)
 
 # 训练集时间范围（与 flow_feature_select.py 一致）
-ENV_VALUES = load_env_values(Path(".env"))
 TRAIN_START = get_env_date("TRAIN_START_DATE", ENV_VALUES)
 TRAIN_END = get_env_date("TRAIN_END_DATE", ENV_VALUES)
 

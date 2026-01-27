@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from src.utils.env_dates import get_env_date, load_env_values
+from src.utils.env_dates import get_env_date, get_env_value, load_env_values
 
 
 def test_load_env_values_reads_file(tmp_path: Path) -> None:
@@ -26,6 +26,14 @@ def test_get_env_date_prefers_os_environ(
 
     monkeypatch.setenv("TRAIN_START_DATE", "2022-09-01")
     assert get_env_date("TRAIN_START_DATE", values) == "2022-09-01"
+
+
+def test_get_env_value_uses_default_when_missing(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("", encoding="utf-8")
+    values = load_env_values(env_path)
+
+    assert get_env_value("STRATEGY_NAME", values, default="Demo") == "Demo"
 
 
 def test_get_env_date_missing_raises(tmp_path: Path) -> None:

@@ -17,6 +17,7 @@
 
 import argparse
 import json
+from importlib import import_module
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -38,12 +39,14 @@ from src.backtest import (
 from src.bars.fusion.demo import DemoBar
 from src.features.dimensionality_reduction import ARDVAE
 from src.features.simple_feature_calculator import SimpleFeatureCalculator
-from src.utils.env_dates import get_env_date, load_env_values
+from src.utils.env_dates import get_env_date, get_env_value, load_env_values
 from src.utils.feature_warmup import determine_warmup_start_idx
-from strategies.BinanceBtcDemoBar.models.config import (
-    LGBMContainer,
-    model_name_to_params,
-)
+
+
+def _load_strategy_config(strategy: str):
+    module = import_module(f"strategies.{strategy}.models.config")
+    return module.LGBMContainer, module.model_name_to_params
+
 
 # === 配置参数 ===
 STARTING_BALANCE = 10000.0
@@ -55,12 +58,15 @@ MIN_FUSION_BARS = 512
 
 # 默认模型（可通过命令行覆盖）
 DEFAULT_MODELS = ["c_L6_N1", "r_L5_N2"]
-MODEL_DIR = Path("strategies/BinanceBtcDemoBar/models")
 
 # 回测时间范围
 ENV_VALUES = load_env_values(Path(".env"))
+STRATEGY = get_env_value("STRATEGY_NAME", ENV_VALUES)
 TEST_START = get_env_date("TEST_START_DATE", ENV_VALUES)
 TEST_END = get_env_date("TEST_END_DATE", ENV_VALUES)
+
+MODEL_DIR = Path(f"strategies/{STRATEGY}/models")
+LGBMContainer, model_name_to_params = _load_strategy_config(STRATEGY)
 
 
 # === 数据结构 ===
