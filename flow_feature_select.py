@@ -29,6 +29,10 @@ from src.features.simple_feature_calculator.buildin.feature_names import (
     BUILDIN_FEATURES,
 )
 from src.utils.env_dates import get_env_date, load_env_values
+from src.utils.feature_selection_io import (
+    append_selection_row,
+    load_existing_selection_keys,
+)
 
 # ============================================================================
 # 配置参数
@@ -347,10 +351,21 @@ def main():
     print("\n[3/3] 开始批量特征筛选...")
     combinations = list(product(LOG_RETURN_LAGS, PRED_NEXT_STEPS, LABEL_TYPES))
     total = len(combinations)
-    results = []
+    output_path = Path(OUTPUT_FILE)
+    existing_keys = load_existing_selection_keys(output_path)
+    if existing_keys:
+        print(f"检测到已有结果: {len(existing_keys)} 条，将跳过重复组合")
+    new_summary = []
 
     for idx, (log_return_lag, pred_next, label_type) in enumerate(combinations, 1):
         print(f"\n进度: {idx}/{total}")
+        key = (log_return_lag, pred_next, label_type)
+        if key in existing_keys:
+            print(
+                f"[SKIP] 已存在: log_return_lag={log_return_lag}, "
+                f"pred_next={pred_next}, label_type={label_type}"
+            )
+            continue
         try:
             result = run_single_selection(
                 features_df=features_df,
@@ -360,7 +375,17 @@ def main():
                 label_type=label_type,
                 cutoff=GROOTCV_CUTOFF,
             )
-            results.append(result)
+            append_selection_row(output_path, result)
+            existing_keys.add(key)
+            new_summary.append(
+                {
+                    "log_return_lag": result["log_return_lag"],
+                    "pred_next": result["pred_next"],
+                    "label_type": result["label_type"],
+                    "n_total_features": result["n_total_features"],
+                    "n_selected_features": result["n_selected_features"],
+                }
+            )
         except Exception as e:
             print(
                 f"[ERROR] log_return_lag={log_return_lag}, pred_next={pred_next}, "
@@ -369,27 +394,29 @@ def main():
             continue
 
     # 4. 保存结果
-    if results:
-        df = pd.DataFrame(results)
-        df.to_csv(OUTPUT_FILE, index=False)
+    if output_path.exists():
         print(f"\n{'=' * 60}")
         print(f"完成! 结果已保存到: {OUTPUT_FILE}")
-        print(f"共 {len(results)} 条记录")
+        print(f"本次新增: {len(new_summary)} 条, 已存在: {len(existing_keys)} 条")
         print("=" * 60)
 
         # 打印汇总
-        print("\n筛选结果汇总:")
-        print(
-            df[
-                [
-                    "log_return_lag",
-                    "pred_next",
-                    "label_type",
-                    "n_total_features",
-                    "n_selected_features",
-                ]
-            ].to_string()
-        )
+        if new_summary:
+            df = pd.DataFrame(new_summary)
+            print("\n本次新增筛选结果汇总:")
+            print(
+                df[
+                    [
+                        "log_return_lag",
+                        "pred_next",
+                        "label_type",
+                        "n_total_features",
+                        "n_selected_features",
+                    ]
+                ].to_string()
+            )
+        else:
+            print("\n本次没有新增筛选结果")
     else:
         print("\n[WARNING] 没有成功的筛选结果")
 

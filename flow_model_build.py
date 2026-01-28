@@ -17,6 +17,7 @@ Usage:
     python flow_model_build.py
 """
 
+import argparse
 import gc
 import hashlib
 import json
@@ -45,6 +46,7 @@ from src.utils.feature_store import (
     is_feature_store_compatible,
     load_feature_store_meta,
 )
+from src.utils.model_build_resume import model_artifacts_exist
 
 # ============================================================================
 # 配置参数
@@ -566,13 +568,27 @@ def build_single_model(
 # ============================================================================
 # 主函数
 # ============================================================================
-def main():
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Flow Model Build - 批量模型构建")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="强制全量重新训练，忽略已存在的模型产物",
+    )
+    return parser.parse_args()
+
+
+def main(force_rebuild: bool = False) -> None:
     print("=" * 60)
     print("Flow Model Build - 批量模型构建")
     print("=" * 60)
     print(f"策略: {STRATEGY}")
     print(f"训练集: {TRAIN_START} ~ {TRAIN_END}")
     print(f"模型目录: {MODELS_DIR}")
+    if force_rebuild:
+        print("模式: 强制全量重新训练 (--force)")
+    else:
+        print("模式: 自动跳过已训练模型 (可用 --force 覆盖)")
 
     # 1. 读取特征筛选结果 + 提取实际需要的特征
     print("\n[1/4] 读取特征筛选结果...")
@@ -631,6 +647,22 @@ def main():
         print("#" * 60)
 
         selected_features = json.loads(row["selected_features"])
+        model_prefix = (
+            "c"
+            if row["label_type"] == "hard"
+            else ("r2" if row["label_type"] == "directional_prob" else "r")
+        )
+        model_name = f"{model_prefix}_L{row['log_return_lag']}_N{row['pred_next']}"
+        model_dir = MODELS_DIR / model_name
+        if not force_rebuild and model_artifacts_exist(model_dir, model_name):
+            print(f"[SKIP] 已存在模型产物: {model_name}")
+            results.append(
+                {
+                    "model_name": model_name,
+                    "skipped": True,
+                }
+            )
+            continue
 
         try:
             result = build_single_model(
@@ -646,14 +678,9 @@ def main():
             results.append(result)
         except Exception as e:
             print(f"[ERROR] 构建失败: {e}")
-            # 根据 label_type 确定模型前缀
-            lt = row["label_type"]
-            prefix = (
-                "c" if lt == "hard" else ("r2" if lt == "directional_prob" else "r")
-            )
             results.append(
                 {
-                    "model_name": f"{prefix}_L{row['log_return_lag']}_N{row['pred_next']}",
+                    "model_name": model_name,
                     "error": str(e),
                 }
             )
@@ -680,4 +707,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = _parse_args()
+    main(force_rebuild=args.force)
