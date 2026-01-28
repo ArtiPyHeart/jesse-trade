@@ -135,7 +135,7 @@ _feats = (
 )
 
 # 滞后特征（时序信息）
-lag_feats = [f"{i}_lag{lag}" for i in _feats for lag in range(1, 4)]
+lag_feats = [f"{i}_lag{lag}" for i in _feats for lag in range(1, 6)]
 
 # 完整特征集
 FEATURE_NAMES = _feats + phent_feats + lag_feats
