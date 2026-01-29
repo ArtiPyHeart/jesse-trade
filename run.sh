@@ -1,8 +1,4 @@
 #!/bin/bash
 
-# 检查是否为 Linux 系统
-if [[ "$(uname)" == "Linux" ]]; then
-    systemctl restart pgbouncer
-fi
-
+# 直连 PostgreSQL，不再依赖 PgBouncer
 jesse run
