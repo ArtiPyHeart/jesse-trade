@@ -640,10 +640,6 @@ else
     echo "✓ storage/ 目录已存在"
 fi
 
-if [ "$(uname)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
-    systemctl restart pgbouncer
-fi
-
 echo ""
 echo "=========================================="
 echo "✓ 安装成功完成！"
