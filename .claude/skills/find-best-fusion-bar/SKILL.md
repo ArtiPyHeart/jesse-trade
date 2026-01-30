@@ -183,8 +183,8 @@ study = optimizer.optimize_and_return_study(
     threshold=(..., ..., "log"),
 )
 
-# 分层提取 (5 tier × 5 rank = 25 条)
-tiered = extract_top_n_by_tiers(study, TARGET_BAR_RANGE, n_per_tier=5)
+# 分层提取 (10 tier × 5 rank = 50 条)
+tiered = extract_top_n_by_tiers(study, TARGET_BAR_RANGE, n_per_tier=5)  # 默认 10 分区
 
 # 用 pandas 保存 CSV（简洁！）
 rows = []
@@ -212,9 +212,9 @@ PYTHONPATH=/path/to/jesse-trade python research/optimize_{name}.py
 
 **重要：最终参数由用户决定，不要自动选择！**
 
-分层结果（5 tier）便于权衡：
+分层结果（10 tier）便于权衡：
 - **tier1**（bar 最少）：趋势性可能最强，但交易机会最少
-- **tier5**（bar 最多）：交易机会多，但趋势性可能略低
+- **tier10**（bar 最多）：交易机会多，但趋势性可能略低
 
 用户选择后：
 1. 更新 class 默认参数
