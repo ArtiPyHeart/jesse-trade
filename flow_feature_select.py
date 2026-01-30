@@ -72,7 +72,7 @@ FEATURE_STORE_FORCE_REBUILD = False
 # ============================================================================
 # 特征列表构建
 # ============================================================================
-WINDOWS = [20, 40, 60]
+WINDOWS = [20]
 
 # 基础 OHLC dt 特征
 BASIC = ["bar_open_dt", "bar_high_dt", "bar_low_dt", "bar_close_dt"]
@@ -139,7 +139,7 @@ _feats = (
 )
 
 # 滞后特征（时序信息）
-lag_feats = [f"{i}_lag{lag}" for i in _feats for lag in range(1, 6)]
+lag_feats = [f"{i}_lag{lag}" for i in _feats for lag in range(1, 9)]
 
 # 完整特征集
 FEATURE_NAMES = _feats + phent_feats + lag_feats
