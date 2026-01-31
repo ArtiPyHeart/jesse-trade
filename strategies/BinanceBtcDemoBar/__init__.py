@@ -14,10 +14,7 @@ from joblib.parallel import register_parallel_backend
 from src.bars.fusion.demo import DemoBar
 from src.features.dimensionality_reduction import ARDVAE
 from src.features.simple_feature_calculator import SimpleFeatureCalculator
-from .models.config import (
-    model_name_to_params,
-    LGBMContainer,
-)
+from src.models.lgbm_container import LGBMContainer, model_name_to_params
 
 # joblib设置
 # ① 主线程启动时就建好进程池
@@ -135,7 +132,9 @@ class BinanceBtcDemoBar(Strategy):
 
     def _init_models(self):
         for m in MODELS:
-            model_container = LGBMContainer(*model_name_to_params(m))
+            model_container = LGBMContainer(
+                *model_name_to_params(m), model_dir=MODEL_DIR
+            )
             model_container.is_livetrading = self.is_livetrading
             setattr(self, f"model_{m}", model_container)
 

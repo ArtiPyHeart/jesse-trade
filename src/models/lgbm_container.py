@@ -65,26 +65,26 @@ def model_name_to_params(name: str) -> tuple[str, int, int, float]:
     """
     # 分割模型名称，格式为 "{model_type}_L{lag}_N{pred_next}"
     parts = name.split("_")
-    assert len(parts) == 3, (
-        f"Invalid model name format: {name}, expected format: {{model_type}}_L{{lag}}_N{{pred_next}}"
-    )
+    assert (
+        len(parts) == 3
+    ), f"Invalid model name format: {name}, expected format: {{model_type}}_L{{lag}}_N{{pred_next}}"
 
     # 提取 model_type
     model_type = parts[0]
-    assert model_type.startswith(("c", "r")), (
-        f"Invalid model_type: {model_type}, expected to start with 'c' or 'r'"
-    )
+    assert model_type.startswith(
+        ("c", "r")
+    ), f"Invalid model_type: {model_type}, expected to start with 'c' or 'r'"
 
     # 提取 lag (去掉 "L" 前缀)
-    assert parts[1].startswith("L"), (
-        f"Invalid lag format: {parts[1]}, expected 'L' prefix"
-    )
+    assert parts[1].startswith(
+        "L"
+    ), f"Invalid lag format: {parts[1]}, expected 'L' prefix"
     lag = int(parts[1][1:])
 
     # 提取 pred_next (去掉 "N" 前缀)
-    assert parts[2].startswith("N"), (
-        f"Invalid pred_next format: {parts[2]}, expected 'N' prefix"
-    )
+    assert parts[2].startswith(
+        "N"
+    ), f"Invalid pred_next format: {parts[2]}, expected 'N' prefix"
     pred_next = int(parts[2][1:])
 
     # 根据 model_type 设置 threshold
@@ -101,9 +101,11 @@ class LGBMContainer:
         lag: int,
         pred_next: int,
         threshold: float,
+        model_dir: Path | str,
     ):
         self.MODEL_NAME = f"{model_type}_L{lag}_N{pred_next}"
-        self._model_dir = Path(__file__).parent / self.MODEL_NAME
+        self._models_root = Path(model_dir)
+        self._model_dir = self._models_root / self.MODEL_NAME
 
         self._is_livetrading = False
         self._model = None
@@ -227,14 +229,12 @@ class LGBMContainer:
         保存过滤器配置到JSON文件（按置信度从低到高排序）
 
         Args:
-            filepath: 保存路径，默认为 model_<MODEL_NAME>_filters.json
+            filepath: 保存路径，默认保存到当前模型目录下：
+                strategies/<strategy_name>/models/<MODEL_NAME>/model_<MODEL_NAME>_filters.json
+                例如：strategies/BinanceBtcDemoBar/models/c_L5_N1/model_c_L5_N1_filters.json
         """
         if filepath is None:
-            filepath = (
-                self._model_dir
-                / self.MODEL_NAME
-                / f"model_{self.MODEL_NAME}_filters.json"
-            )
+            filepath = self._model_dir / f"model_{self.MODEL_NAME}_filters.json"
         else:
             filepath = Path(filepath)
 
@@ -254,11 +254,7 @@ class LGBMContainer:
             filepath: 加载路径，默认为 model_<MODEL_NAME>_filters.json
         """
         if filepath is None:
-            filepath = (
-                self._model_dir
-                / self.MODEL_NAME
-                / f"model_{self.MODEL_NAME}_filters.json"
-            )
+            filepath = self._model_dir / f"model_{self.MODEL_NAME}_filters.json"
         else:
             filepath = Path(filepath)
 
@@ -274,9 +270,7 @@ class LGBMContainer:
 
     def _auto_load_filters(self):
         """初始化时自动加载filter配置（如果存在）"""
-        filter_path = (
-            self._model_dir / self.MODEL_NAME / f"model_{self.MODEL_NAME}_filters.json"
-        )
+        filter_path = self._model_dir / f"model_{self.MODEL_NAME}_filters.json"
         if filter_path.exists():
             try:
                 with open(filter_path, "r") as f:
