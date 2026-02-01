@@ -33,6 +33,18 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 原始 Candles → Fusion Bars → 特征计算 → 模型预测
 ```
 
+### 模型类型与标签
+| 前缀 | label_type | 标签方法 | threshold | 说明 |
+|------|-----------|---------|-----------|------|
+| `c_` | hard | `label_hard_state` | 0.5 | 二分类 (0/1) |
+| `r_` | direction | `label_direction_force` | 0.0 | 回归 [-1,1]，对称分布 |
+| `r2_` | directional_prob | `label_directional_prob` | 0.0 | 回归，非对称概率 |
+
+- 模型命名格式：`{type}_L{lag}_N{pred_next}`，如 `c_L4_N3`、`r_L4_N2`、`r2_L5_N3`
+- 相关文件：`flow_feature_select.py`（特征筛选）、`flow_model_build.py`（模型构建）
+- 配置解析：`strategies/BinanceBtcDemoBar/models/config.py` 的 `model_name_to_params()`
+
+### 特征计算流程
 1. **计算原始特征**（SimpleFeatureCalculator）：普通特征直接用于模型，fracdiff特征需SSM处理
 2. **SSM 推理**：fracdiff特征 → `SSM.inference()` → SSM特征
 3. **特征拼接**：`[SSM特征, 原始特征]` → 完整特征DataFrame
@@ -60,38 +72,84 @@ ruff check <file> && ruff format <file>  # 代码质量检查
 ## 开发工具
 
 ### Codex 技术指导
-遇到算法/架构问题时，通过 mcp-shell-server 调用 codex 获取专业建议：
-```bash
-cd /Users/yangqiuyu/Github/jesse-trade && codex exec "问题描述"
-```
+遇到算法/架构问题时，通过 **Codex MCP** 调用 GPT-5 获取专业建议。
+
+**固定配置**（jesse-trade 项目专用）：
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `model` | `gpt-5.2-codex` | 始终使用最先进模型 |
+| `model_reasoning_effort` | `xhigh` | 最高推理强度（问的都是难题） |
+| `model_reasoning_summary` | `none` | 不展示推理过程 |
+| `cwd` | `/Users/yangqiuyu/Github/jesse-trade` | 项目根目录 |
+
+**调用模式**：
+| 场景 | 工具 | 是否需要完整背景 | 说明 |
+|------|------|------------------|------|
+| 新问题 | `mcp__codex__codex` | ✅ 需要 | 首次调用必须提供完整上下文 |
+| 同 thread 追问 | `mcp__codex__codex-reply` | ❌ 不需要 | Codex 保留对话历史，直接追问即可 |
+| 跨 session 继续 | `mcp__codex__codex` | ✅ 需要 | threadId 可能过期，需重新提供背景 |
 
 **关键规则**：
-- **每次调用独立**：codex 不知道对话上下文，必须在问题中提供完整背景信息（项目背景、相关代码、已尝试方案等）
-- **必须附带文件路径**：让 codex 聚焦于具体文件和问题
-- 复杂问题设置长超时（600000ms）或后台运行
+- **新开 thread 时提供完整背景**：项目背景、相关代码、已尝试方案等，并附带文件路径让 Codex 聚焦
+- **同一 thread 内直接追问**：首次调用返回 `threadId`，后续用 `codex-reply` + `threadId` 继续对话，无需重复背景
+- **跨 session 持久化**：将重要讨论结论写入 markdown 文件（如 `docs/codex_context_<topic>.md`），方便后续 session 引用
 
-**多轮讨论最佳实践**：
-当需要与 codex 进行多轮深度讨论时，由于每次 `codex exec` 调用独立、无法感知上下文：
-1. 将讨论背景、已有结论、待解决问题写入一个 markdown 文件（如 `docs/codex_context_<topic>.md`）
-2. 在后续 `codex exec` 调用中引用该文件：
-   ```bash
-   codex exec "请先阅读 docs/codex_context_evaluation.md 了解背景，然后回答：..."
-   ```
-3. 每轮讨论后更新该文件，记录新的结论和待解决问题
+**MCP 调用示例**（基于真实开发场景）：
 
-```bash
-# 单次调用示例
-codex exec "Review src/models/deep_ssm/deep_ssm.py lines 200-300
-Context: This implements ELBO computation for a VAE model.
-Question: Is this numerically stable?"
+**场景：验证 pred_next 延迟逻辑的正确性**
 
-# 多轮讨论示例
-codex exec "请先阅读 research/trend_optimizer/IMPROVEMENT_NOTES.md 了解评价体系背景，
-然后评审 research/trend_optimizer/evaluator.py 中 EvaluationReport 的设计是否合理"
+```
+# 1. 首次调用 - 提供完整背景和代码片段
+mcp__codex__codex(
+  prompt="""
+项目背景：jesse-trade 量化交易系统，使用多模型投票进行交易决策。
+
+核心逻辑：每个模型有 pred_next 参数，表示预测需要延迟多少步才生效。
+- c_L4_N3 的 pred_next=3，意味着 bar[i] 的预测在 bar[i+3] 时才用于交易
+- 这是为了避免使用未来信息（look-ahead bias）
+
+当前实现（flow_backtest_vectorized.py lines 180-210）：
+```python
+# 应用 pred_next 延迟
+delayed_preds = {}
+for m in models:
+    mc = model_containers[m]
+    delay = mc.pred_next
+    delayed = np.zeros(n_bars, dtype=np.int32)
+    if delay < n_bars:
+        delayed[delay:] = raw_preds[m][:-delay] if delay > 0 else raw_preds[m]
+    delayed_preds[m] = delayed
 ```
 
+问题：这个延迟逻辑是否正确？是否真的实现了"bar[i] 的预测在 bar[i+delay] 时生效"？
+""",
+  model="gpt-5.2-codex",
+  cwd="/Users/yangqiuyu/Github/jesse-trade",
+  config={"model_reasoning_effort": "xhigh", "model_reasoning_summary": "none"}
+)
+# 返回: threadId="019c07d2-3d61-..." + 详细分析
+
+# 2. 追问 - Codex 保留上下文，直接简洁提问
+mcp__codex__codex-reply(
+  threadId="019c07d2-3d61-...",
+  prompt="如果我想在逐步回测中实现同样的延迟逻辑，用 deque 队列是否是最佳选择？"
+)
+
+# 3. 继续追问 - 请求具体实现
+mcp__codex__codex-reply(
+  threadId="019c07d2-3d61-...",
+  prompt="能否给出 deque 实现的代码示例？要求与向量化版本产生完全相同的结果。"
+)
+```
+
+**典型使用场景**：
+- 算法正确性验证（如上例的延迟逻辑、止损触发顺序）
+- 数学原理解释（Hurst 指数计算、分形维度、ELBO 推导）
+- 性能优化建议（NumPy 向量化、Rust 集成方案）
+- 架构设计决策（SSM inference vs transform 的选择）
+
 ## 关键提醒
-- **MCP服务依赖**：context7/claude-in-chrome/chrome-devtools/mcp-shell-server等服务不可用时，立即停止并提示用户配置，不要绕过
+- **MCP服务依赖**：当需要的 MCP 服务不可用时，立即提示用户检查配置，不要绕过或降级处理
 - 开发时用 context7 MCP 查看最新文档
 - **浏览器操作分工**：
   - 正常网页交互（阅读网页、填表、点击等）→ 优先使用 claude-in-chrome 插件（mcp__claude-in-chrome__* 工具）

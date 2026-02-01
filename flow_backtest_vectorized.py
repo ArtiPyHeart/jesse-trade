@@ -16,6 +16,7 @@
 
 import argparse
 import json
+from importlib import import_module
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -37,11 +38,14 @@ from src.backtest import (
 from src.bars.fusion.demo import DemoBar
 from src.features.dimensionality_reduction import ARDVAE
 from src.features.simple_feature_calculator import SimpleFeatureCalculator
+from src.utils.env_dates import get_env_date, get_env_value, load_env_values
 from src.utils.feature_warmup import determine_warmup_start_idx
-from strategies.BinanceBtcDemoBar.models.config import (
-    LGBMContainer,
-    model_name_to_params,
-)
+
+
+def _load_strategy_config(strategy: str):
+    module = import_module(f"strategies.{strategy}.models.config")
+    return module.LGBMContainer, module.model_name_to_params
+
 
 # === 配置参数（与逐步回测完全相同）===
 STARTING_BALANCE = 10000.0
@@ -53,10 +57,14 @@ MIN_FUSION_BARS = 512
 
 # 默认模型（可通过命令行覆盖）
 DEFAULT_MODELS = ["c_L9_N1", "c_L9_N2"]
-MODEL_DIR = Path("strategies/BinanceBtcDemoBar/models")
 
-START_DATE = "2025-06-01"
-END_DATE = "2026-01-10"
+ENV_VALUES = load_env_values(Path(".env"))
+STRATEGY = get_env_value("STRATEGY_NAME", ENV_VALUES)
+TEST_START = get_env_date("TEST_START_DATE", ENV_VALUES)
+TEST_END = get_env_date("TEST_END_DATE", ENV_VALUES)
+
+MODEL_DIR = Path(f"strategies/{STRATEGY}/models")
+LGBMContainer, model_name_to_params = _load_strategy_config(STRATEGY)
 
 
 # === 数据结构（与逐步回测完全相同）===
@@ -473,8 +481,8 @@ def save_backtest_results(
         fee_rate=engine.fee_rate,
         stop_loss_ratio=engine.stop_loss_ratio,
         models=models,
-        start_date=START_DATE,
-        end_date=END_DATE,
+        start_date=TEST_START,
+        end_date=TEST_END,
         backtest_type=backtest_type,
         trade_start_idx=trade_start_idx,
     )
@@ -574,7 +582,7 @@ def main():
     print("=" * 60)
     print("Vectorized Backtest Flow")
     print("=" * 60)
-    print(f"Period: {START_DATE} to {END_DATE}")
+    print(f"Period: {TEST_START} to {TEST_END}")
     print(f"Models: {models}")
     print()
 
@@ -597,8 +605,8 @@ def main():
         "Binance Perpetual Futures",
         "BTC-USDT",
         "1m",
-        helpers.date_to_timestamp(START_DATE),
-        helpers.date_to_timestamp(END_DATE),
+        helpers.date_to_timestamp(TEST_START),
+        helpers.date_to_timestamp(TEST_END),
         warmup_candles_num=0,
         caching=False,
         is_for_jesse=False,

@@ -65,7 +65,7 @@ extract_models_from_pairs() {
         models_part="${dir_name%_vectorized_*}"
 
         # 使用正则提取所有模型名
-        echo "$models_part" | grep -oE '[cr]_L[0-9]+_N[0-9]+' >> "$models_set"
+        echo "$models_part" | grep -oE '(c|r2|r)_L[0-9]+_N[0-9]+' >> "$models_set"
     done
 
     # 去重并排序
@@ -95,7 +95,7 @@ if $CLEAN; then
         models_part="${dir_name%_vectorized_*}"
 
         # 计算模型数量（通过匹配模型名模式）
-        model_count=$(echo "$models_part" | grep -oE '[cr]_L[0-9]+_N[0-9]+' | wc -l | tr -d ' ')
+        model_count=$(echo "$models_part" | grep -oE '(c|r2|r)_L[0-9]+_N[0-9]+' | wc -l | tr -d ' ')
 
         # 只处理3模型组合
         [[ "$model_count" -ne 3 ]] && continue

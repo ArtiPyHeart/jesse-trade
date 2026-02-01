@@ -513,32 +513,33 @@ def extract_top_n_by_tiers(
     study: "optuna.Study",
     total_bar_range: tuple[int, int],
     n_per_tier: int = 5,
+    n_tiers: int = 10,
 ) -> list[TieredResult]:
     """从 study 按 bar 数量分层提取 Top-N 结果
 
-    将 bar 数量空间分为 5 个区间，每个区间提取 top N。
+    将 bar 数量空间分为 n_tiers 个区间，每个区间提取 top N。
     用于分析不同 bar 密度下的最优参数，避免低 bar 配置总是占优势。
 
     Args:
         study: Optuna study 对象
         total_bar_range: 目标 bar 数量范围 (min_bars, max_bars)，如 (4383, 52604)
         n_per_tier: 每个区间提取的 top N 数量（默认 5）
+        n_tiers: 分区数量（默认 10）
 
     Returns:
-        包含 5 个 TieredResult 的列表
+        包含 n_tiers 个 TieredResult 的列表
     """
     import optuna
 
     min_bars, max_bars = total_bar_range
 
-    # 5 等分
-    tier_names = ["tier1", "tier2", "tier3", "tier4", "tier5"]
-    tier_size = (max_bars - min_bars) // 5
+    tier_size = (max_bars - min_bars) // n_tiers
     tiers = []
-    for i in range(5):
+    for i in range(n_tiers):
+        tier_name = f"tier{i + 1}"
         tier_min = min_bars + i * tier_size
-        tier_max = min_bars + (i + 1) * tier_size if i < 4 else max_bars + 1
-        tiers.append((tier_names[i], (tier_min, tier_max)))
+        tier_max = min_bars + (i + 1) * tier_size if i < n_tiers - 1 else max_bars + 1
+        tiers.append((tier_name, (tier_min, tier_max)))
 
     # 筛选已完成且约束满足的试验
     completed = [

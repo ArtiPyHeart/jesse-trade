@@ -49,10 +49,19 @@ def _apply_filters_numba(
 def model_name_to_params(name: str) -> tuple[str, int, int, float]:
     """
     将模型名称转化为可以设定LGBMContainer的参数组
-    比如，将r_L3_N2转化为r, 3, 2, 0.0
-    也就是model_type, lag, pred_next, threshold的组合
-    c开头的模型为分类模型，threshold=0.5
-    r开头的模型为回归模型，threshold=0
+
+    示例：
+        - c_L4_N3 -> ("c", 4, 3, 0.5)   # 分类模型
+        - r_L3_N2 -> ("r", 3, 2, 0.0)   # 回归模型 (direction_force)
+        - r2_L5_N3 -> ("r2", 5, 3, 0.0) # 回归模型 (directional_prob)
+
+    模型类型：
+        - c: 分类模型，使用 label_hard_state，threshold=0.5
+        - r: 回归模型，使用 label_direction_force，threshold=0.0
+        - r2: 回归模型，使用 label_directional_prob，threshold=0.0
+
+    Returns:
+        (model_type, lag, pred_next, threshold)
     """
     # 分割模型名称，格式为 "{model_type}_L{lag}_N{pred_next}"
     parts = name.split("_")
@@ -92,9 +101,11 @@ class LGBMContainer:
         lag: int,
         pred_next: int,
         threshold: float,
+        model_dir: Path | str,
     ):
         self.MODEL_NAME = f"{model_type}_L{lag}_N{pred_next}"
-        self._model_dir = Path(__file__).parent / self.MODEL_NAME
+        self._models_root = Path(model_dir)
+        self._model_dir = self._models_root / self.MODEL_NAME
 
         self._is_livetrading = False
         self._model = None
@@ -218,14 +229,12 @@ class LGBMContainer:
         保存过滤器配置到JSON文件（按置信度从低到高排序）
 
         Args:
-            filepath: 保存路径，默认为 model_<MODEL_NAME>_filters.json
+            filepath: 保存路径，默认保存到当前模型目录下：
+                strategies/<strategy_name>/models/<MODEL_NAME>/model_<MODEL_NAME>_filters.json
+                例如：strategies/BinanceBtcDemoBar/models/c_L5_N1/model_c_L5_N1_filters.json
         """
         if filepath is None:
-            filepath = (
-                self._model_dir
-                / self.MODEL_NAME
-                / f"model_{self.MODEL_NAME}_filters.json"
-            )
+            filepath = self._model_dir / f"model_{self.MODEL_NAME}_filters.json"
         else:
             filepath = Path(filepath)
 
@@ -245,11 +254,7 @@ class LGBMContainer:
             filepath: 加载路径，默认为 model_<MODEL_NAME>_filters.json
         """
         if filepath is None:
-            filepath = (
-                self._model_dir
-                / self.MODEL_NAME
-                / f"model_{self.MODEL_NAME}_filters.json"
-            )
+            filepath = self._model_dir / f"model_{self.MODEL_NAME}_filters.json"
         else:
             filepath = Path(filepath)
 
@@ -265,9 +270,7 @@ class LGBMContainer:
 
     def _auto_load_filters(self):
         """初始化时自动加载filter配置（如果存在）"""
-        filter_path = (
-            self._model_dir / self.MODEL_NAME / f"model_{self.MODEL_NAME}_filters.json"
-        )
+        filter_path = self._model_dir / f"model_{self.MODEL_NAME}_filters.json"
         if filter_path.exists():
             try:
                 with open(filter_path, "r") as f:

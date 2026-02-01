@@ -17,7 +17,9 @@ Usage:
     python flow_model_build.py
 """
 
+import argparse
 import gc
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -38,19 +40,24 @@ from src.bars.fusion.demo import DemoBar
 from src.features.dimensionality_reduction import ARDVAE, ARDVAEConfig
 from src.features.simple_feature_calculator import SimpleFeatureCalculator
 from src.utils.drop_na import drop_na_and_align_x_and_y
+from src.utils.env_dates import get_env_date, get_env_value, load_env_values
+from src.utils.feature_store import (
+    hash_feature_names,
+    is_feature_store_compatible,
+    load_feature_store_meta,
+)
+from src.utils.model_build_resume import model_artifacts_exist
 
 # ============================================================================
 # 配置参数
 # ============================================================================
 # 策略设定
-STRATEGY = "BinanceBtcDemoBar"
+ENV_VALUES = load_env_values(Path(".env"))
+STRATEGY = get_env_value("STRATEGY_NAME", ENV_VALUES)
 
 # 训练集时间范围（与 flow_feature_select.py 一致）
-TRAIN_START = "2022-08-01"
-TRAIN_END = "2025-06-01"
-
-# 测试集结束时间（供后续回测使用）
-TEST_END = "2025-12-25"
+TRAIN_START = get_env_date("TRAIN_START_DATE", ENV_VALUES)
+TRAIN_END = get_env_date("TRAIN_END_DATE", ENV_VALUES)
 
 # 输入文件
 FEATURE_SELECTION_FILE = "feature_selection_results.csv"
@@ -65,6 +72,14 @@ ARDVAE_MAX_EPOCHS = 200
 # LGB 调参配置
 OPTUNA_TRIALS = 200
 CV_FOLDS = 5
+
+# 临时特征缓存（memmap）
+TEMP_DIR = Path("temp")
+FEATURE_STORE_PATH = TEMP_DIR / "feature_store_model_build.mmap"
+FEATURE_STORE_META_PATH = TEMP_DIR / "feature_store_model_build_meta.json"
+FEATURE_STORE_DTYPE = np.float32
+FEATURE_STORE_CLEAR_CACHE_EVERY = 128
+FEATURE_STORE_FORCE_REBUILD = False
 
 
 # ============================================================================
@@ -88,6 +103,62 @@ def extract_required_features(csv_path: str) -> list[str]:
         all_features.update(features)
 
     return sorted(all_features)
+
+
+def _build_or_load_feature_store(
+    calc: SimpleFeatureCalculator,
+    candles: np.ndarray,
+    feature_names: list[str],
+) -> np.memmap:
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    n_rows = len(candles)
+    n_cols = len(feature_names)
+    feature_hash = hash_feature_names(feature_names)
+    candles_hash = hashlib.sha256(candles.tobytes()).hexdigest()
+    dtype_name = np.dtype(FEATURE_STORE_DTYPE).name
+
+    meta = load_feature_store_meta(FEATURE_STORE_META_PATH)
+    if (
+        not FEATURE_STORE_FORCE_REBUILD
+        and meta is not None
+        and is_feature_store_compatible(
+            meta,
+            n_rows=n_rows,
+            n_cols=n_cols,
+            dtype_name=dtype_name,
+            feature_hash=feature_hash,
+            candles_hash=candles_hash,
+        )
+        and FEATURE_STORE_PATH.exists()
+    ):
+        return np.memmap(
+            FEATURE_STORE_PATH,
+            dtype=FEATURE_STORE_DTYPE,
+            mode="r",
+            shape=(n_rows, n_cols),
+        )
+
+    mmap = calc.compute_to_memmap(
+        feature_names,
+        FEATURE_STORE_PATH,
+        dtype=FEATURE_STORE_DTYPE,
+        clear_cache_every=FEATURE_STORE_CLEAR_CACHE_EVERY,
+    )
+    calc.clear_cache()
+
+    meta_out = {
+        "n_rows": n_rows,
+        "n_cols": n_cols,
+        "dtype": dtype_name,
+        "feature_hash": feature_hash,
+        "candles_hash": candles_hash,
+        "start": TRAIN_START,
+        "end": TRAIN_END,
+    }
+    with FEATURE_STORE_META_PATH.open("w", encoding="utf-8") as f:
+        json.dump(meta_out, f)
+
+    return mmap
 
 
 # ============================================================================
@@ -325,15 +396,14 @@ def _train_final_lgbm_model(
     assert isinstance(train_x, pd.DataFrame), "train_x must be a pandas DataFrame"
     assert len(train_x) == len(train_y), "train_x and train_y length mismatch"
 
-    x = train_x.copy()
-    x = x.astype(np.float32)
-    x.columns = [str(c) for c in x.columns]
+    x = train_x.astype(np.float32, copy=False)
+    feature_names = [str(c) for c in x.columns]
 
     dtrain = lgb.Dataset(
         x,
         train_y,
         free_raw_data=True,
-        feature_name=list(x.columns),
+        feature_name=feature_names,
     )
     return lgb.train(params, dtrain, num_boost_round=num_boost_round)
 
@@ -346,7 +416,7 @@ def build_single_model(
     candles: np.ndarray,
     log_return_lag: int,
     pred_next: int,
-    label_type: Literal["hard", "direction"],
+    label_type: Literal["hard", "direction", "directional_prob"],
     selected_features: list[str],
     gmm_random_state: int,
     models_dir: Path,
@@ -368,7 +438,15 @@ def build_single_model(
         包含构建结果的字典
     """
     # 1. 确定模型类型和名称
-    model_type = "c" if label_type == "hard" else "r"
+    # hard -> c (分类), direction -> r (回归), directional_prob -> r2 (回归)
+    if label_type == "hard":
+        model_type = "c"
+    elif label_type == "direction":
+        model_type = "r"
+    elif label_type == "directional_prob":
+        model_type = "r2"
+    else:
+        raise ValueError(f"Unknown label_type: {label_type}")
     model_name = f"{model_type}_L{log_return_lag}_N{pred_next}"
     model_dir = models_dir / model_name
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -386,8 +464,13 @@ def build_single_model(
     )
     if label_type == "hard":
         raw_labels = labeler.label_hard_state
-    else:
+    elif label_type == "direction":
         raw_labels = labeler.label_direction_force
+    elif label_type == "directional_prob":
+        raw_labels = labeler.label_directional_prob
+    else:
+        raise ValueError(f"Unknown label_type: {label_type}")
+    del labeler
 
     # 3. 提取选定特征并对齐
     print("\n[2/6] 对齐特征和标签...")
@@ -399,6 +482,9 @@ def build_single_model(
         pred_next=pred_next,
     )
     print(f"对齐后: {len(aligned_features)} 样本, {aligned_features.shape[1]} 特征")
+    aligned_features = aligned_features.astype(np.float32, copy=False)
+    del selected_df
+    del raw_labels
 
     # 4. ARDVAE 降维
     print("\n[3/6] ARDVAE 降维...")
@@ -415,22 +501,32 @@ def build_single_model(
 
     vae.fit(train_data, val_data=val_data, verbose=True)
     reduced_features = vae.transform(aligned_features)
+    del train_data
+    del val_data
+    del aligned_features
+    gc.collect()
     print(f"降维后维度: {reduced_features.shape[1]}")
 
     # 5. Optuna 调参
     print("\n[4/6] Optuna 调参...")
-    reduced_df = reduced_features
+    reduced_df = reduced_features.astype(np.float32, copy=False)
+    n_latent_dims = reduced_df.shape[1]
+    del reduced_features
 
     if label_type == "hard":
         best_params, cv_score = tune_classifier(reduced_df, aligned_labels)
         print(f"最优 F1: {cv_score:.4f}")
-    else:
+    elif label_type in ("direction", "directional_prob"):
         best_params, cv_score = tune_regressor(reduced_df, aligned_labels)
         print(f"最优 R²: {cv_score:.4f}")
+    else:
+        raise ValueError(f"Unknown label_type: {label_type}")
 
     # 6. 全量训练最终模型
     print("\n[5/6] 全量训练...")
     final_model = _train_final_lgbm_model(reduced_df, aligned_labels, best_params)
+    del reduced_df
+    del aligned_labels
 
     # 7. 持久化
     print("\n[6/6] 持久化模型...")
@@ -450,7 +546,7 @@ def build_single_model(
             {
                 "cv_score": cv_score,
                 "best_params": best_params,
-                "n_latent_dims": int(reduced_features.shape[1]),
+                "n_latent_dims": int(n_latent_dims),
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
             f,
@@ -462,7 +558,7 @@ def build_single_model(
     return {
         "model_name": model_name,
         "n_features": len(selected_features),
-        "n_latent_dims": reduced_features.shape[1],
+        "n_latent_dims": n_latent_dims,
         "cv_score": cv_score,
         "best_params": json.dumps(best_params),
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -472,14 +568,27 @@ def build_single_model(
 # ============================================================================
 # 主函数
 # ============================================================================
-def main():
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Flow Model Build - 批量模型构建")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="强制全量重新训练，忽略已存在的模型产物",
+    )
+    return parser.parse_args()
+
+
+def main(force_rebuild: bool = False) -> None:
     print("=" * 60)
     print("Flow Model Build - 批量模型构建")
     print("=" * 60)
     print(f"策略: {STRATEGY}")
     print(f"训练集: {TRAIN_START} ~ {TRAIN_END}")
-    print(f"测试集结束: {TEST_END}")
     print(f"模型目录: {MODELS_DIR}")
+    if force_rebuild:
+        print("模式: 强制全量重新训练 (--force)")
+    else:
+        print("模式: 自动跳过已训练模型 (可用 --force 覆盖)")
 
     # 1. 读取特征筛选结果 + 提取实际需要的特征
     print("\n[1/4] 读取特征筛选结果...")
@@ -508,14 +617,24 @@ def main():
     bar.update_with_candles(raw_candles)
     candles = bar.get_fusion_bars()
     print(f"Fusion K 线: {candles.shape}")
+    del raw_candles
+    del bar
+    gc.collect()
 
     # 3. 只计算实际需要的特征
     print("\n[3/4] 计算实际需要的特征...")
     calc = SimpleFeatureCalculator(verbose=True)
     calc.load(candles, sequential=True)
-    features_dict = calc.get(required_features)
-    features_df = pd.DataFrame(features_dict)
-    print(f"特征矩阵: {features_df.shape}")
+    feature_store = _build_or_load_feature_store(calc, candles, required_features)
+    features_df = pd.DataFrame(feature_store, columns=required_features, copy=False)
+    print(
+        f"特征矩阵: {features_df.shape}, dtype={FEATURE_STORE_DTYPE}, "
+        f"memmap={FEATURE_STORE_PATH}"
+    )
+    calc.clear_cache()
+    del calc
+    del feature_store
+    gc.collect()
 
     # 4. 遍历构建所有模型
     print("\n[4/4] 开始批量构建模型...")
@@ -528,6 +647,22 @@ def main():
         print("#" * 60)
 
         selected_features = json.loads(row["selected_features"])
+        model_prefix = (
+            "c"
+            if row["label_type"] == "hard"
+            else ("r2" if row["label_type"] == "directional_prob" else "r")
+        )
+        model_name = f"{model_prefix}_L{row['log_return_lag']}_N{row['pred_next']}"
+        model_dir = MODELS_DIR / model_name
+        if not force_rebuild and model_artifacts_exist(model_dir, model_name):
+            print(f"[SKIP] 已存在模型产物: {model_name}")
+            results.append(
+                {
+                    "model_name": model_name,
+                    "skipped": True,
+                }
+            )
+            continue
 
         try:
             result = build_single_model(
@@ -545,7 +680,7 @@ def main():
             print(f"[ERROR] 构建失败: {e}")
             results.append(
                 {
-                    "model_name": f"{row['label_type'][0]}_L{row['log_return_lag']}_N{row['pred_next']}",
+                    "model_name": model_name,
                     "error": str(e),
                 }
             )
@@ -572,4 +707,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = _parse_args()
+    main(force_rebuild=args.force)

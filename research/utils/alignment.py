@@ -13,6 +13,7 @@ def align_features_labels(
     labels: np.ndarray,
     log_return_lag: int,
     pred_next: int,
+    nan_chunk_bytes: int = 64 * 1024 * 1024,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     """
     对齐特征和标签
@@ -49,8 +50,22 @@ def align_features_labels(
     aligned_features = aligned_features.iloc[:-pred_next]
     aligned_labels = labels[pred_next:]
 
-    # 3. 去掉 feature 中的 NaN 行
-    na_mask = aligned_features.isna().any(axis=1).values
+    # 3. 去掉 feature 中的 NaN 行（分块避免超大中间矩阵）
+    values = aligned_features.to_numpy(copy=False)
+    n_rows, n_cols = values.shape
+    if n_rows == 0:
+        na_mask = np.array([], dtype=bool)
+    else:
+        bytes_per_row = n_cols  # bool array uses 1 byte per entry
+        chunk_size = max(1, min(n_rows, nan_chunk_bytes // bytes_per_row))
+        na_mask = np.zeros(n_rows, dtype=bool)
+        for start in range(0, n_rows, chunk_size):
+            block = values[start : start + chunk_size]
+            try:
+                block_mask = np.isnan(block).any(axis=1)
+            except TypeError:
+                block_mask = pd.isna(block).any(axis=1)
+            na_mask[start : start + chunk_size] = block_mask
     aligned_features = aligned_features.iloc[~na_mask]
     aligned_labels = aligned_labels[~na_mask]
 

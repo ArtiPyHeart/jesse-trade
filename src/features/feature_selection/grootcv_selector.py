@@ -39,6 +39,7 @@ class GrootCVConfig(BaseModel):
         lgbm_params: 自定义 LightGBM 参数，如 {"min_data_in_leaf": 20}
         shap_max_samples: 计算 SHAP 的最大样本数（可选，下采样减少内存）
         shap_batch_size: 计算 SHAP 的批大小（可选，分批减少峰值内存）
+        shap_backend: SHAP 计算后端（"auto", "shap", "lgb"）
     """
 
     objective: Literal["binary", "rmse", "auto"] = Field(
@@ -73,6 +74,9 @@ class GrootCVConfig(BaseModel):
     )
     shap_batch_size: Optional[int] = Field(
         default=None, ge=1, description="SHAP 分批大小（None 表示不分批）"
+    )
+    shap_backend: Literal["auto", "shap", "lgb"] = Field(
+        default="auto", description="SHAP 计算后端: auto/shap/lgb"
     )
 
 
@@ -149,8 +153,7 @@ class GrootCVSelector:
         # 校验 task_type
         if task_type not in self._VALID_TASK_TYPES:
             raise ValueError(
-                f"task_type 必须是 {self._VALID_TASK_TYPES} 之一，"
-                f"收到: '{task_type}'"
+                f"task_type 必须是 {self._VALID_TASK_TYPES} 之一，收到: '{task_type}'"
             )
 
         self.config = config or GrootCVConfig()
@@ -247,6 +250,7 @@ class GrootCVSelector:
             random_state=self.random_state,
             shap_max_samples=self.config.shap_max_samples,
             shap_batch_size=self.config.shap_batch_size,
+            shap_backend=self.config.shap_backend,
         )
 
         # 6. 拟合

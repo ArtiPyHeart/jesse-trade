@@ -150,12 +150,14 @@ def train_lgb_model(
         X_train,
         label=y_train,
         weight=weight_train.values if weight_train is not None else None,
+        free_raw_data=True,
     )
     d_valid = lgb.Dataset(
         X_val,
         label=y_val,
         weight=weight_val.values if weight_val is not None else None,
         reference=d_train,
+        free_raw_data=True,
     )
 
     # 设置 callbacks（LightGBM 4.x 方式）

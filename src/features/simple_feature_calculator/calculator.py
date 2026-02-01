@@ -127,6 +127,66 @@ class SimpleFeatureCalculator:
 
         return result
 
+    def compute_to_memmap(
+        self,
+        features: List[str],
+        memmap_path: Path,
+        dtype: np.dtype = np.float32,
+        clear_cache_every: int = 128,
+    ) -> np.memmap:
+        """
+        计算特征并写入 memmap（避免全量常驻内存）
+
+        Args:
+            features: 特征名称列表
+            memmap_path: memmap 文件路径
+            dtype: 输出数据类型
+            clear_cache_every: 每隔多少个特征清空缓存，控制内存峰值
+
+        Returns:
+            np.memmap: 写入后的 memmap 视图
+        """
+        if self.candles is None:
+            raise RuntimeError("Please call load() first to load candles data")
+        if not self.sequential:
+            raise ValueError("compute_to_memmap requires sequential=True")
+
+        if len(features) != len(set(features)):
+            duplicates = [f for f in set(features) if features.count(f) > 1]
+            raise ValueError(f"Duplicate feature names found: {duplicates}")
+
+        memmap_path = Path(memmap_path)
+        memmap_path.parent.mkdir(parents=True, exist_ok=True)
+
+        n_rows = len(self.candles)
+        n_cols = len(features)
+        mmap = np.memmap(memmap_path, dtype=dtype, mode="w+", shape=(n_rows, n_cols))
+
+        for idx, feature_name in enumerate(features, 1):
+            start_time = time.perf_counter()
+            value = self._compute_feature(feature_name)
+            if value.ndim != 1:
+                raise ValueError(
+                    f"Feature '{feature_name}' must return 1D array, got shape: {value.shape}"
+                )
+            if value.shape[0] != n_rows:
+                raise ValueError(
+                    f"Feature '{feature_name}' length mismatch: "
+                    f"{value.shape[0]} vs {n_rows}"
+                )
+            mmap[:, idx - 1] = value.astype(dtype, copy=False)
+
+            if self.verbose:
+                elapsed = time.perf_counter() - start_time
+                self._print_progress(feature_name, idx, n_cols, elapsed)
+
+            if clear_cache_every > 0 and idx % clear_cache_every == 0:
+                self.clear_cache()
+                mmap.flush()
+
+        mmap.flush()
+        return mmap
+
     def _compute_feature(self, feature_name: str) -> np.ndarray:
         """
         计算单个特征
