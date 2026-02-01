@@ -11,8 +11,10 @@ print_header() {
 
 print_usage() {
     echo "用法:"
-    echo "  ./install.sh            # 生产环境"
+    echo "  ./install.sh            # 生产环境 (默认安装 PyPI 版 jesse)"
+    echo "  ./install.sh --patch    # 使用本地 jesse submodule (patch 分支)"
     echo "  ./install.sh --dev      # 开发环境 (基于生产环境增量安装)"
+    echo "  ./install.sh --dev --patch  # 开发环境 + 本地 patch 分支"
     echo ""
 }
 
@@ -220,10 +222,15 @@ merge_conda_env_files() {
 }
 
 MODE="prod"
+PATCH_MODE="no"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --dev)
             MODE="dev"
+            shift
+            ;;
+        --patch)
+            PATCH_MODE="yes"
             shift
             ;;
         --prod)
@@ -363,44 +370,46 @@ set -u
 echo "✓ $(python --version)"
 
 echo ""
-echo ">>> 步骤 4.5: 更新 jesse submodule (patch 分支)..."
-JESSE_SUBMODULE_DIR="$ROOT_DIR/jesse"
-if [ ! -d "$JESSE_SUBMODULE_DIR" ]; then
-    echo "❌ 错误: jesse submodule 目录不存在: $JESSE_SUBMODULE_DIR"
-    echo "   请运行: git submodule update --init jesse"
-    exit 1
-fi
-
-# 初始化 submodule（如果尚未初始化）
-if [ ! -f "$JESSE_SUBMODULE_DIR/.git" ] && [ ! -d "$JESSE_SUBMODULE_DIR/.git" ]; then
-    echo "   初始化 jesse submodule..."
-    git submodule update --init jesse
-fi
-
-# 切换到 patch 分支并拉取最新
-(
-    cd "$JESSE_SUBMODULE_DIR"
-    git fetch origin patch
-    git checkout patch
-    git reset --hard origin/patch
-)
-JESSE_COMMIT="$(cd "$JESSE_SUBMODULE_DIR" && git rev-parse --short HEAD)"
-echo "✓ jesse submodule 已同步到 origin/patch ($JESSE_COMMIT)"
-
-# jesse 从本地 submodule 安装
-JESSE_SPEC="$JESSE_SUBMODULE_DIR"
-
-echo ""
-echo ">>> 步骤 5: 解析 jesse 依赖并对齐 Conda 版本..."
-echo "   使用本地 submodule: $JESSE_SPEC"
-
+JESSE_SPEC=""
 JESSE_CONDA_SPECS_FILE="$TMP_DIR/jesse.conda.specs.txt"
 JESSE_PIP_SPECS_FILE="$TMP_DIR/jesse.pip.specs.txt"
 JESSE_META_FILE="$TMP_DIR/jesse.meta.env"
 
-python -m pip install -q packaging
+if [ "$PATCH_MODE" = "yes" ]; then
+    echo ">>> 步骤 4.5: 更新 jesse submodule (patch 分支)..."
+    JESSE_SUBMODULE_DIR="$ROOT_DIR/jesse"
+    if [ ! -d "$JESSE_SUBMODULE_DIR" ]; then
+        echo "❌ 错误: jesse submodule 目录不存在: $JESSE_SUBMODULE_DIR"
+        echo "   请运行: git submodule update --init jesse"
+        exit 1
+    fi
 
-JESSE_SPEC="$JESSE_SPEC" python - "$CONDA_NAMES_FILE" "$JESSE_CONDA_SPECS_FILE" "$JESSE_PIP_SPECS_FILE" "$JESSE_META_FILE" <<'PY'
+    # 初始化 submodule（如果尚未初始化）
+    if [ ! -f "$JESSE_SUBMODULE_DIR/.git" ] && [ ! -d "$JESSE_SUBMODULE_DIR/.git" ]; then
+        echo "   初始化 jesse submodule..."
+        git submodule update --init jesse
+    fi
+
+    # 切换到 patch 分支并拉取最新
+    (
+        cd "$JESSE_SUBMODULE_DIR"
+        git fetch origin patch
+        git checkout patch
+        git reset --hard origin/patch
+    )
+    JESSE_COMMIT="$(cd "$JESSE_SUBMODULE_DIR" && git rev-parse --short HEAD)"
+    echo "✓ jesse submodule 已同步到 origin/patch ($JESSE_COMMIT)"
+
+    # jesse 从本地 submodule 安装
+    JESSE_SPEC="$JESSE_SUBMODULE_DIR"
+
+    echo ""
+    echo ">>> 步骤 5: 解析 jesse 依赖并对齐 Conda 版本..."
+    echo "   使用本地 submodule: $JESSE_SPEC"
+
+    python -m pip install -q packaging
+
+    JESSE_SPEC="$JESSE_SPEC" python - "$CONDA_NAMES_FILE" "$JESSE_CONDA_SPECS_FILE" "$JESSE_PIP_SPECS_FILE" "$JESSE_META_FILE" <<'PY'
 import os
 import re
 import sys
@@ -516,26 +525,33 @@ with open(meta_file, "w", encoding="utf-8") as f:
     f.write(f"JESSE_VERSION={shlex.quote(version)}\n")
 PY
 
-if [ -f "$JESSE_META_FILE" ]; then
-    # shellcheck disable=SC1090
-    source "$JESSE_META_FILE"
-    if [ -n "${JESSE_VERSION:-}" ]; then
-        echo "   jesse 版本: $JESSE_VERSION (patch)"
+    if [ -f "$JESSE_META_FILE" ]; then
+        # shellcheck disable=SC1090
+        source "$JESSE_META_FILE"
+        if [ -n "${JESSE_VERSION:-}" ]; then
+            echo "   jesse 版本: $JESSE_VERSION (patch)"
+        fi
     fi
-fi
 
-if [ -s "$JESSE_CONDA_SPECS_FILE" ]; then
-    JESSE_CONDA_ARGS="$(awk 'NF {printf "%s ", $0}' "$JESSE_CONDA_SPECS_FILE")"
-    JESSE_CONDA_ARGS="${JESSE_CONDA_ARGS%" "}"
-    if [ -n "$JESSE_CONDA_ARGS" ]; then
-        $CONDA_SOLVER install -n "$ENV_NAME" -c conda-forge --yes $JESSE_CONDA_ARGS
+    if [ -s "$JESSE_CONDA_SPECS_FILE" ]; then
+        JESSE_CONDA_ARGS="$(awk 'NF {printf "%s ", $0}' "$JESSE_CONDA_SPECS_FILE")"
+        JESSE_CONDA_ARGS="${JESSE_CONDA_ARGS%" "}"
+        if [ -n "$JESSE_CONDA_ARGS" ]; then
+            $CONDA_SOLVER install -n "$ENV_NAME" -c conda-forge --yes $JESSE_CONDA_ARGS
+        fi
     fi
+else
+    echo ">>> 步骤 4.5: 使用 PyPI 版本 jesse (默认)"
 fi
 
 echo ""
 echo ">>> 步骤 6: 安装 pip 依赖 (含 jesse 的非 Conda 依赖)..."
 
 PIP_INSTALL_FILE="$TMP_DIR/pip.install.txt"
+EXCLUDE_JESSE="0"
+if [ "$PATCH_MODE" = "yes" ]; then
+    EXCLUDE_JESSE="1"
+fi
 {
     if [ -f "$BASE_PIP_DEPS_FILE" ]; then
         cat "$BASE_PIP_DEPS_FILE"
@@ -546,13 +562,13 @@ PIP_INSTALL_FILE="$TMP_DIR/pip.install.txt"
     if [ -f "$JESSE_PIP_SPECS_FILE" ]; then
         cat "$JESSE_PIP_SPECS_FILE"
     fi
-} | awk 'NF' | awk 'BEGIN{IGNORECASE=1}
+} | awk 'NF' | awk -v exclude_jesse="$EXCLUDE_JESSE" 'BEGIN{IGNORECASE=1}
     {
         line=$0
         name=line
         gsub(/\[.*\]/, "", name)
         sub(/[<>=!~].*$/, "", name)
-        if (tolower(name) == "jesse") next
+        if (exclude_jesse == 1 && tolower(name) == "jesse") next
         print line
     }' | awk '!seen[tolower($0)]++' > "$PIP_INSTALL_FILE"
 
@@ -564,9 +580,11 @@ if [ -s "$PIP_INSTALL_FILE" ]; then
     fi
 fi
 
-# 从本地 submodule 安装 jesse（--no-deps 避免重复安装依赖）
-python -m pip install --no-deps "$JESSE_SPEC"
-echo "✓ jesse 已从本地 submodule 安装"
+if [ "$PATCH_MODE" = "yes" ]; then
+    # 从本地 submodule 安装 jesse（--no-deps 避免重复安装依赖）
+    python -m pip install --no-deps "$JESSE_SPEC"
+    echo "✓ jesse 已从本地 submodule 安装"
+fi
 
 if [ "$(uname)" = "Darwin" ]; then
     echo ""
