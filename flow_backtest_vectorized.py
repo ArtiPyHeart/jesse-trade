@@ -596,7 +596,7 @@ def main():
     model_containers = {}
     for m in models:
         reducers[m] = ARDVAE.load(str(MODEL_DIR / m), m)
-        mc = LGBMContainer(*model_name_to_params(m))
+        mc = LGBMContainer(*model_name_to_params(m), model_dir=MODEL_DIR)
         mc.is_livetrading = True
         model_containers[m] = mc
 
@@ -617,7 +617,7 @@ def main():
 
     # 3. 生成融合K线
     print("Generating fusion bars...")
-    bar_container = DemoBar(max_bars=3500)
+    bar_container = DemoBar(max_bars=-1)
     bar_container.update_with_candles(raw_candles)
     fusion_bars = bar_container.get_fusion_bars()
     print(f"  Generated {len(fusion_bars)} fusion bars")
