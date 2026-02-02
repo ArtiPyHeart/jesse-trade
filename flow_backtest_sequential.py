@@ -17,7 +17,6 @@
 
 import argparse
 import json
-from importlib import import_module
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -44,8 +43,10 @@ from src.utils.feature_warmup import determine_warmup_start_idx
 
 
 def _load_strategy_config(strategy: str):
-    module = import_module(f"strategies.{strategy}.models.config")
-    return module.LGBMContainer, module.model_name_to_params
+    del strategy
+    from src.models.lgbm_container import LGBMContainer, model_name_to_params
+
+    return LGBMContainer, model_name_to_params
 
 
 # === 配置参数 ===
