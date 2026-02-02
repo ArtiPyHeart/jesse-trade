@@ -14,7 +14,39 @@
 
 set -e
 
-MODEL_DIR="strategies/BinanceBtcDemoBar/models"
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+    setopt no_nomatch
+fi
+
+ENV_FILE=".env"
+
+read_env_value() {
+    local key="$1"
+    local value=""
+
+    if [[ -f "$ENV_FILE" ]]; then
+        value=$(grep -E "^${key}=" "$ENV_FILE" | tail -1 | cut -d '=' -f 2- || true)
+        value="${value%\"}"
+        value="${value#\"}"
+        value="${value%\'}"
+        value="${value#\'}"
+    fi
+
+    printf "%s" "$value"
+}
+
+STRATEGY_NAME="${STRATEGY_NAME:-$(read_env_value "STRATEGY_NAME")}"
+
+if [[ -z "$STRATEGY_NAME" ]]; then
+    echo "Error: STRATEGY_NAME not set and not found in .env"
+    exit 1
+fi
+
+MODEL_DIR="strategies/${STRATEGY_NAME}/models"
+if [[ ! -d "$MODEL_DIR" ]]; then
+    echo "Error: MODEL_DIR not found: $MODEL_DIR"
+    exit 1
+fi
 RESULTS_DIR="backtest_results"
 LOG_DIR="${RESULTS_DIR}/batch_logs"
 
