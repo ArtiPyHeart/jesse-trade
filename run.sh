@@ -25,4 +25,8 @@ if [ "${PROD_MODE}" -eq 1 ]; then
 fi
 
 # 直连 PostgreSQL，不再依赖 PgBouncer
-jesse run "${ARGS[@]}"
+if [ "${#ARGS[@]}" -gt 0 ]; then
+  jesse run "${ARGS[@]}"
+else
+  jesse run
+fi
