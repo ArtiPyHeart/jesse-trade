@@ -337,17 +337,26 @@ def rolling_median(array: np.ndarray, window: int) -> np.ndarray:
 
     Returns:
         滚动中位数，前window-1个值为nan
+        若窗口包含nan，则结果为nan
     """
     if array.ndim == 1:
         result = np.full_like(array, np.nan, dtype=np.float64)
         for i in range(window - 1, len(array)):
-            result[i] = np.median(array[i - window + 1 : i + 1])
+            window_data = array[i - window + 1 : i + 1]
+            if np.any(np.isnan(window_data)):
+                result[i] = np.nan
+            else:
+                result[i] = np.median(window_data)
         return result
     else:
         result = np.full_like(array, np.nan, dtype=np.float64)
         for col in range(array.shape[1]):
             for i in range(window - 1, array.shape[0]):
-                result[i, col] = np.median(array[i - window + 1 : i + 1, col])
+                window_data = array[i - window + 1 : i + 1, col]
+                if np.any(np.isnan(window_data)):
+                    result[i, col] = np.nan
+                else:
+                    result[i, col] = np.median(window_data)
         return result
 
 
