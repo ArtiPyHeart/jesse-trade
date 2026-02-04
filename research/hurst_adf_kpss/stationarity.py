@@ -14,7 +14,7 @@ KPSS检验:
 import warnings
 
 import numpy as np
-from statsmodels.tsa.stattools import adfuller, kpss
+from arch.unitroot import ADF, KPSS
 
 
 def run_adf_test(series: np.ndarray) -> tuple[float, float]:
@@ -38,8 +38,11 @@ def run_adf_test(series: np.ndarray) -> tuple[float, float]:
         return np.nan, np.nan
 
     try:
-        result = adfuller(clean_series, autolag="AIC")
-        return float(result[0]), float(result[1])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # 与 statsmodels 的默认行为对齐：trend=常数项，自动滞后选择用 AIC
+            adf = ADF(clean_series, trend="c", method="aic")
+            return float(adf.stat), float(adf.pvalue)
     except Exception:
         return np.nan, np.nan
 
@@ -74,7 +77,8 @@ def run_kpss_test(
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = kpss(clean_series, regression=regression)
-            return float(result[0]), float(result[1])
+            # regression 对齐 arch 的 trend 参数（c / ct）
+            kpss = KPSS(clean_series, trend=regression)
+            return float(kpss.stat), float(kpss.pvalue)
     except Exception:
         return np.nan, np.nan

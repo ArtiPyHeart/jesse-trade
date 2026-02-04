@@ -14,6 +14,7 @@ dependencies:
   - seaborn
   - hmmlearn
   - deap
+  - arch-py
   - pip:
       - optuna-integration[lightgbm]
       - lightweight-charts
