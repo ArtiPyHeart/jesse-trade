@@ -3,6 +3,13 @@ import numpy as np
 from src.bars.fusion.base import FusionBarContainerBase
 
 _EPS = 1e-12
+try:
+    from numba import njit
+except ImportError as exc:
+    raise ImportError(
+        "DemoBarV2 requires numba for _rolling_quantile / _run_length acceleration. "
+        "Please install numba."
+    ) from exc
 
 
 def _rolling_sum(arr: np.ndarray, window: int) -> np.ndarray:
@@ -33,10 +40,7 @@ def _rolling_quantile(arr: np.ndarray, window: int, q: float) -> np.ndarray:
     """注意：该实现为 O(N*window)，仅用于研究/调参。"""
     if window <= 1:
         return arr.astype(float)
-    out = np.full_like(arr, np.nan, dtype=float)
-    for i in range(window - 1, len(arr)):
-        out[i] = float(np.quantile(arr[i - window + 1 : i + 1], q))
-    return out
+    return _rolling_quantile_numba(arr.astype(float), window, q)
 
 
 def _rolling_median(arr: np.ndarray, window: int) -> np.ndarray:
@@ -45,18 +49,48 @@ def _rolling_median(arr: np.ndarray, window: int) -> np.ndarray:
 
 def _run_length(signs: np.ndarray) -> np.ndarray:
     """计算连续同向的run长度（0表示无方向）。"""
-    out = np.zeros_like(signs, dtype=float)
+    return _run_length_numba(signs.astype(float))
+
+
+@njit(cache=True, nogil=True)
+def _rolling_quantile_numba(arr: np.ndarray, window: int, q: float) -> np.ndarray:
+    n = arr.shape[0]
+    out = np.empty(n, dtype=np.float64)
+    for i in range(window - 1):
+        out[i] = np.nan
+    pos = q * (window - 1)
+    lo = int(np.floor(pos))
+    hi = int(np.ceil(pos))
+    w = pos - lo
+    for i in range(window - 1, n):
+        start = i - window + 1
+        tmp = np.empty(window, dtype=np.float64)
+        for j in range(window):
+            tmp[j] = arr[start + j]
+        tmp.sort()
+        if hi == lo:
+            out[i] = tmp[lo]
+        else:
+            out[i] = tmp[lo] * (1.0 - w) + tmp[hi] * w
+    return out
+
+
+@njit(cache=True, nogil=True)
+def _run_length_numba(signs: np.ndarray) -> np.ndarray:
+    n = signs.shape[0]
+    out = np.zeros(n, dtype=np.float64)
     run = 0
     prev = 0.0
-    for i, s in enumerate(signs):
-        if s == 0:
+    for i in range(n):
+        s = signs[i]
+        if s == 0.0:
             run = 0
         elif s == prev:
             run += 1
         else:
             run = 1
         out[i] = run
-        if s != 0:
+        if s != 0.0:
             prev = s
     return out
 

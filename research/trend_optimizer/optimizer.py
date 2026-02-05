@@ -78,9 +78,9 @@ class TrendOptimizer:
             n_top_results: 返回前 N 个结果
         """
         assert candles.ndim == 2, f"candles must be 2D, got {candles.ndim}D"
-        assert (
-            candles.shape[1] == 6
-        ), f"candles must have 6 columns, got {candles.shape[1]}"
+        assert candles.shape[1] == 6, (
+            f"candles must have 6 columns, got {candles.shape[1]}"
+        )
 
         self.fusion_bar_cls = fusion_bar_cls
         self.candles = candles
@@ -98,6 +98,7 @@ class TrendOptimizer:
         self,
         n_trials: int = 100,
         n_startup_trials: int | None = None,
+        n_jobs: int = 1,
         show_progress: bool = True,
         **param_ranges: tuple[Any, ...],
     ) -> list[TrialResult]:
@@ -106,6 +107,7 @@ class TrendOptimizer:
         Args:
             n_trials: 试验次数
             n_startup_trials: 随机采样次数（None 表示按探索比例自动计算）
+            n_jobs: 并行优化的 worker 数（>=1）
             show_progress: 显示进度条
             **param_ranges: 参数搜索范围
                 - float 参数: param=(min, max) 或 param=(min, max, "log")
@@ -120,9 +122,10 @@ class TrendOptimizer:
         """
         assert n_trials >= 1, f"n_trials must be >= 1, got {n_trials}"
         if n_startup_trials is not None:
-            assert (
-                n_startup_trials >= 1
-            ), f"n_startup_trials must be >= 1, got {n_startup_trials}"
+            assert n_startup_trials >= 1, (
+                f"n_startup_trials must be >= 1, got {n_startup_trials}"
+            )
+        assert n_jobs >= 1, f"n_jobs must be >= 1, got {n_jobs}"
 
         # 校验参数名
         self._validate_param_names(param_ranges)
@@ -155,6 +158,7 @@ class TrendOptimizer:
             objective,
             n_trials=n_trials,
             show_progress_bar=show_progress,
+            n_jobs=n_jobs,
             catch=(Exception,),
         )
 
@@ -164,6 +168,7 @@ class TrendOptimizer:
         self,
         n_trials: int = 100,
         n_startup_trials: int | None = None,
+        n_jobs: int = 1,
         show_progress: bool = True,
         **param_ranges: tuple[Any, ...],
     ) -> optuna.Study:
@@ -175,6 +180,7 @@ class TrendOptimizer:
         Args:
             n_trials: 试验次数
             n_startup_trials: 随机采样次数（None 表示按探索比例自动计算）
+            n_jobs: 并行优化的 worker 数（>=1）
             show_progress: 显示进度条
             **param_ranges: 参数搜索范围
 
@@ -183,9 +189,10 @@ class TrendOptimizer:
         """
         assert n_trials >= 1, f"n_trials must be >= 1, got {n_trials}"
         if n_startup_trials is not None:
-            assert (
-                n_startup_trials >= 1
-            ), f"n_startup_trials must be >= 1, got {n_startup_trials}"
+            assert n_startup_trials >= 1, (
+                f"n_startup_trials must be >= 1, got {n_startup_trials}"
+            )
+        assert n_jobs >= 1, f"n_jobs must be >= 1, got {n_jobs}"
 
         self._validate_param_names(param_ranges)
 
@@ -214,6 +221,7 @@ class TrendOptimizer:
             objective,
             n_trials=n_trials,
             show_progress_bar=show_progress,
+            n_jobs=n_jobs,
             catch=(Exception,),
         )
 

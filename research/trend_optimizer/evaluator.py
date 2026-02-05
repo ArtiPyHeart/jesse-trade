@@ -84,6 +84,7 @@
 ================================================================================
 """
 
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -158,7 +159,9 @@ class EvaluationReport:
             d3 = dist.get(3, 0) * 100
             d4 = dist.get(4, 0) * 100
             d5 = dist.get(5, 0) * 100
-            lines.append(f"  {ws:3d}    {score:.2f}  {d1:5.1f}% {d2:5.1f}% {d3:5.1f}% {d4:5.1f}% {d5:5.1f}%")
+            lines.append(
+                f"  {ws:3d}    {score:.2f}  {d1:5.1f}% {d2:5.1f}% {d3:5.1f}% {d4:5.1f}% {d5:5.1f}%"
+            )
 
         lines.extend(
             [
@@ -227,7 +230,7 @@ class MultiWindowEvaluator:
         self,
         window_sizes: tuple[int, ...] = (20, 40, 60),
         step: int = 5,
-        n_jobs: Optional[int] = None,
+        n_jobs: Optional[int] = os.cpu_count() or 1,
         min_bar_ratio_minutes: int = 360,  # 6h = 360 min
     ):
         """初始化评估器
@@ -235,7 +238,7 @@ class MultiWindowEvaluator:
         Args:
             window_sizes: 评估窗口大小元组
             step: TrendValidator 滑动步长
-            n_jobs: TrendValidator 并行进程数（None 使用默认值）
+            n_jobs: TrendValidator 并行进程数（默认使用 CPU 核数）
             min_bar_ratio_minutes: 最小 bar 数量基准（分钟）
         """
         assert len(window_sizes) > 0, "window_sizes must not be empty"
@@ -249,8 +252,6 @@ class MultiWindowEvaluator:
         self.min_bar_ratio_minutes = min_bar_ratio_minutes
 
     def _build_validator(self, window_size: int) -> TrendValidator:
-        if self.n_jobs is None:
-            return TrendValidator(window_size=window_size, step=self.step)
         return TrendValidator(
             window_size=window_size, step=self.step, n_jobs=self.n_jobs
         )
