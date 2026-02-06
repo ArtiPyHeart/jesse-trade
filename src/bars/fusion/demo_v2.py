@@ -131,10 +131,10 @@ def _apply_clip(
 
 class DemoBarV2(FusionBarContainerBase):
     """
-    一个“可调参数超集”的 DemoBar，用于探索更强趋势性的轴。
+    一个"可调参数超集"的 DemoBar，用于探索更强趋势性的轴。
 
     核心思路：
-    - 不怕短时大波动，重点压制“长时间小幅震荡”。
+    - 不怕短时大波动，重点压制"长时间小幅震荡"。
     - 通过方向一致性、效率比、翻转惩罚等机制，提升趋势性评分。
 
     设计框架（按执行顺序）：
@@ -144,10 +144,24 @@ class DemoBarV2(FusionBarContainerBase):
     4) clip（固定/动态）
 
     注意：
-    - 本类用于“寻找更好轴”的实验与调参，不建议把所有开关同时打开。
+    - 本类用于"寻找更好轴"的实验与调参，不建议把所有开关同时打开。
     - rolling 相关参数会提升 max_lookback，并在 get_thresholds 中自动对齐。
-    - 若要实现“残差携带 / 滞回阈值 / 方向性累积（带正负阈值）”，
+    - 若要实现"残差携带 / 滞回阈值 / 方向性累积（带正负阈值）"，
       需要改造 build_bar_by_cumsum 或新增构建器。
+
+    Benchmark (BTC 2022-08~2026-01, 1min)
+    --------------------------------------
+    配置: tier4 rank1 (Optuna score: 3.293, 5000 trials)
+    输入: 1,841,760 根 1min K线 → 输出: 25,584 根 Fusion Bar
+    压缩比: 72:1 (约 1.2 小时/根)
+
+    评估结果:
+      综合评分: 69.4/100 (B)
+      趋势性: 3.29/5 | 一致性: 4.66/5 | 稳定性: 2.12/5
+
+    对比 DemoBar:
+      DemoBar: 25,917 bars, 68.9/100 (B), 趋势性 3.27
+      DemoBarV2: 25,584 bars, 69.4/100 (B), 趋势性 3.29
 
     Parameters (核心)
     -----------------
@@ -174,7 +188,7 @@ class DemoBarV2(FusionBarContainerBase):
     use_run_boost : bool
         是否对连续同向run进行加权（run越长权重越大）。
     use_trend_align : bool
-        是否对“逆趋势方向”的单根bar进行惩罚。
+        是否对"逆趋势方向"的单根bar进行惩罚。
     use_low_vol_freeze : bool
         是否冻结低波动区间（rolling std 小于 low_vol_floor 时置0）。
 
@@ -187,35 +201,35 @@ class DemoBarV2(FusionBarContainerBase):
     def __init__(
         self,
         max_bars: int = -1,
-        threshold: float = 2.288335,
-        clip_source: str = "fixed",
+        threshold: float = 0.450599,
+        clip_source: str = "rolling_quantile",
         clip_style: str = "hard",
-        clip_r: float = 2.072895e-04,
-        clip_k: float = 1.0,
-        clip_window: int = 60,
-        clip_q: float = 0.5,
-        soft_clip_tau: float = 1.0,
-        use_er: bool = False,
-        er_window: int = 20,
-        er_power: float = 1.0,
-        er_min: float = 0.0,
-        use_flip_penalty: bool = False,
-        flip_window: int = 20,
-        flip_penalty: float = 2.0,
-        use_run_boost: bool = False,
-        run_boost: float = 0.0,
-        run_cap: float = 3.0,
+        clip_r: float = 1.178852e-08,
+        clip_k: float = 4.132499,
+        clip_window: int = 177,
+        clip_q: float = 0.506549,
+        soft_clip_tau: float = 0.001470,
+        use_er: bool = True,
+        er_window: int = 38,
+        er_power: float = 0.569923,
+        er_min: float = 0.210189,
+        use_flip_penalty: bool = True,
+        flip_window: int = 116,
+        flip_penalty: float = 1.249594,
+        use_run_boost: bool = True,
+        run_boost: float = 0.119504,
+        run_cap: float = 2.061389,
         use_trend_align: bool = False,
-        trend_window: int = 20,
-        anti_align_penalty: float = 0.5,
-        use_low_vol_freeze: bool = False,
-        low_vol_window: int = 60,
-        low_vol_floor: float = 0.0,
-        min_range_ratio: float = 0.0,
-        use_volume_weight: bool = False,
-        volume_window: int = 60,
-        volume_power: float = 1.0,
-        volume_cap: float = 5.0,
+        trend_window: int = 86,
+        anti_align_penalty: float = 0.531525,
+        use_low_vol_freeze: bool = True,
+        low_vol_window: int = 200,
+        low_vol_floor: float = 1.073444e-05,
+        min_range_ratio: float = 0.000231,
+        use_volume_weight: bool = True,
+        volume_window: int = 213,
+        volume_power: float = 1.848746,
+        volume_cap: float = 3.377508,
     ) -> None:
         super().__init__(max_bars, threshold)
         assert clip_source in {
